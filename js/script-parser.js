@@ -470,3 +470,7 @@ class ScriptParser {
     return blocks.filter(b => b && b.trim()).join('\n\n');
   }
 }
+
+if (typeof module !== 'undefined') {
+  module.exports = ScriptParser;
+}

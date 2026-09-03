@@ -1,48 +1,39 @@
 /**
- * Reader — Движок интерактивной читалки
+ * Reader — Интерактивная читалка визуальных новелл и манги
  * Поддерживает:
- * 1. Режим бесплатного превью (первые N страниц с блокировкой на N+1).
- * 2. Режим полного перевода для купленных работ:
- *    - Загрузка архива (.zip через JSZip) или папки с оригинальными изображениями
- *    - Выбор языка перевода из скрипта
- *    - Наложение текста, диалогов и рамок прямо в браузере (на базе движка Text Overlay Editor)
+ * - Бесплатное превью (с блокировкой страниц после лимита)
+ * - Полный режим с наложением текста из скрипта на графику
+ * - Поддержку реальных форматов Overlaying text on graphics:
+ *   (overlayData.images, overlayData.dialogData, overlayData.presets, рамки и портреты)
+ * - Одностраничный и двухстраничный разворот
+ * - Динамический выбор языка перевода
  */
 class ReaderService {
   constructor(store, scriptParser) {
     this.store = store;
-    this.scriptParser = scriptParser;
-
+    this.parser = scriptParser || new ScriptParser();
     this.currentWork = null;
     this.isFullMode = false;
-    this.currentLang = 'Русский';
-    this.pages = []; // Массив объектов страниц { name, url, scriptEntries, isLocked }
+    this.pages = []; // { index, name, url, isLocked }
     this.currentIndex = 0;
     this.isTwoPageSpread = false;
     this.parsedScript = null;
-
-    // Кэш изображений рамок диалогов
-    this.borderImages = {};
-    this.loadBorderAssets();
+    this.currentLang = 'Русский';
+    this.borderImages = [];
+    this.loadBorders();
   }
 
-  loadBorderAssets() {
-    const borders = [
-      { id: 0, file: 'Рамка 1.png' },
-      { id: 1, file: 'рамка 2.png' },
-      { id: 2, file: 'Рамка 3.png' },
-      { id: 3, file: 'Рамка 4.png' },
-      { id: 4, file: 'Рамка 5.png' }
-    ];
-
-    borders.forEach(b => {
+  loadBorders() {
+    // Предзагрузка 5 рамок из assets/borders/
+    for (let i = 1; i <= 5; i++) {
       const img = new Image();
-      img.src = `assets/borders/${b.file}`;
-      this.borderImages[b.id] = img;
-    });
+      img.src = `assets/borders/Рамка ${i}.png`;
+      this.borderImages.push(img);
+    }
   }
 
   /**
-   * Открыть бесплатное превью работы
+   * Открытие бесплатного превью работы
    */
   openPreview(workId) {
     const work = this.store.getWorkById(workId);
@@ -51,34 +42,44 @@ class ReaderService {
     this.currentWork = work;
     this.isFullMode = false;
     this.currentIndex = 0;
-    this.parsedScript = null;
 
-    // Формируем список страниц превью
-    const previewList = work.previewImages || [];
-    const totalPreviewCount = work.previewPagesCount || previewList.length;
+    // В превью показываем первые previewPagesCount страниц из превью-ассетов
+    const previewCount = work.previewPagesCount || 3;
+    const totalCount = work.totalPages || 10;
+    const pages = [];
 
-    this.pages = [];
-    for (let i = 0; i < totalPreviewCount; i++) {
-      this.pages.push({
+    const sampleImages = work.previewImages || [
+      'assets/demo/page-1.svg',
+      'assets/demo/page-2.svg',
+      'assets/demo/page-3.svg'
+    ];
+
+    // Доступные бесплатные страницы
+    for (let i = 0; i < previewCount; i++) {
+      pages.push({
         index: i,
-        name: `Страница ${i + 1}`,
-        url: previewList[i] || 'assets/demo/page-1.svg',
+        name: `Preview Page ${i + 1}`,
+        url: sampleImages[i % sampleImages.length],
         isLocked: false
       });
     }
 
-    // Добавляем страницу-заглушку с замком
-    this.pages.push({
-      index: totalPreviewCount,
-      name: `Страница ${totalPreviewCount + 1}`,
-      isLocked: true
-    });
+    // Заблокированная страница превью
+    if (totalCount > previewCount) {
+      pages.push({
+        index: previewCount,
+        name: `Locked Page ${previewCount + 1}`,
+        url: '',
+        isLocked: true
+      });
+    }
 
+    this.pages = pages;
     this.renderReaderUI();
   }
 
   /**
-   * Запуск процесса открытия купленного перевода
+   * Открытие купленной работы: показывает модалку загрузки оригинального архива (.zip)
    */
   openFullTranslationModal(workId) {
     const work = this.store.getWorkById(workId);
@@ -87,16 +88,20 @@ class ReaderService {
     this.currentWork = work;
     this.isFullMode = true;
 
-    // Парсим скрипт перевода работы
-    const scriptRaw = work.sampleScriptText || '';
-    this.parsedScript = this.scriptParser.parse(scriptRaw);
+    // Парсинг скрипта работы
+    if (work.sampleScriptText) {
+      try {
+        this.parsedScript = this.parser.parse(work.sampleScriptText);
+      } catch (e) {
+        console.error('Ошибка парсинга скрипта работы:', e);
+      }
+    }
 
-    // Открываем модалку загрузки пользовательского архива
     window.app.showArchiveUploadModal(work);
   }
 
   /**
-   * Обработка загруженного пользователем ZIP-архива с официальными картинками
+   * Обработка загруженного пользователем ZIP архива с изображениями
    */
   async loadUserZipFile(file) {
     if (!window.JSZip) {
@@ -117,14 +122,14 @@ class ReaderService {
       }
     });
 
-    // Сортировка по имени файлов (01-01, 01-02 ...)
+    // Натуральная сортировка файлов
     imageFiles.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
 
     if (imageFiles.length === 0) {
-      throw new Error('В архиве не найдено подходящих файлов изображений (PNG, JPG, WEBP)');
+      throw new Error('В архиве не найдено поддерживаемых файлов изображений (PNG, JPG, WEBP, BMP)');
     }
 
-    // Извлечение картинок в Blob URL
+    // Извлечение в память (Blob URL)
     const pages = [];
     for (let i = 0; i < imageFiles.length; i++) {
       const entry = imageFiles[i];
@@ -141,10 +146,10 @@ class ReaderService {
     this.pages = pages;
     this.currentIndex = 0;
 
-    // Предлагаем выбрать язык из скрипта
+    // Определение доступных языков из скрипта
     const availableLangs = (this.parsedScript && this.parsedScript.languages && this.parsedScript.languages.length > 0)
       ? this.parsedScript.languages
-      : (this.currentWork.availableLanguages || ['Русский']);
+      : (this.currentWork.availableLanguages || ['Русский', 'English']);
 
     window.app.showLanguageSelectModal(availableLangs, (selectedLang) => {
       this.currentLang = selectedLang;
@@ -153,7 +158,7 @@ class ReaderService {
   }
 
   /**
-   * Использование встроенных демонстрационных сцен для быстрого теста
+   * Использование демонстрационных сцен для быстрого тестирования
    */
   loadDemoImages() {
     const demoPages = [
@@ -168,7 +173,7 @@ class ReaderService {
 
     const availableLangs = (this.parsedScript && this.parsedScript.languages && this.parsedScript.languages.length > 0)
       ? this.parsedScript.languages
-      : (this.currentWork.availableLanguages || ['Русский']);
+      : (this.currentWork.availableLanguages || ['Русский', 'English']);
 
     window.app.showLanguageSelectModal(availableLangs, (selectedLang) => {
       this.currentLang = selectedLang;
@@ -210,7 +215,7 @@ class ReaderService {
   }
 
   /**
-   * Открытие полноэкранного модального окна читалки
+   * Рендер читалки
    */
   renderReaderUI() {
     const modal = document.getElementById('reader-modal');
@@ -219,58 +224,52 @@ class ReaderService {
     modal.classList.add('active');
     document.body.classList.add('modal-open');
 
-    // Настройка языка в шапке читалки
-    const langSelect = document.getElementById('reader-lang-select');
-    if (langSelect) {
-      langSelect.innerHTML = '';
-      const langs = (this.parsedScript && this.parsedScript.languages && this.parsedScript.languages.length > 0)
-        ? this.parsedScript.languages
-        : (this.currentWork.availableLanguages || ['Русский']);
-
-      langs.forEach(l => {
-        const opt = document.createElement('option');
-        opt.value = l;
-        opt.textContent = l;
-        if (l === this.currentLang) opt.selected = true;
-        langSelect.appendChild(opt);
-      });
-      langSelect.style.display = this.isFullMode ? 'inline-block' : 'none';
-    }
-
-    // Заголовок работы
     const titleEl = document.getElementById('reader-work-title');
+    const modeBadge = document.getElementById('reader-mode-badge');
+    const langSelect = document.getElementById('reader-lang-select');
+
     if (titleEl) {
-      titleEl.textContent = this.currentWork ? this.currentWork.title : 'Читалка';
+      titleEl.textContent = window.i18n ? window.i18n.getWorkTitle(this.currentWork) : (this.currentWork ? this.currentWork.title : 'Читалка');
     }
 
-    // Бейдж режима
-    const badgeEl = document.getElementById('reader-mode-badge');
-    if (badgeEl) {
-      badgeEl.textContent = this.isFullMode ? '✨ Полный перевод' : '👁️ Превью';
-      badgeEl.className = this.isFullMode ? 'badge badge-accent' : 'badge badge-warning';
+    if (modeBadge) {
+      if (this.isFullMode) {
+        modeBadge.className = 'badge badge-accent';
+        modeBadge.textContent = window.i18n && window.i18n.getLang() === 'en' ? '✨ Full Translation' : '✨ Полный перевод';
+      } else {
+        modeBadge.className = 'badge badge-info';
+        modeBadge.textContent = window.i18n && window.i18n.getLang() === 'en' ? '👁️ Free Preview' : '👁️ Бесплатное превью';
+      }
+    }
+
+    // Выбор языков
+    if (langSelect) {
+      const languages = (this.parsedScript && this.parsedScript.languages && this.parsedScript.languages.length > 0)
+        ? this.parsedScript.languages
+        : (this.currentWork ? this.currentWork.availableLanguages : ['Русский']);
+
+      langSelect.innerHTML = (languages || ['Русский']).map(l => `<option value="${l}" ${l === this.currentLang ? 'selected' : ''}>🗣️ ${l}</option>`).join('');
+      langSelect.style.display = this.isFullMode ? 'inline-block' : 'none';
     }
 
     this.updateReaderDisplay();
   }
 
-  /**
-   * Обновление отображения страниц на экране (1 или 2 разворота)
-   */
   updateReaderDisplay() {
     const stageLeft = document.getElementById('reader-stage-left');
     const stageRight = document.getElementById('reader-stage-right');
     const spreadBtn = document.getElementById('reader-spread-btn');
-    const slider = document.getElementById('reader-slider');
     const counter = document.getElementById('reader-counter');
+    const slider = document.getElementById('reader-slider');
 
-    if (!stageLeft) return;
+    if (!stageLeft || !stageRight) return;
 
     if (spreadBtn) {
       spreadBtn.textContent = this.isTwoPageSpread ? '📖 2 разворота' : '📄 1 страница';
     }
 
     if (slider) {
-      slider.max = this.pages.length - 1;
+      slider.max = Math.max(0, this.pages.length - 1);
       slider.value = this.currentIndex;
     }
 
@@ -278,11 +277,11 @@ class ReaderService {
       counter.textContent = `${this.currentIndex + 1} / ${this.pages.length}`;
     }
 
-    // Очистка и рендер левой страницы
+    // Левая страница
     const leftPage = this.pages[this.currentIndex];
     this.renderPageToStage(stageLeft, leftPage);
 
-    // Рендер правой страницы (если включен режим двух страниц)
+    // Правая страница (при 2-х страницах)
     if (this.isTwoPageSpread && this.currentIndex + 1 < this.pages.length) {
       stageRight.style.display = 'flex';
       const rightPage = this.pages[this.currentIndex + 1];
@@ -293,27 +292,26 @@ class ReaderService {
     }
   }
 
-  /**
-   * Рендер конкретной страницы с возможным наложением текстовых слоев
-   */
   renderPageToStage(container, page) {
     container.innerHTML = '';
     if (!page) return;
 
-    // Если это заблокированная страница превью
+    // Экран блокировки превью
     if (page.isLocked) {
+      const price = this.currentWork ? this.currentWork.price : 1;
+      const isEn = window.i18n && window.i18n.getLang() === 'en';
       container.innerHTML = `
         <div class="reader-lock-screen">
           <div class="lock-icon">🔒</div>
-          <h2>Бесплатное превью завершено</h2>
-          <p>Вы просмотрели доступные страницы превью. Чтобы продолжить чтение с полным наложением перевода, приобретите работу.</p>
+          <h2>${isEn ? 'Free Preview Concluded' : 'Бесплатное превью завершено'}</h2>
+          <p>${isEn ? 'You have reached the end of the free preview. Unlock the full adapted translation to read the entire release.' : 'Вы просмотрели доступные страницы превью. Чтобы продолжить чтение с полным наложением перевода, приобретите работу.'}</p>
           <div class="lock-price-badge">
-            Стоимость: <strong>${this.currentWork ? this.currentWork.price : 1} Орб</strong> (1 USDT)
+            ${isEn ? 'Price:' : 'Стоимость:'} <strong>${price} Орб</strong> (${price} USDT)
           </div>
           <div class="lock-actions">
             ${this.store.getRole() === 'guest' 
-              ? `<button class="btn btn-accent btn-large" onclick="window.app.showAuthModal()">🔑 Войти / Зарегистрироваться</button>`
-              : `<button class="btn btn-accent btn-large" onclick="window.app.handlePurchaseWork('${this.currentWork ? this.currentWork.id : ''}')">⚡ Купить перевод за ${this.currentWork ? this.currentWork.price : 1} Орб</button>`
+              ? `<button class="btn btn-accent btn-large" onclick="window.app.showAuthModal()">${isEn ? '🔑 Sign In / Register' : '🔑 Войти / Зарегистрироваться'}</button>`
+              : `<button class="btn btn-accent btn-large" onclick="window.app.handlePurchaseWork('${this.currentWork ? this.currentWork.id : ''}')">${isEn ? `⚡ Buy for ${price} Orb` : `⚡ Купить перевод за ${price} Орб`}</button>`
             }
           </div>
         </div>
@@ -321,7 +319,6 @@ class ReaderService {
       return;
     }
 
-    // Обычная страница с изображением
     const wrapper = document.createElement('div');
     wrapper.className = 'page-viewport-wrapper';
 
@@ -331,7 +328,7 @@ class ReaderService {
     img.alt = page.name;
     wrapper.appendChild(img);
 
-    // Если в режиме полного перевода доступен скрипт — накладываем слои
+    // Наложение слоев в режиме полного перевода
     if (this.isFullMode && this.parsedScript) {
       const overlayLayer = this.generateOverlayLayer(page.name);
       if (overlayLayer) {
@@ -343,50 +340,119 @@ class ReaderService {
   }
 
   /**
-   * Генерация HTML-слоя наложения для конкретного файла изображения
+   * Находит запись в скрипте, соответствующую имени файла изображения
+   */
+  findMatchingScriptEntry(fileName) {
+    if (!this.parsedScript || !this.parsedScript.entries) return null;
+
+    const langEntries = this.parsedScript.entries[this.currentLang] 
+      || this.parsedScript.entries['RUS'] 
+      || this.parsedScript.entries['ENG']
+      || Object.values(this.parsedScript.entries)[0];
+
+    if (!langEntries || !Array.isArray(langEntries)) return null;
+
+    // Нормализация имени файла из архива
+    const normFile = (fileName || '').replace(/\\/g, '/');
+    const baseName = normFile.split('/').pop() || '';
+    const baseNameNoExt = baseName.replace(/\.[a-zA-Z0-9]+$/, '').toLowerCase();
+    const fullNoExt = normFile.replace(/\.[a-zA-Z0-9]+$/, '').toLowerCase();
+
+    // 1. Точное совпадение по key или filename
+    let match = langEntries.find(e => {
+      const keyNorm = (e.key || '').replace(/\\/g, '/').toLowerCase();
+      const fnNorm = (e.filename || '').replace(/\\/g, '/').toLowerCase();
+      return keyNorm === fullNoExt || fnNorm === baseNameNoExt || keyNorm === baseNameNoExt;
+    });
+
+    // 2. Частичное совпадение по базовому имени
+    if (!match) {
+      match = langEntries.find(e => {
+        const keyNorm = (e.key || '').replace(/\\/g, '/').toLowerCase();
+        const fnNorm = (e.filename || '').replace(/\\/g, '/').toLowerCase();
+        return baseNameNoExt.includes(fnNorm) || fnNorm.includes(baseNameNoExt) || fullNoExt.endsWith(keyNorm);
+      });
+    }
+
+    return match;
+  }
+
+  /**
+   * Генерация слоя наложения текста для конкретного файла изображения
    */
   generateOverlayLayer(fileName) {
-    if (!this.parsedScript) return null;
+    const entry = this.findMatchingScriptEntry(fileName);
+    if (!entry) return null;
+
+    const rawText = entry.text || '';
+    const blocks = ScriptParser.getBlocks(rawText);
+    if (blocks.length === 0) return null;
 
     const overlayLayer = document.createElement('div');
     overlayLayer.className = 'reader-overlay-layer';
 
-    // Поиск записей для выбранного языка и текущего файла
-    const langEntries = this.parsedScript.entries ? this.parsedScript.entries[this.currentLang] : null;
     const overlayData = this.parsedScript.overlayData || {};
+    const presets = overlayData.presets || [];
+    const imagesData = overlayData.images || {};
+    const dialogData = overlayData.dialogData || {};
     const entriesMeta = overlayData.entries || {};
 
-    let matchingEntry = null;
-    if (langEntries && Array.isArray(langEntries)) {
-      matchingEntry = langEntries.find(e => {
-        const cleanE = (e.file || '').replace(/\\/g, '/');
-        const cleanF = (fileName || '').replace(/\\/g, '/');
-        return cleanF.includes(cleanE) || cleanE.includes(cleanF);
-      });
-    }
+    const imageKey = entry.key || entry.filename;
+    const strippedKey = (entry.filename || imageKey.split('/').pop() || '');
 
-    if (!matchingEntry || !matchingEntry.blocks || matchingEntry.blocks.length === 0) {
-      return null;
-    }
+    // Координаты из overlayData.images
+    const imgBoxes = imagesData[imageKey] || imagesData[strippedKey] || imagesData[`Image/${strippedKey}`] || [];
 
-    // Рендеринг блоков текста
-    matchingEntry.blocks.forEach((blockText, blockIdx) => {
-      const blockKey = `${matchingEntry.file}_block_${blockIdx}`;
-      const blockMeta = entriesMeta[blockKey] || { x: 15, y: 75, w: 70, h: 18 };
+    blocks.forEach((blockText, idx) => {
+      const blockDataKey1 = `${imageKey}_block_${idx}`;
+      const blockDataKey2 = `${strippedKey}_block_${idx}`;
+      const bSettings = dialogData[blockDataKey1] || dialogData[blockDataKey2] || {};
+      const directEntryMeta = entriesMeta[blockDataKey1] || entriesMeta[blockDataKey2] || {};
+
+      // Позиция: из imagesData, entriesMeta или дефолтная
+      const imgBox = imgBoxes[idx] || {};
+      const x = imgBox.x !== undefined ? imgBox.x : (directEntryMeta.x !== undefined ? directEntryMeta.x : 12);
+      const y = imgBox.y !== undefined ? imgBox.y : (directEntryMeta.y !== undefined ? directEntryMeta.y : (68 + idx * 8));
+      const w = imgBox.w !== undefined ? imgBox.w : (directEntryMeta.w !== undefined ? directEntryMeta.w : 76);
+
+      // Пресет оформления
+      const presetName = bSettings.preset || imgBox.preset || directEntryMeta.preset;
+      const preset = presets.find(p => p.name === presetName) || {};
+
+      // Рамка (borderIndex)
+      const borderIdx = bSettings.borderIndex !== undefined ? bSettings.borderIndex : (directEntryMeta.borderIndex);
 
       const box = document.createElement('div');
       box.className = 'reader-text-box';
-      box.style.left = `${blockMeta.x || 15}%`;
-      box.style.top = `${blockMeta.y || 75}%`;
-      box.style.width = `${blockMeta.w || 70}%`;
+      box.style.left = `${Math.min(90, Math.max(0, x))}%`;
+      box.style.top = `${Math.min(90, Math.max(0, y))}%`;
+      box.style.width = `${Math.min(95, Math.max(20, w))}%`;
 
-      // Если указана диалоговая рамка (borderIndex: 0..4)
-      if (blockMeta.borderIndex !== undefined && this.borderImages[blockMeta.borderIndex]) {
+      // Применение стилей пресета
+      if (preset.color) box.style.color = preset.color;
+      if (preset.fontFamily) box.style.fontFamily = preset.fontFamily;
+      if (preset.fontSize) box.style.fontSize = `${preset.fontSize}px`;
+      if (preset.fontWeight) box.style.fontWeight = preset.fontWeight;
+      if (preset.textAlign) box.style.textAlign = preset.textAlign;
+      if (preset.lineHeight) box.style.lineHeight = preset.lineHeight;
+
+      if (preset.strokeWidth && preset.strokeWidth > 0) {
+        const strokeColor = preset.strokeColor || '#000';
+        box.style.textShadow = `-${preset.strokeWidth}px -${preset.strokeWidth}px 0 ${strokeColor}, ${preset.strokeWidth}px -${preset.strokeWidth}px 0 ${strokeColor}, -${preset.strokeWidth}px ${preset.strokeWidth}px 0 ${strokeColor}, ${preset.strokeWidth}px ${preset.strokeWidth}px 0 ${strokeColor}`;
+      }
+
+      // Если используется графическая рамка диалога
+      if (borderIdx !== undefined && this.borderImages[borderIdx]) {
         box.classList.add('reader-dialog-box');
         const frameImg = document.createElement('img');
-        frameImg.src = this.borderImages[blockMeta.borderIndex].src;
+        frameImg.src = this.borderImages[borderIdx].src;
         frameImg.className = 'reader-frame-background';
         box.appendChild(frameImg);
+      } else if (preset.bgColor) {
+        const opacity = preset.bgOpacity !== undefined ? preset.bgOpacity : 0.8;
+        box.style.backgroundColor = preset.bgColor.startsWith('#') 
+          ? `${preset.bgColor}${Math.round(opacity * 255).toString(16).padStart(2, '0')}`
+          : preset.bgColor;
       }
 
       const textEl = document.createElement('div');
@@ -409,4 +475,4 @@ class ReaderService {
   }
 }
 
-window.reader = new ReaderService(window.store, window.scriptParser || new ScriptParser());
+window.reader = new ReaderService(window.store, new ScriptParser());
