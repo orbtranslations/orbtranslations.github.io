@@ -1,8 +1,9 @@
 /**
  * Admin — Управление панелью администратора
  * Позволяет регистрировать новые работы, редактировать существующие,
- * задавать цены в Орбах, указывать количество страниц превью на двух языках (RU / EN),
- * загружать скрипты и настраивать xPub.
+ * автоматически определяет общее количество страниц из скрипта,
+ * задает цены в Орбах, указывает количество страниц превью на двух языках (RU / EN),
+ * загружает скрипты и настраивает xPub.
  */
 class AdminService {
   constructor(store) {
@@ -54,6 +55,70 @@ class AdminService {
     if (scriptInput) {
       scriptInput.addEventListener('change', (e) => this.handleScriptFileUpload(e));
     }
+
+    // Слушатель ввода текста скрипта напрямую в textarea
+    const scriptTextarea = document.getElementById('admin-script-text');
+    if (scriptTextarea) {
+      scriptTextarea.addEventListener('input', () => {
+        this.updatePagesFromScript(scriptTextarea.value);
+      });
+    }
+  }
+
+  /**
+   * Вычисляет точное число уникальных сцен/страниц на основе скрипта перевода
+   */
+  calculateTotalPagesFromScript(scriptText) {
+    if (!scriptText || !scriptText.trim()) return 4;
+    try {
+      const parser = window.scriptParser || new ScriptParser();
+      const res = parser.parse(scriptText);
+      const pageKeys = new Set();
+      if (res.languages && res.languages.length > 0) {
+        res.languages.forEach(lang => {
+          (res.entries[lang] || []).forEach(e => {
+            if (!e.isTitle && e.key !== 'Title') {
+              pageKeys.add(e.key || e.filename);
+            }
+          });
+        });
+      }
+      return Math.max(1, pageKeys.size || 1);
+    } catch (e) {
+      console.warn('Ошибка вычисления страниц из скрипта:', e);
+      return 4;
+    }
+  }
+
+  /**
+   * Обновляет счетчик страниц и максимальный предел ползунка превью
+   */
+  updatePagesFromScript(scriptText) {
+    const totalPages = this.calculateTotalPagesFromScript(scriptText);
+    const displayEl = document.getElementById('admin-total-pages-display');
+    const hiddenInput = document.getElementById('admin-work-total-pages');
+    const slider = document.getElementById('admin-preview-pages-slider');
+    const numInput = document.getElementById('admin-preview-pages-num');
+    const valBadge = document.getElementById('admin-preview-val');
+
+    if (displayEl) displayEl.textContent = totalPages;
+    if (hiddenInput) hiddenInput.value = totalPages;
+
+    if (slider) {
+      slider.max = totalPages;
+      if (Number(slider.value) > totalPages) {
+        slider.value = Math.min(3, totalPages);
+      }
+    }
+    if (numInput) {
+      numInput.max = totalPages;
+      if (Number(numInput.value) > totalPages) {
+        numInput.value = Math.min(3, totalPages);
+      }
+    }
+    if (valBadge && slider) {
+      valBadge.textContent = slider.value;
+    }
   }
 
   handleScriptFileUpload(e) {
@@ -67,7 +132,9 @@ class AdminService {
       if (scriptTextarea) {
         scriptTextarea.value = text;
       }
-      window.app.showToast(`Скрипт "${file.name}" успешно прочитан`, 'success');
+      this.updatePagesFromScript(text);
+      const pages = this.calculateTotalPagesFromScript(text);
+      window.app.showToast(`Скрипт "${file.name}" загружен! Определено страниц: ${pages}`, 'success');
     };
     reader.readAsText(file);
   }
@@ -96,18 +163,33 @@ class AdminService {
     document.getElementById('admin-work-title-en').value = titleEn;
     document.getElementById('admin-work-author').value = work.author || '';
     document.getElementById('admin-work-price').value = work.price;
-    document.getElementById('admin-work-total-pages').value = work.totalPages;
-    document.getElementById('admin-preview-pages-slider').value = work.previewPagesCount;
-    document.getElementById('admin-preview-pages-num').value = work.previewPagesCount;
-    if (document.getElementById('admin-preview-val')) {
-      document.getElementById('admin-preview-val').textContent = work.previewPagesCount;
-    }
     document.getElementById('admin-work-tags').value = (work.tags || []).join(', ');
     document.getElementById('admin-work-desc-ru').value = descRu;
     document.getElementById('admin-work-desc-en').value = descEn;
     document.getElementById('admin-script-text').value = work.sampleScriptText || '';
 
-    // Переключение внешнего вида формы
+    // Автоматический пересчет страниц
+    const totalPages = work.totalPages || this.calculateTotalPagesFromScript(work.sampleScriptText);
+    const displayEl = document.getElementById('admin-total-pages-display');
+    const hiddenInput = document.getElementById('admin-work-total-pages');
+    const slider = document.getElementById('admin-preview-pages-slider');
+    const numInput = document.getElementById('admin-preview-pages-num');
+    const valBadge = document.getElementById('admin-preview-val');
+
+    if (displayEl) displayEl.textContent = totalPages;
+    if (hiddenInput) hiddenInput.value = totalPages;
+
+    if (slider) {
+      slider.max = totalPages;
+      slider.value = Math.min(work.previewPagesCount || 3, totalPages);
+    }
+    if (numInput) {
+      numInput.max = totalPages;
+      numInput.value = Math.min(work.previewPagesCount || 3, totalPages);
+    }
+    if (valBadge && slider) valBadge.textContent = slider.value;
+
+    // Переключение визуального состояния формы
     if (formTitle) formTitle.textContent = `✏️ Редактирование работы: ${titleRu || titleEn}`;
     if (submitBtn) submitBtn.textContent = '💾 Сохранить изменения работы';
     if (cancelBtn) cancelBtn.style.display = 'inline-flex';
@@ -116,7 +198,7 @@ class AdminService {
       formCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
 
-    window.app.showToast(`Режим редактирования: "${titleRu || titleEn}"`, 'info');
+    window.app.showToast(`Редактирование: "${titleRu || titleEn}"`, 'info');
   }
 
   cancelEdit() {
@@ -125,11 +207,18 @@ class AdminService {
     const form = document.getElementById('admin-add-work-form');
     if (form) form.reset();
 
-    document.getElementById('admin-preview-pages-slider').value = 3;
-    document.getElementById('admin-preview-pages-num').value = 3;
-    if (document.getElementById('admin-preview-val')) {
-      document.getElementById('admin-preview-val').textContent = 3;
-    }
+    const displayEl = document.getElementById('admin-total-pages-display');
+    const hiddenInput = document.getElementById('admin-work-total-pages');
+    if (displayEl) displayEl.textContent = '4';
+    if (hiddenInput) hiddenInput.value = 4;
+
+    const slider = document.getElementById('admin-preview-pages-slider');
+    const numInput = document.getElementById('admin-preview-pages-num');
+    const valBadge = document.getElementById('admin-preview-val');
+
+    if (slider) { slider.max = 15; slider.value = 3; }
+    if (numInput) { numInput.max = 15; numInput.value = 3; }
+    if (valBadge) valBadge.textContent = 3;
 
     const formCard = document.getElementById('admin-work-form-card');
     const formTitle = document.getElementById('admin-form-card-title');
@@ -149,8 +238,6 @@ class AdminService {
     const titleEn = document.getElementById('admin-work-title-en').value.trim();
     const author = document.getElementById('admin-work-author').value.trim();
     const price = Number(document.getElementById('admin-work-price').value) || 1;
-    const totalPages = Number(document.getElementById('admin-work-total-pages').value) || 10;
-    const previewPagesCount = Number(document.getElementById('admin-preview-pages-num').value) || 3;
     const descRu = document.getElementById('admin-work-desc-ru').value.trim();
     const descEn = document.getElementById('admin-work-desc-en').value.trim();
     const tagsRaw = document.getElementById('admin-work-tags').value.trim();
@@ -161,6 +248,9 @@ class AdminService {
       return;
     }
 
+    // Вычисляем число страниц непосредственно из скрипта
+    const totalPages = this.calculateTotalPagesFromScript(sampleScriptText);
+    const previewPagesCount = Number(document.getElementById('admin-preview-pages-num').value) || 3;
     const tags = tagsRaw ? tagsRaw.split(',').map(t => t.trim()).filter(Boolean) : ['Перевод'];
 
     const payload = {
@@ -183,12 +273,12 @@ class AdminService {
     if (this.editingWorkId) {
       // Обновление существующей работы
       const updated = this.store.updateWork(this.editingWorkId, payload);
-      window.app.showToast(`Изменения в работе "${payload.title.ru}" сохранены!`, 'success');
+      window.app.showToast(`Изменения в работе "${payload.title.ru}" надежно сохранены!`, 'success');
       this.cancelEdit();
     } else {
       // Добавление новой работы
       const newWork = this.store.addWork(payload);
-      window.app.showToast(`Работа "${newWork.title.ru}" успешно зарегистрирована!`, 'success');
+      window.app.showToast(`Работа "${newWork.title.ru}" успешно зарегистрирована! (страниц: ${totalPages})`, 'success');
       this.cancelEdit();
     }
 
