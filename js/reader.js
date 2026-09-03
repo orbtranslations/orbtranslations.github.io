@@ -54,6 +54,73 @@ class ReaderService {
   }
 
   /**
+   * Нормализация кода языка для сопоставления настроек оверлеев и рамок
+   */
+  getNormalizedLangCodes(lang) {
+    if (!lang) return ['RUS', 'Русский'];
+    const l = String(lang).trim();
+    const lLower = l.toLowerCase();
+    const codes = [l];
+    if (lLower.startsWith('ru') || lLower === 'русский' || lLower === 'рус') {
+      codes.push('RUS', 'RU', 'Русский');
+    } else if (lLower.startsWith('en') || lLower === 'english' || lLower === 'eng') {
+      codes.push('ENG', 'EN', 'English');
+    }
+    return [...new Set(codes)];
+  }
+
+  /**
+   * Поиск настроек рамки или наложенной графики для страницы с учетом выбранного языка
+   */
+  getFrameForPage(page, lang) {
+    const overlayData = (this.parsedScript && this.parsedScript.overlayData) || {};
+    const frames = overlayData.frames || {};
+    if (!page) return null;
+
+    const cleanBase = (page.key || '').split(/[\/\\]/).pop().replace(/\.[^/.]+$/, '');
+    const cleanTarget = (page.targetKey || '').split(/[\/\\]/).pop().replace(/\.[^/.]+$/, '');
+    const candidateKeys = [page.key, cleanBase, page.targetKey, cleanTarget, `Image/${cleanBase}`, `Image/${cleanTarget}`].filter(Boolean);
+    const langCodes = this.getNormalizedLangCodes(lang);
+
+    // 1. Поиск по ключам с точным суффиксом языка (__lang_RUS, __lang_ENG)
+    for (const key of candidateKeys) {
+      for (const code of langCodes) {
+        const langKey = `${key}__lang_${code}`;
+        if (frames[langKey] && (frames[langKey].image || frames[langKey].customImage)) {
+          return frames[langKey];
+        }
+      }
+    }
+
+    // 2. Поиск по нечувствительному к регистру суффиксу __lang_
+    for (const fKey of Object.keys(frames)) {
+      for (const key of candidateKeys) {
+        if (fKey.toLowerCase().startsWith(`${key.toLowerCase()}__lang_`)) {
+          for (const code of langCodes) {
+            if (fKey.toLowerCase().endsWith(`__lang_${code.toLowerCase()}`)) {
+              return frames[fKey];
+            }
+          }
+        }
+      }
+    }
+
+    // 3. Базовый поиск без языкового суффикса (например для "01_ChichibuHasami")
+    for (const key of candidateKeys) {
+      const baseFrame = frames[key];
+      if (baseFrame && (baseFrame.image || baseFrame.customImage)) {
+        if (baseFrame.lang && baseFrame.lang !== 'all') {
+          const matches = langCodes.some(c => c.toLowerCase() === baseFrame.lang.toLowerCase());
+          if (!matches) continue;
+        }
+        return baseFrame;
+      }
+    }
+
+    return null;
+  }
+
+  /**
    * Открытие бесплатного превью работы
    */
   openPreview(workId) {
@@ -128,7 +195,19 @@ class ReaderService {
     }
 
     const zip = new JSZip();
-    const loadedZip = await zip.loadAsync(file);
+    const loadedZip = await zip.loadAsync(file, {
+      decodeFileName: (bytes) => {
+        try {
+          return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+        } catch (e) {
+          try {
+            return new TextDecoder('shift-jis').decode(bytes);
+          } catch (e2) {
+            return new TextDecoder('windows-1251').decode(bytes);
+          }
+        }
+      }
+    });
     const imageExtensions = ['.png', '.jpg', '.jpeg', '.webp', '.bmp'];
 
     // Разрешенные папки из скрипта (например: ["image", "キャラ紹介"])
@@ -241,12 +320,13 @@ class ReaderService {
    */
   registerFileInMap(fileDesc) {
     const norm = fileDesc.path.replace(/\\/g, '/').toLowerCase();
-    const base = fileDesc.name.replace(/\.[^/.]+$/, '').toLowerCase();
-    const baseWithExt = fileDesc.name.toLowerCase();
+    const pureName = fileDesc.name.split(/[\/\\]/).pop();
+    const pureBase = pureName.replace(/\.[^/.]+$/, '').toLowerCase();
+    const pureBaseWithExt = pureName.toLowerCase();
 
     this.fileMap.set(norm, fileDesc);
-    this.fileMap.set(base, fileDesc);
-    this.fileMap.set(baseWithExt, fileDesc);
+    this.fileMap.set(pureBase, fileDesc);
+    this.fileMap.set(pureBaseWithExt, fileDesc);
 
     const parts = norm.split('/');
     if (parts.length >= 2) {
@@ -263,7 +343,7 @@ class ReaderService {
     if (!targetKey) return null;
     const cleanTarget = targetKey.replace(/\\/g, '/').trim();
     const cleanTargetLower = cleanTarget.toLowerCase();
-    const baseTarget = cleanTarget.split('/').pop().replace(/\.[^/.]+$/, '').toLowerCase();
+    const baseTarget = cleanTarget.split(/[\/\\]/).pop().replace(/\.[^/.]+$/, '').toLowerCase();
     const subLower = (subfolder || '').replace(/\\/g, '/').toLowerCase().trim();
 
     // 1. Точное совпадение с subfolder/target
@@ -277,14 +357,14 @@ class ReaderService {
       }
     }
 
-    // 2. Прямое совпадение targetKey
+    // 2. Прямое совпадение targetKey или baseTarget
     if (this.fileMap.has(cleanTargetLower)) return this.fileMap.get(cleanTargetLower);
     if (this.fileMap.has(baseTarget)) return this.fileMap.get(baseTarget);
 
-    // 3. Поиск по базовому имени файла
+    // 3. Поиск по чистому имени файла
     for (const [k, v] of this.fileMap.entries()) {
-      const kBase = k.split('/').pop().replace(/\.[^/.]+$/, '');
-      if (kBase === baseTarget) return v;
+      const kPure = k.split(/[\/\\]/).pop().replace(/\.[^/.]+$/, '');
+      if (kPure === baseTarget) return v;
     }
 
     return null;
@@ -316,11 +396,21 @@ class ReaderService {
 
     let entries = [];
     if (this.parsedScript && this.parsedScript.entries) {
-      entries = this.parsedScript.entries[this.currentLang]
-        || this.parsedScript.entries['RUS']
-        || this.parsedScript.entries['ENG']
-        || Object.values(this.parsedScript.entries)[0]
-        || [];
+      const normCodes = this.getNormalizedLangCodes(this.currentLang);
+      for (const code of normCodes) {
+        if (this.parsedScript.entries[code] && this.parsedScript.entries[code].length > 0) {
+          entries = this.parsedScript.entries[code];
+          break;
+        }
+      }
+      if (entries.length === 0) {
+        entries = this.parsedScript.entries['RUS']
+          || this.parsedScript.entries['Русский']
+          || this.parsedScript.entries['ENG']
+          || this.parsedScript.entries['English']
+          || Object.values(this.parsedScript.entries)[0]
+          || [];
+      }
     }
 
     if (entries.length === 0) {
@@ -599,6 +689,22 @@ class ReaderService {
       counter.textContent = `${this.currentIndex + 1} / ${this.pages.length}`;
     }
 
+    // Обновление счетчика реплик диалога в нижней панели управления (ниже окна диалога)
+    const dialogStepCounter = document.getElementById('reader-dialog-step-counter');
+    if (dialogStepCounter) {
+      const curPage = this.pages[this.currentIndex];
+      const blocks = (curPage && !curPage.isLocked && curPage.entry && curPage.entry.text)
+        ? ScriptParser.getBlocks(curPage.entry.text)
+        : [];
+      if (blocks.length > 1) {
+        const safeIdx = Math.max(0, Math.min(this.currentDialogBlockIndex, blocks.length - 1));
+        dialogStepCounter.textContent = `${safeIdx + 1} / ${blocks.length} ▾`;
+        dialogStepCounter.style.display = 'inline-flex';
+      } else {
+        dialogStepCounter.style.display = 'none';
+      }
+    }
+
     // Левая страница
     const leftPage = this.pages[this.currentIndex];
     this.renderPageToStage(stageLeft, leftPage, this.currentDialogBlockIndex);
@@ -699,61 +805,124 @@ class ReaderService {
     const imagesData = overlayData.images || {};
 
     const cleanBase = (page.key || '').split(/[\/\\]/).pop().replace(/\.[^/.]+$/, '');
-    const fData = frames[page.key] || frames[cleanBase] || frames[`Image/${cleanBase}`] || frames[page.targetKey];
+    const fData = this.getFrameForPage(page, this.currentLang);
 
     const rawText = (page.entry && page.entry.text) || '';
     const blocks = ScriptParser.getBlocks(rawText);
 
     // =========================================================================
-    // 1. Внутренняя рамка персонажа (Clean Frame, например Рамка 5 на карточках)
+    // 1. Графический оверлей (Title) или Внутренняя рамка персонажа (Clean Frame)
     // =========================================================================
-    if (fData && fData.image) {
+    if (fData && (fData.customImage || fData.image)) {
       const frameImg = document.createElement('img');
       frameImg.className = 'clean-frame-img';
-      frameImg.src = this.getBorderUrl(fData.image);
+
+      if (fData.customImage) {
+        frameImg.src = fData.customImage;
+      } else if (fData.image) {
+        const imgStr = String(fData.image).toLowerCase();
+        if (imgStr.includes('рамка') || imgStr.includes('border') || imgStr.includes('frame')) {
+          frameImg.src = this.getBorderUrl(fData.image);
+        } else {
+          frameImg.src = fData.image;
+        }
+      }
 
       const posX = fData.x !== undefined ? fData.x : 50;
-      const posY = fData.y !== undefined ? fData.y : -0.4;
+      const posY = fData.y !== undefined ? fData.y : 0;
       const scale = (fData.scale !== undefined ? fData.scale : 100) / 100;
       const opacity = (fData.opacity !== undefined ? fData.opacity : 100) / 100;
 
-      // Ширина рамки относительно сцены (32% по умолчанию для Рамки 5)
-      const widthPercent = (32 * scale).toFixed(1);
-
       frameImg.style.left = `${posX}%`;
       frameImg.style.top = `${posY}%`;
-      frameImg.style.width = `${widthPercent}%`;
-      frameImg.style.height = '100%';
       frameImg.style.opacity = opacity;
-      sceneStage.appendChild(frameImg);
 
-      // Слот текста внутри чистой рамки персонажа
-      const tz = fData.textZone || { x: 5.2, y: 3.6, w: 89.9, h: 93 };
-      const textSlot = document.createElement('div');
-      textSlot.className = 'clean-frame-text-slot';
-      textSlot.style.left = `${posX + (tz.x / 100) * parseFloat(widthPercent)}%`;
-      textSlot.style.top = `${posY + (tz.y / 100) * 100}%`;
-      textSlot.style.width = `${(tz.w / 100) * parseFloat(widthPercent)}%`;
-      textSlot.style.height = `${(tz.h / 100) * 100}%`;
+      const isTitleOrGraphic = !fData.textZone && fData.customImage;
+      frameImg.style.objectFit = isTitleOrGraphic ? 'contain' : 'fill';
 
-      const content = document.createElement('div');
-      content.className = 'clean-frame-text-content';
+      let textSlot = null;
+      let textContent = null;
 
-      // Форматируем текст описания персонажа
-      const joinedTexts = blocks.map(b => ScriptParser.stripComments(b)).filter(Boolean).join('\n\n');
-      content.textContent = joinedTexts;
+      // Слот текста создается ТОЛЬКО если задана textZone (для рамок карточек персонажей)
+      if (fData.textZone && blocks.length > 0) {
+        textSlot = document.createElement('div');
+        textSlot.className = 'clean-frame-text-slot';
 
-      const firstPreset = presets.find(p => p.name === '_style_1' || p.name.startsWith('_style')) || presets[0] || {};
-      content.style.color = firstPreset.color || '#ffffff';
-      content.style.fontSize = firstPreset.fontSize ? `${Math.max(14, firstPreset.fontSize * 0.75)}px` : '16px';
-      content.style.fontFamily = firstPreset.fontFamily || 'Arial, sans-serif';
-      content.style.textAlign = firstPreset.textAlign || 'center';
-      if (firstPreset.strokeWidth > 0) {
-        content.style.textShadow = `-${firstPreset.strokeWidth}px -${firstPreset.strokeWidth}px 0 ${firstPreset.strokeColor || '#000'}, ${firstPreset.strokeWidth}px ${firstPreset.strokeWidth}px 0 ${firstPreset.strokeColor || '#000'}`;
+        textContent = document.createElement('div');
+        textContent.className = 'clean-frame-text-content';
+
+        const joinedTexts = blocks.map(b => ScriptParser.stripComments(b)).filter(Boolean).join('\n\n');
+        textContent.textContent = joinedTexts;
+
+        const firstPreset = presets.find(p => p.name === '_style_1' || p.name.startsWith('_style')) || presets[0] || {};
+        textContent.style.color = firstPreset.color || '#ffffff';
+        textContent.style.fontFamily = firstPreset.fontFamily || 'Arial, sans-serif';
+        textContent.style.textAlign = firstPreset.textAlign || 'center';
+        textContent.style.lineHeight = firstPreset.lineHeight || 1.35;
+        if (firstPreset.fontWeight === 'bold') textContent.style.fontWeight = 'bold';
+
+        if (firstPreset.strokeWidth > 0) {
+          textContent.style.webkitTextStroke = `${firstPreset.strokeWidth}px ${firstPreset.strokeColor || '#000000'}`;
+          textContent.style.textShadow = `-${firstPreset.strokeWidth}px -${firstPreset.strokeWidth}px 0 ${firstPreset.strokeColor || '#000'}, ${firstPreset.strokeWidth}px ${firstPreset.strokeWidth}px 0 ${firstPreset.strokeColor || '#000'}`;
+        }
+
+        textSlot.appendChild(textContent);
       }
 
-      textSlot.appendChild(content);
-      sceneStage.appendChild(textSlot);
+      // Функция динамического расчета геометрии рамки и адаптивного шрифта
+      const updateFrameLayout = () => {
+        const curSceneW = baseImg.naturalWidth || 640;
+        const curSceneH = baseImg.naturalHeight || 480;
+
+        let widthPercent = 50.4 * scale;
+        let heightPercent = 100;
+
+        if (fData._frameNatW && curSceneW > 0) {
+          widthPercent = ((fData._frameNatW * scale) / curSceneW) * 100;
+        } else if (fData.customImage && isTitleOrGraphic) {
+          widthPercent = 100 * scale;
+        } else {
+          widthPercent = 50.4 * scale;
+        }
+
+        if (fData._frameNatH && curSceneH > 0) {
+          heightPercent = ((fData._frameNatH * scale) / curSceneH) * 100;
+        } else if (isTitleOrGraphic) {
+          heightPercent = 100;
+        }
+
+        frameImg.style.width = `${widthPercent}%`;
+        frameImg.style.height = isTitleOrGraphic ? 'auto' : `${heightPercent}%`;
+
+        if (textSlot && fData.textZone) {
+          const tz = fData.textZone;
+          textSlot.style.left = `${posX + (tz.x / 100) * widthPercent}%`;
+          textSlot.style.top = `${posY + (tz.y / 100) * heightPercent}%`;
+          textSlot.style.width = `${(tz.w / 100) * widthPercent}%`;
+          textSlot.style.height = `${(tz.h / 100) * heightPercent}%`;
+
+          // Масштабирование шрифта под реальное разрешение сцены (текст карточек гарантированно помещается без скролла)
+          const scaleRatio = curSceneW / 1000;
+          const firstPreset = presets.find(p => p.name === '_style_1' || p.name.startsWith('_style')) || presets[0] || {};
+          const baseFontSize = firstPreset.fontSize || 22;
+          const effectiveFontSize = Math.max(12, Math.round(baseFontSize * scaleRatio));
+          if (textContent) {
+            textContent.style.fontSize = `${effectiveFontSize}px`;
+          }
+        }
+      };
+
+      if (baseImg.complete && baseImg.naturalWidth > 0) {
+        updateFrameLayout();
+      } else {
+        baseImg.addEventListener('load', updateFrameLayout);
+        updateFrameLayout();
+      }
+
+      sceneStage.appendChild(frameImg);
+      if (textSlot) {
+        sceneStage.appendChild(textSlot);
+      }
     } 
     // =========================================================================
     // 2. Нижняя диалоговая рамка Visual Novel (Рамка 1 .. Рамка 4)
@@ -836,21 +1005,21 @@ class ReaderService {
       frameBorderImg.src = this.getBorderUrl(borderIdx);
       frameWrapper.appendChild(frameBorderImg);
 
-      // Текстовый слот диалога
+      // Текстовый слот диалога с безопасным отступом от фаски рамки
       const textSlot = document.createElement('div');
       textSlot.className = 'dialog-text-slot';
       if (borderIdx === 0) {
-        textSlot.style.left = '18.5%'; textSlot.style.top = '5.0%'; textSlot.style.width = '79.5%'; textSlot.style.height = '84.0%';
+        textSlot.style.left = '19.2%'; textSlot.style.top = '5.0%'; textSlot.style.width = '78.5%'; textSlot.style.height = '85.0%';
       } else {
-        textSlot.style.left = '1.8%'; textSlot.style.top = '5.0%'; textSlot.style.width = '96.4%'; textSlot.style.height = '85.0%';
+        textSlot.style.left = '2.0%'; textSlot.style.top = '5.0%'; textSlot.style.width = '96.0%'; textSlot.style.height = '85.0%';
       }
 
       const textContent = document.createElement('div');
       textContent.className = 'dialog-text-content';
 
-      // Выделение имени говорящего жирным шрифтом в начале реплики
+      // Выделение имени говорящего с четкой контрастной обводкой и отступом
       if (charName) {
-        textContent.innerHTML = `<span style="color: var(--accent-gold); font-weight: 700; margin-right: 6px;">${charName}:</span> ${speechText}`;
+        textContent.innerHTML = `<span class="dialog-char-name">${charName}:</span> ${speechText}`;
       } else {
         textContent.textContent = speechText;
       }
@@ -867,14 +1036,6 @@ class ReaderService {
 
       textSlot.appendChild(textContent);
       frameWrapper.appendChild(textSlot);
-
-      // Индикатор многостраничного диалога [1/5 ▾]
-      if (blocks.length > 1) {
-        const indicator = document.createElement('div');
-        indicator.className = 'dialog-step-indicator';
-        indicator.textContent = `${safeBlockIdx + 1} / ${blocks.length} ▾`;
-        frameWrapper.appendChild(indicator);
-      }
 
       domBox.appendChild(frameWrapper);
     }

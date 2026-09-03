@@ -348,6 +348,7 @@
         <button class="reader-nav-btn" onclick="window.reader.prevPage()" title="Предыдущая страница (←)">◀</button>
         <input type="range" class="reader-slider" id="reader-slider" min="0" max="1" value="0" oninput="window.reader.goToPage(Number(this.value))">
         <span class="reader-counter" id="reader-counter">1 / 1</span>
+        <button class="reader-dialog-step-counter" id="reader-dialog-step-counter" onclick="window.reader.nextPage()" title="Следующая реплика диалога (Клик / Пробел)" style="display: none;">1 / 1 ▾</button>
         <button class="reader-nav-btn" onclick="window.reader.nextPage()" title="Следующая страница (→)">▶</button>
       </div>
     </div>
