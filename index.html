@@ -330,16 +330,16 @@
       </div>
       <div class="reader-header-right">
         <button class="btn btn-secondary btn-small" id="reader-spread-btn" onclick="window.reader.toggleSpread()">
-          📄 1 страница
+          📖 1 экран
         </button>
       </div>
     </header>
 
     <div class="reader-stage-container" id="reader-stage-container">
-      <div class="reader-spread-layout">
+      <div class="reader-spread-layout single-view">
         <!-- Левая страница -->
         <div class="reader-stage-slot" id="reader-stage-left"></div>
-        <!-- Правая страница (для режима 2-х разворотов) -->
+        <!-- Правая страница (для режима 2-х экранов) -->
         <div class="reader-stage-slot" id="reader-stage-right" style="display: none;"></div>
       </div>
 
@@ -350,6 +350,20 @@
         <span class="reader-counter" id="reader-counter">1 / 1</span>
         <button class="reader-dialog-step-counter" id="reader-dialog-step-counter" onclick="window.reader.nextPage()" title="Следующая реплика диалога (Клик / Пробел)" style="display: none;">1 / 1 ▾</button>
         <button class="reader-nav-btn" onclick="window.reader.nextPage()" title="Следующая страница (→)">▶</button>
+
+        <div class="reader-bar-divider"></div>
+
+        <!-- Масштабирование изображения (Zoom) -->
+        <button class="reader-tool-btn" onclick="window.reader.zoomOut()" title="Уменьшить масштаб (Zoom Out)">🔍−</button>
+        <button class="reader-tool-btn" id="reader-zoom-reset-btn" onclick="window.reader.resetZoom()" title="Сбросить масштаб (100%)">100%</button>
+        <button class="reader-tool-btn" onclick="window.reader.zoomIn()" title="Увеличить масштаб (Zoom In / 2x)">🔍+</button>
+
+        <div class="reader-bar-divider"></div>
+
+        <!-- Переключение на 2 экрана -->
+        <button class="reader-tool-btn reader-tool-spread" id="reader-spread-bottom-btn" onclick="window.reader.toggleSpread()" title="Переключить 1 / 2 экрана">
+          📖 1 экран
+        </button>
       </div>
     </div>
   </div>

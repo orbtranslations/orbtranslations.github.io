@@ -31,6 +31,36 @@ class ReaderService {
     this.fileMap = new Map(); // нормализованные имена -> { zipEntry, file, name }
     this.activeBlobPages = []; // LRU кэш Blob URL
     this.portraitCache = new Map(); // name -> dataURL
+    this.zoomLevel = 1.0;
+    this.panX = 0;
+    this.panY = 0;
+    this.isPanning = false;
+    this.panStartX = 0;
+    this.panStartY = 0;
+    this.didPan = false;
+    this._eventsSetup = false;
+  }
+
+  /**
+   * Определение приоритетного языка для читалки на основе текущего языка интерфейса сайта
+   */
+  getPriorityLanguage(availableLangs) {
+    if (!availableLangs || availableLangs.length === 0) return 'Русский';
+    const siteLang = (window.i18n && window.i18n.getLang()) ? window.i18n.getLang().toLowerCase() : 'ru';
+    if (siteLang.startsWith('ru')) {
+      const match = availableLangs.find(l => {
+        const lower = l.toLowerCase();
+        return lower === 'rus' || lower === 'ru' || lower.includes('рус');
+      });
+      if (match) return match;
+    } else if (siteLang.startsWith('en')) {
+      const match = availableLangs.find(l => {
+        const lower = l.toLowerCase();
+        return lower === 'eng' || lower === 'en' || lower.includes('eng');
+      });
+      if (match) return match;
+    }
+    return availableLangs[0];
   }
 
   /**
@@ -131,6 +161,11 @@ class ReaderService {
     this.isFullMode = false;
     this.parseWorkScript(work);
 
+    const availableLangs = (this.parsedScript && this.parsedScript.languages && this.parsedScript.languages.length > 0)
+      ? this.parsedScript.languages
+      : (work.availableLanguages || ['Русский', 'English']);
+    this.currentLang = this.getPriorityLanguage(availableLangs);
+
     if (this.workArchives[workId]) {
       this.rebuildPagesFromScript();
       this.currentIndex = 0;
@@ -151,6 +186,11 @@ class ReaderService {
     this.currentWork = work;
     this.isFullMode = true;
     this.parseWorkScript(work);
+
+    const availableLangs = (this.parsedScript && this.parsedScript.languages && this.parsedScript.languages.length > 0)
+      ? this.parsedScript.languages
+      : (work.availableLanguages || ['Русский', 'English']);
+    this.currentLang = this.getPriorityLanguage(availableLangs);
 
     if (this.workArchives[workId]) {
       this.rebuildPagesFromScript();
@@ -378,13 +418,12 @@ class ReaderService {
       ? this.parsedScript.languages
       : (this.currentWork ? this.currentWork.availableLanguages : ['Русский', 'English']);
 
-    window.app.showLanguageSelectModal(availableLangs, (selectedLang) => {
-      this.currentLang = selectedLang;
-      this.rebuildPagesFromScript();
-      this.currentIndex = 0;
-      this.currentDialogBlockIndex = 0;
-      this.renderReaderUI();
-    });
+    // При открытии читалки приоритетным является язык интерфейса сайта
+    this.currentLang = this.getPriorityLanguage(availableLangs);
+    this.rebuildPagesFromScript();
+    this.currentIndex = 0;
+    this.currentDialogBlockIndex = 0;
+    this.renderReaderUI();
   }
 
   /**
@@ -577,7 +616,141 @@ class ReaderService {
 
   toggleSpread() {
     this.isTwoPageSpread = !this.isTwoPageSpread;
+    if (this.isTwoPageSpread) {
+      this.resetZoom();
+    }
     this.updateReaderDisplay();
+  }
+
+  /**
+   * Увеличение масштаба сцены (Zoom In)
+   */
+  zoomIn() {
+    if (this.isTwoPageSpread) return;
+    this.zoomLevel = Math.min(3.0, +(this.zoomLevel + 0.25).toFixed(2));
+    this.applyStageTransform();
+  }
+
+  /**
+   * Уменьшение масштаба сцены (Zoom Out)
+   */
+  zoomOut() {
+    if (this.isTwoPageSpread) return;
+    this.zoomLevel = Math.max(0.5, +(this.zoomLevel - 0.25).toFixed(2));
+    if (this.zoomLevel <= 1.0) {
+      this.panX = 0;
+      this.panY = 0;
+    }
+    this.applyStageTransform();
+  }
+
+  /**
+   * Сброс масштаба до 100% (1x)
+   */
+  resetZoom() {
+    this.zoomLevel = 1.0;
+    this.panX = 0;
+    this.panY = 0;
+    this.applyStageTransform();
+  }
+
+  /**
+   * Переключение масштаба 2x / 1x (по двойному клику)
+   */
+  toggleZoom() {
+    if (this.isTwoPageSpread) return;
+    if (this.zoomLevel > 1.0) {
+      this.resetZoom();
+    } else {
+      this.zoomLevel = 2.0;
+      this.panX = 0;
+      this.panY = 0;
+      this.applyStageTransform();
+    }
+  }
+
+  /**
+   * Применение трансформации зума и панорамирования
+   */
+  applyStageTransform() {
+    const stage = document.querySelector('.reader-spread-layout');
+    const resetBtn = document.getElementById('reader-zoom-reset-btn');
+    if (resetBtn) {
+      resetBtn.textContent = `${Math.round(this.zoomLevel * 100)}%`;
+    }
+    if (!stage) return;
+    if (this.zoomLevel !== 1.0 || this.panX !== 0 || this.panY !== 0) {
+      stage.style.transform = `scale(${this.zoomLevel}) translate(${this.panX / this.zoomLevel}px, ${this.panY / this.zoomLevel}px)`;
+      stage.classList.add('zoomed');
+    } else {
+      stage.style.transform = 'none';
+      stage.classList.remove('zoomed', 'panning');
+    }
+  }
+
+  /**
+   * Настройка обработчиков событий для сцены (скролл текста, двойной клик зума, панорамирование)
+   */
+  setupStageEvents() {
+    if (this._eventsSetup) return;
+    this._eventsSetup = true;
+
+    const container = document.getElementById('reader-stage-container');
+    if (!container) return;
+
+    // Скролл колесиком мыши по текстовому слою прокручивает текст вниз/вверх без смены страниц
+    container.addEventListener('wheel', (e) => {
+      const textSlot = e.target.closest('.clean-frame-text-slot, .dialog-text-slot');
+      if (textSlot) {
+        e.preventDefault();
+        textSlot.scrollTop += e.deltaY * 0.7;
+      }
+    }, { passive: false });
+
+    // Двойной клик переключает масштаб 2x / 1x (как в Overlaying text on graphics)
+    container.addEventListener('dblclick', (e) => {
+      if (e.target.closest('#reader-bottom-bar') || e.target.closest('.btn') || e.target.closest('select')) return;
+      this.toggleZoom();
+    });
+
+    // Перемещение панорамирования мышью при увеличенном масштабе
+    container.addEventListener('mousedown', (e) => {
+      if (e.target.closest('#reader-bottom-bar') || e.target.closest('.btn') || e.target.closest('select')) return;
+      if (e.button !== 0 || this.zoomLevel <= 1.0 || this.isTwoPageSpread) return;
+
+      e.preventDefault();
+      this.isPanning = true;
+      this.didPan = false;
+      this.panStartX = e.clientX - this.panX;
+      this.panStartY = e.clientY - this.panY;
+      const layout = document.querySelector('.reader-spread-layout');
+      if (layout) layout.classList.add('panning');
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (!this.isPanning || this.zoomLevel <= 1.0 || this.isTwoPageSpread) return;
+      e.preventDefault();
+      const currentPanX = e.clientX - this.panStartX;
+      const currentPanY = e.clientY - this.panStartY;
+
+      if (Math.abs(currentPanX - this.panX) > 4 || Math.abs(currentPanY - this.panY) > 4) {
+        this.didPan = true;
+      }
+
+      const maxPanX = window.innerWidth * 0.7;
+      const maxPanY = window.innerHeight * 0.7;
+      this.panX = Math.max(-maxPanX, Math.min(maxPanX, currentPanX));
+      this.panY = Math.max(-maxPanY, Math.min(maxPanY, currentPanY));
+      this.applyStageTransform();
+    });
+
+    window.addEventListener('mouseup', () => {
+      if (this.isPanning) {
+        this.isPanning = false;
+        const layout = document.querySelector('.reader-spread-layout');
+        if (layout) layout.classList.remove('panning');
+      }
+    });
   }
 
   /**
@@ -664,6 +837,7 @@ class ReaderService {
       langSelect.style.display = 'inline-block';
     }
 
+    this.setupStageEvents();
     this.updateReaderDisplay();
   }
 
@@ -671,13 +845,29 @@ class ReaderService {
     const stageLeft = document.getElementById('reader-stage-left');
     const stageRight = document.getElementById('reader-stage-right');
     const spreadBtn = document.getElementById('reader-spread-btn');
+    const spreadBottomBtn = document.getElementById('reader-spread-bottom-btn');
     const counter = document.getElementById('reader-counter');
     const slider = document.getElementById('reader-slider');
+    const resetBtn = document.getElementById('reader-zoom-reset-btn');
 
     if (!stageLeft || !stageRight) return;
 
+    const layout = document.querySelector('.reader-spread-layout');
+    if (layout) {
+      layout.classList.toggle('spread-view', this.isTwoPageSpread);
+      layout.classList.toggle('single-view', !this.isTwoPageSpread);
+    }
+
+    const spreadText = this.isTwoPageSpread ? '📖 2 экрана' : '📖 1 экран';
     if (spreadBtn) {
-      spreadBtn.textContent = this.isTwoPageSpread ? '📖 2 разворота' : '📄 1 страница';
+      spreadBtn.textContent = spreadText;
+    }
+    if (spreadBottomBtn) {
+      spreadBottomBtn.textContent = spreadText;
+    }
+
+    if (resetBtn) {
+      resetBtn.textContent = `${Math.round(this.zoomLevel * 100)}%`;
     }
 
     if (slider) {
@@ -709,7 +899,7 @@ class ReaderService {
     const leftPage = this.pages[this.currentIndex];
     this.renderPageToStage(stageLeft, leftPage, this.currentDialogBlockIndex);
 
-    // Правая страница (при 2-страничном режиме)
+    // Правая страница (при 2-экранном режиме)
     if (this.isTwoPageSpread && this.currentIndex + 1 < this.pages.length) {
       stageRight.style.display = 'flex';
       const rightPage = this.pages[this.currentIndex + 1];
@@ -1009,9 +1199,9 @@ class ReaderService {
       const textSlot = document.createElement('div');
       textSlot.className = 'dialog-text-slot';
       if (borderIdx === 0) {
-        textSlot.style.left = '19.2%'; textSlot.style.top = '5.0%'; textSlot.style.width = '78.5%'; textSlot.style.height = '85.0%';
+        textSlot.style.left = '21.5%'; textSlot.style.top = '7.5%'; textSlot.style.width = '75.5%'; textSlot.style.height = '81.0%';
       } else {
-        textSlot.style.left = '2.0%'; textSlot.style.top = '5.0%'; textSlot.style.width = '96.0%'; textSlot.style.height = '85.0%';
+        textSlot.style.left = '3.5%'; textSlot.style.top = '7.5%'; textSlot.style.width = '93.0%'; textSlot.style.height = '81.0%';
       }
 
       const textContent = document.createElement('div');
