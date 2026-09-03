@@ -32,18 +32,24 @@
       </a>
 
       <nav class="nav-links">
-        <a href="#storefront" class="nav-link active" data-tab="storefront">
+        <a href="#storefront" class="nav-link active" data-tab="storefront" data-i18n="nav_catalog">
           🛒 Каталог
         </a>
-        <a href="#purchases" class="nav-link" data-tab="purchases">
+        <a href="#purchases" class="nav-link" data-tab="purchases" data-i18n="nav_purchases">
           📚 Мои покупки
         </a>
-        <a href="#admin" class="nav-link" data-tab="admin" id="nav-admin-link" style="display: none;">
+        <a href="#admin" class="nav-link" data-tab="admin" id="nav-admin-link" data-i18n="nav_admin" style="display: none;">
           👑 Админ-панель
         </a>
       </nav>
 
       <div class="header-right">
+        <!-- Site Language Switcher (RU / EN) -->
+        <div class="lang-switch-group" title="Выбор языка интерфейса / Select site language">
+          <button class="lang-btn active" id="lang-btn-ru">🇷🇺 RU</button>
+          <button class="lang-btn" id="lang-btn-en">🇬🇧 EN</button>
+        </div>
+
         <!-- Role Switcher for Prototype Testing -->
         <div id="role-switcher-container"></div>
 
@@ -70,23 +76,26 @@
       <!-- Hero Banner -->
       <div class="hero-banner">
         <div class="hero-content">
-          <div class="hero-badge">💎 Платформа коммерческих переводов нового поколения</div>
-          <h1 class="hero-title">Читайте любимые новеллы на <span>родном языке</span></h1>
-          <p class="hero-desc">
-            Художественные переводы визуальных новелл и манги. Покупайте доступ за <strong>Орбы</strong> (1 Орб = 1 USDT) через безопасный HD-кошелек, открывайте бесплатные превью и читайте наложение текста прямо в браузере.
+          <div class="hero-badge" data-i18n="hero_badge">💎 Платформа коммерческих переводов нового поколения</div>
+          <h1 class="hero-title">
+            <span data-i18n="hero_title_1">Читайте любимые новеллы на </span>
+            <span data-i18n="hero_title_accent">родном языке</span>
+          </h1>
+          <p class="hero-desc" data-i18n="hero_desc">
+            Художественные переводы визуальных новелл и манги. Покупайте доступ за Орбы (1 Орб = 1 USDT) через безопасный HD-кошелек, открывайте бесплатные превью и читайте наложение текста прямо в браузере.
           </p>
           <div class="hero-stats-row">
             <div class="hero-stat-item">
-              <span class="hero-stat-val">1 Орб = 1 USDT</span>
-              <span class="hero-stat-lbl">Курс валюты</span>
+              <span class="hero-stat-val" data-i18n="hero_stat_rate">1 Орб = 1 USDT</span>
+              <span class="hero-stat-lbl" data-i18n="hero_stat_rate_lbl">Курс валюты</span>
             </div>
             <div class="hero-stat-item">
-              <span class="hero-stat-val">xPub HD-Wallet</span>
-              <span class="hero-stat-lbl">Индивидуальный адрес заказа</span>
+              <span class="hero-stat-val" data-i18n="hero_stat_xpub">xPub HD-Wallet</span>
+              <span class="hero-stat-lbl" data-i18n="hero_stat_xpub_lbl">Индивидуальный адрес заказа</span>
             </div>
             <div class="hero-stat-item">
-              <span class="hero-stat-val">Клиентский движок</span>
-              <span class="hero-stat-lbl">Защита авторских прав</span>
+              <span class="hero-stat-val" data-i18n="hero_stat_engine">Клиентский движок</span>
+              <span class="hero-stat-lbl" data-i18n="hero_stat_engine_lbl">Защита авторских прав</span>
             </div>
           </div>
         </div>
@@ -95,8 +104,8 @@
       <!-- Section Header -->
       <div class="section-header-row">
         <div>
-          <h2 class="section-title">🔥 Доступные переводы</h2>
-          <p class="section-subtitle">Каждая работа содержит бесплатные страницы превью и адаптированный скрипт перевода</p>
+          <h2 class="section-title" data-i18n="section_catalog_title">🔥 Доступные переводы</h2>
+          <p class="section-subtitle" data-i18n="section_catalog_sub">Каждая работа содержит бесплатные страницы превью и адаптированный скрипт перевода</p>
         </div>
       </div>
 
@@ -110,8 +119,8 @@
     <section class="app-section" id="section-purchases" style="display: none;">
       <div class="section-header-row">
         <div>
-          <h2 class="section-title">📚 Мои приобретенные переводы</h2>
-          <p class="section-subtitle">Все купленные скрипты с неограниченным доступом к чтению</p>
+          <h2 class="section-title" data-i18n="section_purchases_title">📚 Мои приобретенные переводы</h2>
+          <p class="section-subtitle" data-i18n="section_purchases_sub">Все купленные скрипты с неограниченным доступом к чтению</p>
         </div>
       </div>
       <div class="works-grid" id="purchases-grid">
@@ -123,29 +132,31 @@
     <section class="app-section" id="section-admin" style="display: none;">
       <div class="section-header-row">
         <div>
-          <h2 class="section-title">👑 Панель администратора</h2>
-          <p class="section-subtitle">Управление каталогом работ, ценами в Орбах, страницами превью и xPub кошельком</p>
+          <h2 class="section-title" data-i18n="section_admin_title">👑 Панель администратора</h2>
+          <p class="section-subtitle" data-i18n="section_admin_sub">Управление каталогом работ, ценами в Орбах, страницами превью и xPub кошельком</p>
         </div>
       </div>
 
-      <!-- Add Work Card -->
-      <div class="modal-card" style="max-width: 100%; margin-bottom: 2rem; box-shadow: var(--shadow-sm);">
+      <!-- Add / Edit Work Card -->
+      <div class="modal-card" id="admin-work-form-card" style="max-width: 100%; margin-bottom: 2rem; box-shadow: var(--shadow-sm); transition: var(--transition);">
         <div class="modal-header">
-          <h3 class="modal-title">➕ Регистрация новой работы</h3>
+          <h3 class="modal-title" id="admin-form-card-title">➕ Регистрация новой работы</h3>
         </div>
         <div class="modal-body">
           <form id="admin-add-work-form">
+            <!-- Multilingual Titles (RU / EN) -->
             <div class="form-grid-2" style="margin-bottom: 1rem;">
               <div>
-                <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;">Название работы (русское) *</label>
-                <input type="text" id="admin-work-title" class="input-styled" required placeholder="Например: Хроники Забытого Клинка: Глава 2">
+                <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;">🇷🇺 Название работы (русское) *</label>
+                <input type="text" id="admin-work-title-ru" class="input-styled" required placeholder="Например: Хроники Забытого Клинка: Пролог">
               </div>
               <div>
-                <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;">Оригинальное название</label>
-                <input type="text" id="admin-work-orig-title" class="input-styled" placeholder="Chronicles of the Blade: Ch 2">
+                <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;">🇬🇧 Title (English) *</label>
+                <input type="text" id="admin-work-title-en" class="input-styled" required placeholder="Chronicles of the Forgotten Blade: Prologue">
               </div>
             </div>
 
+            <!-- Author & Price -->
             <div class="form-grid-2" style="margin-bottom: 1rem;">
               <div>
                 <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;">Автор перевода / Команда</label>
@@ -157,6 +168,7 @@
               </div>
             </div>
 
+            <!-- Total Pages & Preview Allowance -->
             <div class="form-grid-2" style="margin-bottom: 1rem;">
               <div>
                 <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;">Всего страниц в работе</label>
@@ -175,12 +187,19 @@
 
             <div style="margin-bottom: 1rem;">
               <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;">Теги / Жанры (через запятую)</label>
-              <input type="text" id="admin-work-tags" class="input-styled" placeholder="Фэнтези, Драма, Манга, 18+">
+              <input type="text" id="admin-work-tags" class="input-styled" placeholder="Фэнтези, Драма, Манга, Visual Novel">
             </div>
 
-            <div style="margin-bottom: 1rem;">
-              <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;">Описание работы</label>
-              <textarea id="admin-work-desc" class="textarea-styled" rows="3" placeholder="Краткое описание перевода и особенностей адаптации..."></textarea>
+            <!-- Multilingual Descriptions (RU / EN) -->
+            <div class="form-grid-2" style="margin-bottom: 1rem;">
+              <div>
+                <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;">🇷🇺 Описание работы (русское)</label>
+                <textarea id="admin-work-desc-ru" class="textarea-styled" rows="3" placeholder="Краткое описание сюжета и перевода на русском..."></textarea>
+              </div>
+              <div>
+                <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;">🇬🇧 Description (English)</label>
+                <textarea id="admin-work-desc-en" class="textarea-styled" rows="3" placeholder="Plot description and translation features in English..."></textarea>
+              </div>
             </div>
 
             <!-- Translation Script Upload -->
@@ -196,8 +215,11 @@
               <textarea id="admin-script-text" class="textarea-styled" rows="4" placeholder="Или вставьте текст скрипта перевода напрямую сюда..."></textarea>
             </div>
 
-            <div style="display: flex; justify-content: flex-end;">
-              <button type="submit" class="btn btn-accent btn-large">
+            <div style="display: flex; justify-content: flex-end; gap: 10px;">
+              <button type="button" class="btn btn-secondary" id="admin-cancel-edit-btn" style="display: none;">
+                ✕ Отмена редактирования
+              </button>
+              <button type="submit" class="btn btn-accent btn-large" id="admin-submit-work-btn">
                 ✨ Зарегистрировать работу на сайте
               </button>
             </div>
@@ -208,22 +230,22 @@
       <!-- Existing Works Table -->
       <div class="modal-card" style="max-width: 100%; margin-bottom: 2rem; box-shadow: var(--shadow-sm);">
         <div class="modal-header">
-          <h3 class="modal-title">📋 Зарегистрированные работы</h3>
+          <h3 class="modal-title" data-i18n="admin_table_title">📋 Зарегистрированные работы</h3>
         </div>
         <div class="modal-body" style="padding: 0; overflow-x: auto;">
           <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 0.9rem;">
             <thead>
               <tr style="border-bottom: 1px solid var(--border-color); background: rgba(255, 255, 255, 0.03); color: var(--text-muted);">
                 <th style="padding: 0.85rem 1rem;">ID</th>
-                <th style="padding: 0.85rem 1rem;">Название</th>
+                <th style="padding: 0.85rem 1rem;">Название (RU / EN)</th>
                 <th style="padding: 0.85rem 1rem;">Цена</th>
                 <th style="padding: 0.85rem 1rem;">Превью</th>
-                <th style="padding: 0.85rem 1rem;">Дата</th>
+                <th style="padding: 0.85rem 1rem;">Статус</th>
                 <th style="padding: 0.85rem 1rem;">Действия</th>
               </tr>
             </thead>
             <tbody id="admin-works-table-body">
-              <!-- Rendered dynamically -->
+              <!-- Rendered dynamically via admin.js -->
             </tbody>
           </table>
         </div>
@@ -232,7 +254,7 @@
       <!-- xPub Wallet Configuration Card -->
       <div class="modal-card" style="max-width: 100%; box-shadow: var(--shadow-sm);">
         <div class="modal-header">
-          <h3 class="modal-title">🔐 Настройки HD-кошелька (Master Public Key — xPub)</h3>
+          <h3 class="modal-title" data-i18n="admin_xpub_title">🔐 Настройки HD-кошелька (Master Public Key — xPub)</h3>
         </div>
         <div class="modal-body">
           <form id="admin-xpub-form">
@@ -272,10 +294,10 @@
        ======================================================================== -->
   <footer class="site-footer">
     <div class="footer-container">
-      <div class="footer-desc">
-        <strong>Orb Translations</strong> — децентрализованный коммерческий маркетплейс адаптаций и переводов визуальных новелл. Все права на оригинальные графические материалы принадлежат их законным правообладателям.
+      <div class="footer-desc" data-i18n="footer_desc">
+        Orb Translations — децентрализованный коммерческий маркетплейс адаптаций и переводов визуальных новелл. Все права на оригинальные графические материалы принадлежат их законным правообладателям.
       </div>
-      <div class="footer-right">
+      <div class="footer-right" data-i18n="footer_right">
         Powered by GitHub Pages & HD-Wallet xPub Architecture
       </div>
     </div>
@@ -327,21 +349,21 @@
   <div class="modal-backdrop" id="topup-modal">
     <div class="modal-card">
       <div class="modal-header">
-        <h3 class="modal-title">🪙 Пополнение баланса Орбов</h3>
+        <h3 class="modal-title" data-i18n="modal_topup_title">🪙 Пополнение баланса Орбов</h3>
         <button class="modal-close-btn">&times;</button>
       </div>
       <div class="modal-body">
-        <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1rem;">
+        <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1rem;" data-i18n="modal_topup_desc">
           1 Орб = 1 USDT. Оплата происходит прямым переводом на уникальный адрес вашего заказа, сгенерированный HD-кошельком (xPub).
         </p>
 
         <div class="form-grid-2" style="margin-bottom: 1rem;">
           <div>
-            <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;">Количество Орбов</label>
+            <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;" data-i18n="modal_topup_amount">Количество Орбов</label>
             <input type="number" id="topup-amount-input" class="input-styled" min="1" max="500" value="5" onchange="window.app.renderTopupInvoice()">
           </div>
           <div>
-            <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;">Сеть перевода USDT</label>
+            <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;" data-i18n="modal_topup_network">Сеть перевода USDT</label>
             <select id="topup-network-select" class="select-styled" onchange="window.app.renderTopupInvoice()">
               <option value="USDT (TRC-20)">USDT (TRC-20) — Tron</option>
               <option value="USDT (BEP-20)">USDT (BEP-20) — BSC</option>
@@ -354,11 +376,11 @@
         <div class="invoice-card">
           <div class="invoice-header-row">
             <div>
-              <span style="font-size: 0.8rem; color: var(--text-muted);">Заказ:</span>
+              <span style="font-size: 0.8rem; color: var(--text-muted);" data-i18n="modal_topup_order">Заказ:</span>
               <strong id="invoice-order-id" style="color: #fff; margin-left: 4px;">ORD-142</strong>
             </div>
             <div>
-              <span class="badge badge-gold">К оплате: <strong id="invoice-amount-usdt">5 USDT</strong></span>
+              <span class="badge badge-gold"><span data-i18n="modal_topup_to_pay">К оплате:</span> <strong id="invoice-amount-usdt">5 USDT</strong></span>
             </div>
           </div>
 
@@ -368,25 +390,27 @@
           </div>
 
           <div>
-            <label style="font-size: 0.75rem; color: var(--text-muted); display: block;">Адрес для перевода (<span id="invoice-network">TRC-20</span>):</label>
+            <label style="font-size: 0.75rem; color: var(--text-muted); display: block;">
+              <span data-i18n="modal_topup_address">Адрес для перевода</span> (<span id="invoice-network">TRC-20</span>):
+            </label>
             <div class="copy-input-row">
               <input type="text" id="invoice-address" class="copy-input" readonly value="T...">
-              <button class="btn btn-secondary btn-small" onclick="window.app.copyInvoiceAddress()" title="Скопировать адрес">📋 Копия</button>
+              <button class="btn btn-secondary btn-small" onclick="window.app.copyInvoiceAddress()" title="Скопировать адрес" data-i18n="modal_topup_copy">📋 Копия</button>
             </div>
           </div>
 
           <div style="margin-top: 0.75rem; font-size: 0.75rem; color: var(--text-muted); display: flex; justify-content: space-between;">
-            <span>Деривация: <code id="invoice-derivation-path" style="color: var(--accent-secondary);">m/44'/195'/0'/0/142</code></span>
-            <span>⏱️ Время на оплату: <strong>30:00</strong></span>
+            <span><span data-i18n="modal_topup_derivation">Деривация:</span> <code id="invoice-derivation-path" style="color: var(--accent-secondary);">m/44'/195'/0'/0/142</code></span>
+            <span><span data-i18n="modal_topup_time">⏱️ Время на оплату:</span> <strong>30:00</strong></span>
           </div>
         </div>
 
         <div style="margin-top: 1.25rem; display: flex; flex-direction: column; gap: 8px;">
           <!-- Simulation button for quick prototype verification -->
           <button class="btn btn-accent btn-large" style="width: 100%;" onclick="window.app.confirmPaymentTest()">
-            ⚡ Симуляция: Подтвердить получение средств (+<span id="invoice-amount-orbs">5 Орб</span>)
+            <span data-i18n="modal_topup_sim_btn">⚡ Симуляция: Подтвердить получение средств</span> (+<span id="invoice-amount-orbs">5 Орб</span>)
           </button>
-          <p style="text-align: center; font-size: 0.75rem; color: var(--text-muted);">
+          <p style="text-align: center; font-size: 0.75rem; color: var(--text-muted);" data-i18n="modal_topup_sim_hint">
             💡 <em>В прототипе кнопка выше эмулирует проверку блокчейна и моментально зачисляет средства на баланс.</em>
           </p>
         </div>
@@ -400,28 +424,28 @@
   <div class="modal-backdrop" id="archive-upload-modal">
     <div class="modal-card">
       <div class="modal-header">
-        <h3 class="modal-title">📖 Открытие перевода: <span id="archive-work-title" style="color: var(--accent-secondary);"></span></h3>
+        <h3 class="modal-title"><span data-i18n="modal_archive_title">📖 Открытие перевода:</span> <span id="archive-work-title" style="color: var(--accent-secondary);"></span></h3>
         <button class="modal-close-btn">&times;</button>
       </div>
       <div class="modal-body">
-        <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1.25rem; line-height: 1.5;">
+        <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1.25rem; line-height: 1.5;" data-i18n="modal_archive_desc">
           Вы приобрели доступ к скрипту перевода этой работы. Чтобы начать чтение, загрузите официальный архив (.zip) или папку с оригинальными изображениями. Читалка распакует их в браузере и наложит перевод.
         </p>
 
         <!-- Dropzone -->
         <div class="dropzone" id="archive-dropzone">
           <div class="dropzone-icon">📦</div>
-          <h4 style="margin-bottom: 0.5rem; font-size: 1.1rem;">Перетащите сюда ZIP-архив с изображениями</h4>
-          <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 1rem;">
+          <h4 style="margin-bottom: 0.5rem; font-size: 1.1rem;" data-i18n="modal_archive_drop">Перетащите сюда ZIP-архив с изображениями</h4>
+          <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 1rem;" data-i18n="modal_archive_sub">
             или нажмите для выбора файла на вашем компьютере (.zip, .cbz)
           </p>
-          <button type="button" class="btn btn-secondary btn-small">Выбрать файл архива</button>
+          <button type="button" class="btn btn-secondary btn-small" data-i18n="modal_archive_pick_btn">Выбрать файл архива</button>
           <input type="file" id="archive-file-input" accept=".zip,.cbz" style="display: none;">
         </div>
 
         <div style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between;">
-          <span style="font-size: 0.8rem; color: var(--text-muted);">Нет под рукой оригинального архива?</span>
-          <button class="btn btn-accent btn-small" onclick="window.app.useDemoArchive()">
+          <span style="font-size: 0.8rem; color: var(--text-muted);" data-i18n="modal_archive_no_file">Нет под рукой оригинального архива?</span>
+          <button class="btn btn-accent btn-small" onclick="window.app.useDemoArchive()" data-i18n="modal_archive_demo_btn">
             💡 Использовать демо-сцены
           </button>
         </div>
@@ -449,6 +473,7 @@
        Application JavaScript Modules
        ======================================================================== -->
   <script src="js/store.js"></script>
+  <script src="js/i18n.js"></script>
   <script src="js/script-parser.js"></script>
   <script src="js/auth.js"></script>
   <script src="js/crypto-pay.js"></script>

@@ -1,5 +1,6 @@
 /**
  * App — Главный контроллер интерфейса и навигации платформы
+ * Полная поддержка мультиязычности (RU / EN) и взаимодействия с i18n
  */
 class App {
   constructor() {
@@ -12,6 +13,9 @@ class App {
     this.renderUserHeader();
     this.renderStorefront();
     this.setupModals();
+
+    // Применение локализации интерфейса
+    if (window.i18n) window.i18n.applyTranslations();
 
     // Слушатель смены роли
     window.auth.onChange((role, user) => {
@@ -45,6 +49,20 @@ class App {
       topupBtn.addEventListener('click', () => this.showTopupModal());
     }
 
+    // Переключатели языка сайта (RU / EN)
+    const btnRu = document.getElementById('lang-btn-ru');
+    const btnEn = document.getElementById('lang-btn-en');
+    if (btnRu) {
+      btnRu.addEventListener('click', () => {
+        if (window.i18n) window.i18n.setLang('ru');
+      });
+    }
+    if (btnEn) {
+      btnEn.addEventListener('click', () => {
+        if (window.i18n) window.i18n.setLang('en');
+      });
+    }
+
     // Клавиша Escape закрывает модальные окна
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
@@ -59,7 +77,7 @@ class App {
     if (['storefront', 'purchases', 'admin'].includes(hash)) {
       if (hash === 'admin' && !window.auth.isAdmin()) {
         this.switchTab('storefront');
-        this.showToast('Вкладка доступна только в роли Администратора', 'warning');
+        this.showToast(window.i18n ? window.i18n.t('section_admin_sub') : 'Доступно только в роли Администратора', 'warning');
       } else {
         this.switchTab(hash);
       }
@@ -118,16 +136,20 @@ class App {
     if (!container) return;
 
     const currentRole = window.auth.getRole();
+    const guestLbl = window.i18n ? window.i18n.t('role_guest') : '👤 Гость';
+    const userLbl = window.i18n ? window.i18n.t('role_user') : '🛡️ Пользователь';
+    const adminLbl = window.i18n ? window.i18n.t('role_admin') : '👑 Админ';
+
     container.innerHTML = `
       <div class="role-pill-group" title="Переключение режима для тестирования сценариев прототипа">
         <button class="role-btn ${currentRole === 'guest' ? 'active' : ''}" onclick="window.app.switchRole('guest')">
-          👤 Гость
+          ${guestLbl}
         </button>
         <button class="role-btn ${currentRole === 'user' ? 'active' : ''}" onclick="window.app.switchRole('user')">
-          🛡️ Пользователь
+          ${userLbl}
         </button>
         <button class="role-btn ${currentRole === 'admin' ? 'active' : ''}" onclick="window.app.switchRole('admin')">
-          👑 Админ
+          ${adminLbl}
         </button>
       </div>
     `;
@@ -161,8 +183,9 @@ class App {
 
     if (userAuthBlock) {
       if (isGuest) {
+        const loginText = window.i18n ? window.i18n.t('btn_login') : '🔑 Войти';
         userAuthBlock.innerHTML = `
-          <button class="btn btn-secondary btn-small" onclick="window.app.showAuthModal()">🔑 Войти</button>
+          <button class="btn btn-secondary btn-small" onclick="window.app.showAuthModal()">${loginText}</button>
         `;
       } else {
         userAuthBlock.innerHTML = `
@@ -176,7 +199,7 @@ class App {
   }
 
   /**
-   * Рендер каталога на главной витрине
+   * Рендер каталога на главной витрине (с учетом выбранного языка RU / EN)
    */
   renderStorefront() {
     const container = document.getElementById('storefront-grid');
@@ -192,43 +215,51 @@ class App {
 
     container.innerHTML = works.map(work => {
       const isPurchased = window.store.hasPurchased(work.id);
+      const title = window.i18n ? window.i18n.getWorkTitle(work) : (work.title.ru || work.title);
+      const desc = window.i18n ? window.i18n.getWorkDesc(work) : (work.description.ru || work.description);
+
+      const previewBtnTxt = window.i18n ? window.i18n.t('card_btn_preview') : '👁️ Превью';
+      const readBtnTxt = window.i18n ? window.i18n.t('card_btn_read') : '📖 Читать перевод';
+      const buyBtnTxt = window.i18n ? `${window.i18n.t('card_btn_buy')} ${work.price} Орб` : `⚡ Купить за ${work.price} Орб`;
+      const loginBuyTxt = window.i18n ? window.i18n.t('card_btn_login_to_buy') : '🔑 Войти для покупки';
+      const freePagesTxt = window.i18n ? `${work.previewPagesCount} ${window.i18n.t('card_preview_free')}` : `${work.previewPagesCount} стр. бесплатно`;
+      const totalTxt = window.i18n ? `${window.i18n.t('card_total_pages')} ${work.totalPages}` : `Всего: ${work.totalPages} стр.`;
 
       return `
         <article class="work-card">
           <div class="work-card-media">
-            <img src="${work.coverUrl}" alt="${work.title}" class="work-cover-img" onerror="this.src='assets/demo/cover-1.svg'">
+            <img src="${work.coverUrl}" alt="${title}" class="work-cover-img" onerror="this.src='assets/demo/cover-1.svg'">
             <div class="work-badge-overlay">
               <span class="badge badge-accent">💎 ${work.price} Орб ($${work.price})</span>
-              <span class="badge badge-glass">👁️ ${work.previewPagesCount} стр. бесплатно</span>
+              <span class="badge badge-glass">👁️ ${freePagesTxt}</span>
             </div>
           </div>
           <div class="work-card-body">
             <div class="work-tags">
               ${(work.tags || []).map(t => `<span class="tag-pill">${t}</span>`).join('')}
             </div>
-            <h3 class="work-title" title="${work.title}">${work.title}</h3>
-            ${work.originalTitle ? `<div class="work-subtitle">${work.originalTitle}</div>` : ''}
-            <p class="work-desc">${work.description || 'Описание отсутствует'}</p>
+            <h3 class="work-title" title="${title}">${title}</h3>
+            <p class="work-desc">${desc || ''}</p>
             <div class="work-meta-row">
               <span>✍️ ${work.author}</span>
-              <span>📄 Всего: ${work.totalPages} стр.</span>
+              <span>📄 ${totalTxt}</span>
             </div>
           </div>
           <div class="work-card-footer">
-            <button class="btn btn-secondary" onclick="window.reader.openPreview('${work.id}')" title="Посмотреть первые ${work.previewPagesCount} стр. бесплатно">
-              👁️ Превью
+            <button class="btn btn-secondary" onclick="window.reader.openPreview('${work.id}')" title="${previewBtnTxt}">
+              ${previewBtnTxt}
             </button>
             ${isPurchased ? `
               <button class="btn btn-success" onclick="window.reader.openFullTranslationModal('${work.id}')">
-                📖 Читать перевод
+                ${readBtnTxt}
               </button>
             ` : isGuest ? `
               <button class="btn btn-accent" onclick="window.app.showAuthModal()">
-                ⚡ Купить за ${work.price} Орб
+                ${loginBuyTxt}
               </button>
             ` : `
               <button class="btn btn-accent" onclick="window.app.handlePurchaseWork('${work.id}')">
-                ⚡ Купить за ${work.price} Орб
+                ${buyBtnTxt}
               </button>
             `}
           </div>
@@ -249,34 +280,44 @@ class App {
 
     if (purchased.length === 0) {
       container.innerHTML = `
-        <div class="empty-state" style="grid-column: 1 / -1; padding: 4rem 1rem;">
+        <div class="empty-state" style="grid-column: 1 / -1; padding: 4rem 1rem; text-align: center;">
           <div style="font-size: 3rem; margin-bottom: 1rem;">📚</div>
-          <h3>У вас пока нет купленных переводов</h3>
-          <p>Перейдите в каталог, чтобы ознакомиться с доступными работами и бесплатными превью.</p>
-          <button class="btn btn-accent" onclick="window.app.switchTab('storefront')" style="margin-top: 1rem;">Перейти в каталог</button>
+          <h3>${window.i18n && window.i18n.getLang() === 'en' ? 'You have no unlocked translations yet' : 'У вас пока нет купленных переводов'}</h3>
+          <p style="color: var(--text-muted);">${window.i18n && window.i18n.getLang() === 'en' ? 'Explore the catalog to read free previews and unlock full adaptations.' : 'Перейдите в каталог, чтобы ознакомиться с доступными работами и бесплатными превью.'}</p>
+          <button class="btn btn-accent" onclick="window.app.switchTab('storefront')" style="margin-top: 1rem;">
+            ${window.i18n && window.i18n.getLang() === 'en' ? 'Go to Catalog' : 'Перейти в каталог'}
+          </button>
         </div>
       `;
       return;
     }
 
-    container.innerHTML = purchased.map(work => `
-      <article class="work-card">
-        <div class="work-card-media">
-          <img src="${work.coverUrl}" alt="${work.title}" class="work-cover-img" onerror="this.src='assets/demo/cover-1.svg'">
-          <div class="work-badge-overlay">
-            <span class="badge badge-success">✓ Доступ открыт</span>
+    container.innerHTML = purchased.map(work => {
+      const title = window.i18n ? window.i18n.getWorkTitle(work) : (work.title.ru || work.title);
+      const desc = window.i18n ? window.i18n.getWorkDesc(work) : (work.description.ru || work.description);
+      const previewBtnTxt = window.i18n ? window.i18n.t('card_btn_preview') : '👁️ Превью';
+      const readBtnTxt = window.i18n ? window.i18n.t('card_btn_read') : '📖 Читать перевод';
+      const accessTxt = window.i18n ? window.i18n.t('card_access_granted') : '✓ Доступ открыт';
+
+      return `
+        <article class="work-card">
+          <div class="work-card-media">
+            <img src="${work.coverUrl}" alt="${title}" class="work-cover-img" onerror="this.src='assets/demo/cover-1.svg'">
+            <div class="work-badge-overlay">
+              <span class="badge badge-success">${accessTxt}</span>
+            </div>
           </div>
-        </div>
-        <div class="work-card-body">
-          <h3 class="work-title">${work.title}</h3>
-          <p class="work-desc">${work.description}</p>
-        </div>
-        <div class="work-card-footer">
-          <button class="btn btn-secondary" onclick="window.reader.openPreview('${work.id}')">👁️ Превью</button>
-          <button class="btn btn-accent" onclick="window.reader.openFullTranslationModal('${work.id}')">📖 Читать перевод</button>
-        </div>
-      </article>
-    `).join('');
+          <div class="work-card-body">
+            <h3 class="work-title">${title}</h3>
+            <p class="work-desc">${desc}</p>
+          </div>
+          <div class="work-card-footer">
+            <button class="btn btn-secondary" onclick="window.reader.openPreview('${work.id}')">${previewBtnTxt}</button>
+            <button class="btn btn-accent" onclick="window.reader.openFullTranslationModal('${work.id}')">${readBtnTxt}</button>
+          </div>
+        </article>
+      `;
+    }).join('');
   }
 
   /**
@@ -292,9 +333,10 @@ class App {
     if (!work) return;
 
     const result = window.store.purchaseWork(workId);
+    const title = window.i18n ? window.i18n.getWorkTitle(work) : work.title;
 
     if (result.success) {
-      this.showToast(`Успешно! Вы приобрели перевод "${work.title}"`, 'success');
+      this.showToast(`Успешно! Вы приобрели перевод "${title}"`, 'success');
       this.renderUserHeader();
       this.renderStorefront();
       // Сразу предлагаем открыть читалку
@@ -309,19 +351,20 @@ class App {
     const modal = document.getElementById('generic-modal');
     const modalTitle = document.getElementById('generic-modal-title');
     const modalBody = document.getElementById('generic-modal-body');
+    const title = window.i18n ? window.i18n.getWorkTitle(work) : work.title;
 
-    modalTitle.textContent = 'Недостаточно Орбов';
+    modalTitle.textContent = window.i18n && window.i18n.getLang() === 'en' ? 'Insufficient Orbs' : 'Недостаточно Орбов';
     modalBody.innerHTML = `
       <div style="text-align: center; padding: 1rem 0;">
         <div style="font-size: 3rem; margin-bottom: 0.5rem;">🪙</div>
-        <p>Для покупки перевода <strong>"${work.title}"</strong> необходимо <strong>${work.price} Орб</strong>.</p>
+        <p>${window.i18n && window.i18n.getLang() === 'en' ? `To purchase translation <strong>"${title}"</strong>, you need <strong>${work.price} Orb</strong>.` : `Для покупки перевода <strong>"${title}"</strong> необходимо <strong>${work.price} Орб</strong>.`}</p>
         <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.5rem;">
-          Вам не хватает: <span style="color: var(--accent-gold); font-weight: 700;">${needOrbs} Орб (${needOrbs} USDT)</span>
+          ${window.i18n && window.i18n.getLang() === 'en' ? 'Missing balance:' : 'Вам не хватает:'} <span style="color: var(--accent-gold); font-weight: 700;">${needOrbs} Орб (${needOrbs} USDT)</span>
         </p>
         <div style="margin-top: 1.5rem; display: flex; gap: 8px; justify-content: center;">
-          <button class="btn btn-secondary" onclick="window.app.closeAllModals()">Отмена</button>
+          <button class="btn btn-secondary" onclick="window.app.closeAllModals()">${window.i18n && window.i18n.getLang() === 'en' ? 'Cancel' : 'Отмена'}</button>
           <button class="btn btn-accent" onclick="window.app.closeAllModals(); window.app.showTopupModal(${needOrbs})">
-            ➕ Пополнить баланс
+            ${window.i18n && window.i18n.getLang() === 'en' ? '➕ Deposit Balance' : '➕ Пополнить баланс'}
           </button>
         </div>
       </div>
@@ -375,7 +418,7 @@ class App {
     const addressInput = document.getElementById('invoice-address');
     if (addressInput) {
       navigator.clipboard.writeText(addressInput.value);
-      this.showToast('Адрес кошелька скопирован в буфер обмена', 'success');
+      this.showToast(window.i18n && window.i18n.getLang() === 'en' ? 'Wallet address copied to clipboard' : 'Адрес кошелька скопирован в буфер обмена', 'success');
     }
   }
 
@@ -398,7 +441,8 @@ class App {
     const modal = document.getElementById('archive-upload-modal');
     if (!modal) return;
 
-    document.getElementById('archive-work-title').textContent = work.title;
+    const title = window.i18n ? window.i18n.getWorkTitle(work) : work.title;
+    document.getElementById('archive-work-title').textContent = title;
     modal.classList.add('active');
     document.body.classList.add('modal-open');
   }

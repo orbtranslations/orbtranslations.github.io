@@ -1,9 +1,9 @@
 /**
  * Store — Центральное хранилище состояния платформы
- * Хранит каталог работ, баланс Орбов, историю покупок и настройки xPub кошелька.
+ * Хранит каталог работ (с поддержкой RU/EN), баланс Орбов, историю покупок и настройки xPub кошелька.
  */
 class Store {
-  static STORAGE_KEY = 'orb_marketplace_data_v1';
+  static STORAGE_KEY = 'orb_marketplace_data_v2';
 
   constructor() {
     this.data = this.loadFromStorage();
@@ -15,6 +15,7 @@ class Store {
 
   getDefaultInitialData() {
     return {
+      siteLang: 'ru', // 'ru' | 'en'
       currentUser: {
         id: 'usr_77',
         name: 'Иван Переводчик',
@@ -32,14 +33,19 @@ class Store {
       works: [
         {
           id: 'work-001',
-          title: 'Хроники Забытого Клинка: Пролог',
-          originalTitle: 'Chronicles of the Forgotten Blade',
-          description: 'Художественный перевод пролога и первой главы визуальной новеллы. Полная адаптация диалоговых окон, кастомные рамки персонажей и наложение реплик с оригинальной стилистикой.',
+          title: {
+            ru: 'Хроники Забытого Клинка: Пролог',
+            en: 'Chronicles of the Forgotten Blade: Prologue'
+          },
+          description: {
+            ru: 'Художественный перевод пролога и первой главы визуальной новеллы. Полная адаптация диалоговых окон, кастомные рамки персонажей и наложение реплик с оригинальной стилистикой.',
+            en: 'Official fan translation of the prologue and Chapter 1. Complete adaptation of dialogue frames, custom character borders, and dynamic text overlays matching original aesthetics.'
+          },
           author: 'Glaive Team',
           price: 1, // 1 Орб = 1 USDT
           totalPages: 16,
           previewPagesCount: 3, // Первые 3 страницы доступны бесплатно всем!
-          tags: ['Визуальная новелла', 'Фэнтези', 'Драма', '18+'],
+          tags: ['Визуальная новелла', 'Фэнтези', 'Visual Novel', 'Fantasy'],
           coverUrl: 'assets/demo/cover-1.svg',
           previewImages: [
             'assets/demo/page-1.svg',
@@ -183,7 +189,7 @@ The fate of the kingdom is now in your hands.
     this.data.orders.push({
       id: 'ord_' + Date.now(),
       workId,
-      workTitle: work.title,
+      workTitle: typeof work.title === 'object' ? (work.title.ru || work.title.en) : work.title,
       price: work.price,
       date: new Date().toISOString(),
       type: 'purchase'
@@ -211,9 +217,12 @@ The fate of the kingdom is now in your hands.
     const newId = 'work-' + String(Date.now()).slice(-5);
     const work = {
       id: newId,
-      title: workData.title || 'Новая работа',
-      originalTitle: workData.originalTitle || '',
-      description: workData.description || '',
+      title: typeof workData.title === 'object' 
+        ? workData.title 
+        : { ru: workData.title || 'Новая работа', en: workData.titleEn || workData.title || 'New Work' },
+      description: typeof workData.description === 'object' 
+        ? workData.description 
+        : { ru: workData.description || '', en: workData.descriptionEn || '' },
       author: workData.author || 'Автор перевода',
       price: Number(workData.price) || 1,
       totalPages: Number(workData.totalPages) || 10,
@@ -225,14 +234,40 @@ The fate of the kingdom is now in your hands.
         'assets/demo/page-2.svg',
         'assets/demo/page-3.svg'
       ],
-      availableLanguages: workData.availableLanguages || ['Русский'],
-      scriptFileName: workData.scriptFileName || `${workData.title || 'script'}.txt`,
+      availableLanguages: workData.availableLanguages || ['Русский', 'English'],
+      scriptFileName: workData.scriptFileName || 'script.txt',
       sampleScriptText: workData.sampleScriptText || '',
       createdAt: new Date().toISOString().split('T')[0]
     };
     this.data.works.unshift(work);
     this.saveToStorage();
     return work;
+  }
+
+  updateWork(id, updatedData) {
+    const index = this.data.works.findIndex(w => w.id === id);
+    if (index === -1) return null;
+
+    const current = this.data.works[index];
+    this.data.works[index] = {
+      ...current,
+      title: typeof updatedData.title === 'object' 
+        ? updatedData.title 
+        : { ru: updatedData.title || (current.title ? current.title.ru : ''), en: updatedData.titleEn || (current.title ? current.title.en : '') },
+      description: typeof updatedData.description === 'object'
+        ? updatedData.description
+        : { ru: updatedData.description || (current.description ? current.description.ru : ''), en: updatedData.descriptionEn || (current.description ? current.description.en : '') },
+      author: updatedData.author !== undefined ? updatedData.author : current.author,
+      price: updatedData.price !== undefined ? Number(updatedData.price) : current.price,
+      totalPages: updatedData.totalPages !== undefined ? Number(updatedData.totalPages) : current.totalPages,
+      previewPagesCount: updatedData.previewPagesCount !== undefined ? Number(updatedData.previewPagesCount) : current.previewPagesCount,
+      tags: updatedData.tags !== undefined ? updatedData.tags : current.tags,
+      sampleScriptText: updatedData.sampleScriptText !== undefined ? updatedData.sampleScriptText : current.sampleScriptText,
+      updatedAt: new Date().toISOString().split('T')[0]
+    };
+
+    this.saveToStorage();
+    return this.data.works[index];
   }
 
   deleteWork(id) {
@@ -256,12 +291,6 @@ The fate of the kingdom is now in your hands.
     this.saveToStorage();
     return idx;
   }
-
-  resetAll() {
-    this.data = this.getDefaultInitialData();
-    this.saveToStorage();
-  }
 }
 
-// Экспорт глобального синглтона
 window.store = new Store();
