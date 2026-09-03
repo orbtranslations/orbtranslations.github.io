@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Orb Translations — Маркетплейс переводов визуальных новелл и манги</title>
+  <meta name="description" content="Официальный магазин художественных переводов за внутреннюю валюту Орбы (1 Орб = 1 USDT). Бесплатное превью, крипто-оплата xPub и интерактивное чтение наложения.">
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@500;600;700;800;900&family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
+
+  <!-- External Libraries -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+  <!-- Custom Styles -->
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/reader.css">
+</head>
+<body>
+
+  <!-- ========================================================================
+       Site Header
+       ======================================================================== -->
+  <header class="site-header">
+    <div class="header-container">
+      <a href="#storefront" class="logo-brand">
+        <div class="logo-orb">🪙</div>
+        <div class="logo-text">Orb<span>Translations</span></div>
+      </a>
+
+      <nav class="nav-links">
+        <a href="#storefront" class="nav-link active" data-tab="storefront">
+          🛒 Каталог
+        </a>
+        <a href="#purchases" class="nav-link" data-tab="purchases">
+          📚 Мои покупки
+        </a>
+        <a href="#admin" class="nav-link" data-tab="admin" id="nav-admin-link" style="display: none;">
+          👑 Админ-панель
+        </a>
+      </nav>
+
+      <div class="header-right">
+        <!-- Role Switcher for Prototype Testing -->
+        <div id="role-switcher-container"></div>
+
+        <!-- User Balance of Orbs -->
+        <div class="currency-pill" id="header-balance-pill" title="Баланс Орбов (1 Орб = 1 USDT)">
+          <span class="currency-icon">🪙</span>
+          <span class="currency-amount" id="header-orbs-count">0.00</span>
+          <button class="currency-add-btn" id="header-topup-btn" title="Пополнить Орбы через USDT">+</button>
+        </div>
+
+        <!-- User Profile / Login -->
+        <div id="header-user-block"></div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ========================================================================
+       Main Content Container
+       ======================================================================== -->
+  <main class="main-container">
+
+    <!-- Section 1: Storefront (Каталог) -->
+    <section class="app-section" id="section-storefront">
+      <!-- Hero Banner -->
+      <div class="hero-banner">
+        <div class="hero-content">
+          <div class="hero-badge">💎 Платформа коммерческих переводов нового поколения</div>
+          <h1 class="hero-title">Читайте любимые новеллы на <span>родном языке</span></h1>
+          <p class="hero-desc">
+            Художественные переводы визуальных новелл и манги. Покупайте доступ за <strong>Орбы</strong> (1 Орб = 1 USDT) через безопасный HD-кошелек, открывайте бесплатные превью и читайте наложение текста прямо в браузере.
+          </p>
+          <div class="hero-stats-row">
+            <div class="hero-stat-item">
+              <span class="hero-stat-val">1 Орб = 1 USDT</span>
+              <span class="hero-stat-lbl">Курс валюты</span>
+            </div>
+            <div class="hero-stat-item">
+              <span class="hero-stat-val">xPub HD-Wallet</span>
+              <span class="hero-stat-lbl">Индивидуальный адрес заказа</span>
+            </div>
+            <div class="hero-stat-item">
+              <span class="hero-stat-val">Клиентский движок</span>
+              <span class="hero-stat-lbl">Защита авторских прав</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Section Header -->
+      <div class="section-header-row">
+        <div>
+          <h2 class="section-title">🔥 Доступные переводы</h2>
+          <p class="section-subtitle">Каждая работа содержит бесплатные страницы превью и адаптированный скрипт перевода</p>
+        </div>
+      </div>
+
+      <!-- Works Grid -->
+      <div class="works-grid" id="storefront-grid">
+        <!-- Rendered dynamically via JS -->
+      </div>
+    </section>
+
+    <!-- Section 2: Purchases (Мои покупки) -->
+    <section class="app-section" id="section-purchases" style="display: none;">
+      <div class="section-header-row">
+        <div>
+          <h2 class="section-title">📚 Мои приобретенные переводы</h2>
+          <p class="section-subtitle">Все купленные скрипты с неограниченным доступом к чтению</p>
+        </div>
+      </div>
+      <div class="works-grid" id="purchases-grid">
+        <!-- Rendered dynamically via JS -->
+      </div>
+    </section>
+
+    <!-- Section 3: Admin Panel (Админ-панель) -->
+    <section class="app-section" id="section-admin" style="display: none;">
+      <div class="section-header-row">
+        <div>
+          <h2 class="section-title">👑 Панель администратора</h2>
+          <p class="section-subtitle">Управление каталогом работ, ценами в Орбах, страницами превью и xPub кошельком</p>
+        </div>
+      </div>
+
+      <!-- Add Work Card -->
+      <div class="modal-card" style="max-width: 100%; margin-bottom: 2rem; box-shadow: var(--shadow-sm);">
+        <div class="modal-header">
+          <h3 class="modal-title">➕ Регистрация новой работы</h3>
+        </div>
+        <div class="modal-body">
+          <form id="admin-add-work-form">
+            <div class="form-grid-2" style="margin-bottom: 1rem;">
+              <div>
+                <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;">Название работы (русское) *</label>
+                <input type="text" id="admin-work-title" class="input-styled" required placeholder="Например: Хроники Забытого Клинка: Глава 2">
+              </div>
+              <div>
+                <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;">Оригинальное название</label>
+                <input type="text" id="admin-work-orig-title" class="input-styled" placeholder="Chronicles of the Blade: Ch 2">
+              </div>
+            </div>
+
+            <div class="form-grid-2" style="margin-bottom: 1rem;">
+              <div>
+                <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;">Автор перевода / Команда</label>
+                <input type="text" id="admin-work-author" class="input-styled" placeholder="Glaive Team">
+              </div>
+              <div>
+                <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;">Стоимость покупки в Орбах (1 Орб = 1 USDT) *</label>
+                <input type="number" id="admin-work-price" class="input-styled" min="1" step="0.5" value="1" required>
+              </div>
+            </div>
+
+            <div class="form-grid-2" style="margin-bottom: 1rem;">
+              <div>
+                <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;">Всего страниц в работе</label>
+                <input type="number" id="admin-work-total-pages" class="input-styled" min="1" value="16">
+              </div>
+              <div>
+                <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;">
+                  Страниц в бесплатном превью: <strong id="admin-preview-val" style="color: var(--accent-secondary);">3</strong>
+                </label>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                  <input type="range" id="admin-preview-pages-slider" min="1" max="15" value="3" style="flex: 1; accent-color: var(--accent-secondary);">
+                  <input type="number" id="admin-preview-pages-num" class="input-styled" min="1" max="20" value="3" style="width: 70px; text-align: center;">
+                </div>
+              </div>
+            </div>
+
+            <div style="margin-bottom: 1rem;">
+              <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;">Теги / Жанры (через запятую)</label>
+              <input type="text" id="admin-work-tags" class="input-styled" placeholder="Фэнтези, Драма, Манга, 18+">
+            </div>
+
+            <div style="margin-bottom: 1rem;">
+              <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;">Описание работы</label>
+              <textarea id="admin-work-desc" class="textarea-styled" rows="3" placeholder="Краткое описание перевода и особенностей адаптации..."></textarea>
+            </div>
+
+            <!-- Translation Script Upload -->
+            <div style="margin-bottom: 1.5rem; background: rgba(0, 0, 0, 0.25); padding: 1rem; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+              <label style="font-size: 0.9rem; font-weight: 600; display: block; margin-bottom: 6px;">📄 Скрипт перевода (.txt)</label>
+              <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 8px;">
+                <input type="file" id="admin-script-file" accept=".txt" style="display: none;">
+                <button type="button" class="btn btn-secondary btn-small" onclick="document.getElementById('admin-script-file').click()">
+                  📁 Выбрать .txt файл скрипта
+                </button>
+                <span style="font-size: 0.8rem; color: var(--text-muted);">Формат с разметкой 【LANG】 и 【OVERLAY_DATA】</span>
+              </div>
+              <textarea id="admin-script-text" class="textarea-styled" rows="4" placeholder="Или вставьте текст скрипта перевода напрямую сюда..."></textarea>
+            </div>
+
+            <div style="display: flex; justify-content: flex-end;">
+              <button type="submit" class="btn btn-accent btn-large">
+                ✨ Зарегистрировать работу на сайте
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- Existing Works Table -->
+      <div class="modal-card" style="max-width: 100%; margin-bottom: 2rem; box-shadow: var(--shadow-sm);">
+        <div class="modal-header">
+          <h3 class="modal-title">📋 Зарегистрированные работы</h3>
+        </div>
+        <div class="modal-body" style="padding: 0; overflow-x: auto;">
+          <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 0.9rem;">
+            <thead>
+              <tr style="border-bottom: 1px solid var(--border-color); background: rgba(255, 255, 255, 0.03); color: var(--text-muted);">
+                <th style="padding: 0.85rem 1rem;">ID</th>
+                <th style="padding: 0.85rem 1rem;">Название</th>
+                <th style="padding: 0.85rem 1rem;">Цена</th>
+                <th style="padding: 0.85rem 1rem;">Превью</th>
+                <th style="padding: 0.85rem 1rem;">Дата</th>
+                <th style="padding: 0.85rem 1rem;">Действия</th>
+              </tr>
+            </thead>
+            <tbody id="admin-works-table-body">
+              <!-- Rendered dynamically -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- xPub Wallet Configuration Card -->
+      <div class="modal-card" style="max-width: 100%; box-shadow: var(--shadow-sm);">
+        <div class="modal-header">
+          <h3 class="modal-title">🔐 Настройки HD-кошелька (Master Public Key — xPub)</h3>
+        </div>
+        <div class="modal-body">
+          <form id="admin-xpub-form">
+            <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1rem;">
+              xPub позволяет платформе детерминированно генерировать отдельный уникальный адрес для каждого заказа клиента, не раскрывая приватные ключи.
+            </p>
+            <div style="margin-bottom: 1rem;">
+              <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;">Master Public Key (xPub / yPub / zPub)</label>
+              <input type="text" id="admin-xpub-key" class="input-styled" required style="font-family: monospace;">
+            </div>
+            <div class="form-grid-2" style="margin-bottom: 1rem;">
+              <div>
+                <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;">Основная сеть</label>
+                <select id="admin-xpub-network" class="select-styled">
+                  <option value="USDT (TRC-20)">USDT (TRC-20) — Tron</option>
+                  <option value="USDT (BEP-20)">USDT (BEP-20) — BNB Smart Chain</option>
+                  <option value="USDT (Polygon)">USDT (Polygon)</option>
+                </select>
+              </div>
+              <div>
+                <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;">Текущий счётчик заказов</label>
+                <div style="padding: 0.65rem 0.9rem; background: rgba(0, 0, 0, 0.4); border: 1px solid var(--border-color); border-radius: var(--radius-sm); font-weight: 700; color: var(--accent-gold);">
+                  #<span id="admin-xpub-order-idx">142</span>
+                </div>
+              </div>
+            </div>
+            <button type="submit" class="btn btn-secondary">💾 Сохранить настройки кошелька</button>
+          </form>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ========================================================================
+       Site Footer
+       ======================================================================== -->
+  <footer class="site-footer">
+    <div class="footer-container">
+      <div class="footer-desc">
+        <strong>Orb Translations</strong> — децентрализованный коммерческий маркетплейс адаптаций и переводов визуальных новелл. Все права на оригинальные графические материалы принадлежат их законным правообладателям.
+      </div>
+      <div class="footer-right">
+        Powered by GitHub Pages & HD-Wallet xPub Architecture
+      </div>
+    </div>
+  </footer>
+
+  <!-- ========================================================================
+       MODAL 1: Fullscreen Reader (Интерактивная читалка)
+       ======================================================================== -->
+  <div class="reader-modal" id="reader-modal">
+    <header class="reader-header">
+      <div class="reader-header-left">
+        <button class="btn btn-secondary btn-small" onclick="window.reader.closeReader()">✕ Закрыть</button>
+        <div class="reader-title" id="reader-work-title">Хроники Забытого Клинка</div>
+        <span class="badge badge-accent" id="reader-mode-badge">✨ Полный перевод</span>
+      </div>
+      <div class="reader-header-center">
+        <select id="reader-lang-select" class="select-styled" style="width: auto; padding: 0.35rem 0.75rem; font-size: 0.85rem;" onchange="window.reader.setLanguage(this.value)">
+          <option value="Русский">Русский</option>
+        </select>
+      </div>
+      <div class="reader-header-right">
+        <button class="btn btn-secondary btn-small" id="reader-spread-btn" onclick="window.reader.toggleSpread()">
+          📄 1 страница
+        </button>
+      </div>
+    </header>
+
+    <div class="reader-stage-container" id="reader-stage-container">
+      <div class="reader-spread-layout">
+        <!-- Левая страница -->
+        <div class="reader-stage-slot" id="reader-stage-left"></div>
+        <!-- Правая страница (для режима 2-х разворотов) -->
+        <div class="reader-stage-slot" id="reader-stage-right" style="display: none;"></div>
+      </div>
+
+      <!-- Floating Bottom Nav Bar -->
+      <div class="reader-bottom-bar" id="reader-bottom-bar">
+        <button class="reader-nav-btn" onclick="window.reader.prevPage()" title="Предыдущая страница (←)">◀</button>
+        <input type="range" class="reader-slider" id="reader-slider" min="0" max="1" value="0" oninput="window.reader.goToPage(Number(this.value))">
+        <span class="reader-counter" id="reader-counter">1 / 1</span>
+        <button class="reader-nav-btn" onclick="window.reader.nextPage()" title="Следующая страница (→)">▶</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================================
+       MODAL 2: xPub USDT Deposit / Invoice Modal
+       ======================================================================== -->
+  <div class="modal-backdrop" id="topup-modal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 class="modal-title">🪙 Пополнение баланса Орбов</h3>
+        <button class="modal-close-btn">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1rem;">
+          1 Орб = 1 USDT. Оплата происходит прямым переводом на уникальный адрес вашего заказа, сгенерированный HD-кошельком (xPub).
+        </p>
+
+        <div class="form-grid-2" style="margin-bottom: 1rem;">
+          <div>
+            <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;">Количество Орбов</label>
+            <input type="number" id="topup-amount-input" class="input-styled" min="1" max="500" value="5" onchange="window.app.renderTopupInvoice()">
+          </div>
+          <div>
+            <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;">Сеть перевода USDT</label>
+            <select id="topup-network-select" class="select-styled" onchange="window.app.renderTopupInvoice()">
+              <option value="USDT (TRC-20)">USDT (TRC-20) — Tron</option>
+              <option value="USDT (BEP-20)">USDT (BEP-20) — BSC</option>
+              <option value="USDT (Polygon)">USDT (Polygon)</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Generated xPub Invoice Card -->
+        <div class="invoice-card">
+          <div class="invoice-header-row">
+            <div>
+              <span style="font-size: 0.8rem; color: var(--text-muted);">Заказ:</span>
+              <strong id="invoice-order-id" style="color: #fff; margin-left: 4px;">ORD-142</strong>
+            </div>
+            <div>
+              <span class="badge badge-gold">К оплате: <strong id="invoice-amount-usdt">5 USDT</strong></span>
+            </div>
+          </div>
+
+          <!-- QR Code Canvas -->
+          <div class="invoice-qr-wrap">
+            <canvas id="invoice-qr-canvas" class="invoice-qr-canvas"></canvas>
+          </div>
+
+          <div>
+            <label style="font-size: 0.75rem; color: var(--text-muted); display: block;">Адрес для перевода (<span id="invoice-network">TRC-20</span>):</label>
+            <div class="copy-input-row">
+              <input type="text" id="invoice-address" class="copy-input" readonly value="T...">
+              <button class="btn btn-secondary btn-small" onclick="window.app.copyInvoiceAddress()" title="Скопировать адрес">📋 Копия</button>
+            </div>
+          </div>
+
+          <div style="margin-top: 0.75rem; font-size: 0.75rem; color: var(--text-muted); display: flex; justify-content: space-between;">
+            <span>Деривация: <code id="invoice-derivation-path" style="color: var(--accent-secondary);">m/44'/195'/0'/0/142</code></span>
+            <span>⏱️ Время на оплату: <strong>30:00</strong></span>
+          </div>
+        </div>
+
+        <div style="margin-top: 1.25rem; display: flex; flex-direction: column; gap: 8px;">
+          <!-- Simulation button for quick prototype verification -->
+          <button class="btn btn-accent btn-large" style="width: 100%;" onclick="window.app.confirmPaymentTest()">
+            ⚡ Симуляция: Подтвердить получение средств (+<span id="invoice-amount-orbs">5 Орб</span>)
+          </button>
+          <p style="text-align: center; font-size: 0.75rem; color: var(--text-muted);">
+            💡 <em>В прототипе кнопка выше эмулирует проверку блокчейна и моментально зачисляет средства на баланс.</em>
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================================
+       MODAL 3: Archive Upload Modal (Подключение купленного перевода)
+       ======================================================================== -->
+  <div class="modal-backdrop" id="archive-upload-modal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 class="modal-title">📖 Открытие перевода: <span id="archive-work-title" style="color: var(--accent-secondary);"></span></h3>
+        <button class="modal-close-btn">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1.25rem; line-height: 1.5;">
+          Вы приобрели доступ к скрипту перевода этой работы. Чтобы начать чтение, загрузите официальный архив (.zip) или папку с оригинальными изображениями. Читалка распакует их в браузере и наложит перевод.
+        </p>
+
+        <!-- Dropzone -->
+        <div class="dropzone" id="archive-dropzone">
+          <div class="dropzone-icon">📦</div>
+          <h4 style="margin-bottom: 0.5rem; font-size: 1.1rem;">Перетащите сюда ZIP-архив с изображениями</h4>
+          <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 1rem;">
+            или нажмите для выбора файла на вашем компьютере (.zip, .cbz)
+          </p>
+          <button type="button" class="btn btn-secondary btn-small">Выбрать файл архива</button>
+          <input type="file" id="archive-file-input" accept=".zip,.cbz" style="display: none;">
+        </div>
+
+        <div style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between;">
+          <span style="font-size: 0.8rem; color: var(--text-muted);">Нет под рукой оригинального архива?</span>
+          <button class="btn btn-accent btn-small" onclick="window.app.useDemoArchive()">
+            💡 Использовать демо-сцены
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================================
+       MODAL 4: Generic Modal (Выбор языка / Вход)
+       ======================================================================== -->
+  <div class="modal-backdrop" id="generic-modal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 class="modal-title" id="generic-modal-title">Окно</h3>
+        <button class="modal-close-btn">&times;</button>
+      </div>
+      <div class="modal-body" id="generic-modal-body"></div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <!-- ========================================================================
+       Application JavaScript Modules
+       ======================================================================== -->
+  <script src="js/store.js"></script>
+  <script src="js/script-parser.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/crypto-pay.js"></script>
+  <script src="js/reader.js"></script>
+  <script src="js/admin.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

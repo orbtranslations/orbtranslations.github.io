@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 850" width="100%" height="100%">
+  <defs>
+    <linearGradient id="skyGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#090d16" />
+      <stop offset="50%" stop-color="#1e1b4b" />
+      <stop offset="100%" stop-color="#311042" />
+    </linearGradient>
+    <linearGradient id="bladeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8" />
+      <stop offset="50%" stop-color="#818cf8" />
+      <stop offset="100%" stop-color="#c084fc" />
+    </linearGradient>
+    <radialGradient id="moonGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.9" />
+      <stop offset="40%" stop-color="#818cf8" stop-opacity="0.5" />
+      <stop offset="100%" stop-color="#1e1b4b" stop-opacity="0" />
+    </radialGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="600" height="850" fill="url(#skyGrad)" />
+
+  <!-- Stars -->
+  <circle cx="80" cy="90" r="1.5" fill="#fff" opacity="0.8" />
+  <circle cx="150" cy="140" r="2" fill="#fff" opacity="0.9" />
+  <circle cx="280" cy="70" r="1" fill="#fff" opacity="0.6" />
+  <circle cx="450" cy="110" r="2" fill="#fff" opacity="0.7" />
+  <circle cx="520" cy="180" r="1.5" fill="#fff" opacity="0.8" />
+
+  <!-- Moon -->
+  <circle cx="460" cy="200" r="90" fill="url(#moonGlow)" />
+  <circle cx="460" cy="200" r="45" fill="#f8fafc" opacity="0.95" />
+
+  <!-- Mountains -->
+  <polygon points="0,550 180,360 340,510 500,320 600,430 600,850 0,850" fill="#0c111d" />
+  <polygon points="60,600 240,420 400,560 600,410 600,850 0,850" fill="#070a12" opacity="0.85" />
+
+  <!-- Magic Rune Circle -->
+  <circle cx="300" cy="460" r="130" fill="none" stroke="#a855f7" stroke-width="2" opacity="0.4" stroke-dasharray="8 6" />
+  <circle cx="300" cy="460" r="100" fill="none" stroke="#38bdf8" stroke-width="1.5" opacity="0.6" />
+  <polygon points="300,380 370,500 230,500" fill="none" stroke="#38bdf8" stroke-width="1.5" opacity="0.4" />
+  <polygon points="300,540 370,420 230,420" fill="none" stroke="#a855f7" stroke-width="1.5" opacity="0.4" />
+
+  <!-- Sword Blade Silhouette -->
+  <path d="M295,240 L305,240 L308,540 L292,540 Z" fill="url(#bladeGrad)" />
+  <path d="M280,540 L320,540 L315,555 L285,555 Z" fill="#e2e8f0" />
+  <path d="M297,555 L303,555 L303,610 L297,610 Z" fill="#94a3b8" />
+  <circle cx="300" cy="620" r="10" fill="#f59e0b" />
+
+  <!-- Lighting overlay -->
+  <rect width="600" height="850" fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="14" />
+
+  <!-- Typography -->
+  <text x="300" y="690" font-family="'Outfit', sans-serif" font-size="34" font-weight="900" fill="#ffffff" text-anchor="middle" letter-spacing="2">
+    ХРОНИКИ
+  </text>
+  <text x="300" y="730" font-family="'Outfit', sans-serif" font-size="28" font-weight="800" fill="#38bdf8" text-anchor="middle" letter-spacing="1.5">
+    ЗАБЫТОГО КЛИНКА
+  </text>
+  <text x="300" y="765" font-family="'Inter', sans-serif" font-size="16" font-weight="600" fill="#f59e0b" text-anchor="middle" letter-spacing="4">
+    ★ ПРОЛОГ ★
+  </text>
+  <text x="300" y="800" font-family="'Inter', sans-serif" font-size="12" fill="#94a3b8" text-anchor="middle">
+    Official Fan Translation • Glaive Team
+  </text>
+</svg>

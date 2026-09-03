@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1100" width="100%" height="100%">
+  <defs>
+    <linearGradient id="p3Grad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1e1b4b" />
+      <stop offset="50%" stop-color="#3b0764" />
+      <stop offset="100%" stop-color="#020617" />
+    </linearGradient>
+  </defs>
+  <rect width="800" height="1100" fill="url(#p3Grad)" />
+  <!-- Ancient Altar with Blade -->
+  <polygon points="200,820 600,820 540,680 260,680" fill="#1e1e38" stroke="#4338ca" stroke-width="4" />
+  <rect x="280" y="660" width="240" height="30" fill="#312e81" rx="4" />
+  <!-- Radiant Aura -->
+  <ellipse cx="400" cy="500" rx="140" ry="180" fill="#a855f7" opacity="0.15" />
+  <ellipse cx="400" cy="500" rx="80" ry="120" fill="#38bdf8" opacity="0.25" />
+  <!-- Sacred Sword Floating -->
+  <path d="M394,360 L406,360 L409,660 L391,660 Z" fill="#e0f2fe" />
+  <path d="M370,660 L430,660 L425,675 L375,675 Z" fill="#fbbf24" />
+  <path d="M397,675 L403,675 L403,730 L397,730 Z" fill="#94a3b8" />
+  <circle cx="400" cy="740" r="10" fill="#f59e0b" />
+  <!-- Light Rays -->
+  <line x1="400" y1="500" x2="200" y2="250" stroke="#c084fc" stroke-width="2" opacity="0.4" />
+  <line x1="400" y1="500" x2="600" y2="250" stroke="#c084fc" stroke-width="2" opacity="0.4" />
+  <line x1="400" y1="500" x2="150" y2="450" stroke="#38bdf8" stroke-width="1.5" opacity="0.3" />
+  <line x1="400" y1="500" x2="650" y2="450" stroke="#38bdf8" stroke-width="1.5" opacity="0.3" />
+  <text x="400" y="1020" font-family="'Outfit', sans-serif" font-size="20" fill="#c084fc" text-anchor="middle">
+    — Страница 3 : Пробуждение Священного Клинка —
+  </text>
+</svg>

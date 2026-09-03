@@ -1,0 +1,20 @@
+# OS generated files
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+.DS_Store
+.DS_Store?
+._*
+
+# Temporary files & logs
+*.tmp
+*.temp
+*.log
+
+# IDE & agents
+.vscode/
+.idea/
+.agents/
