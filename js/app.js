@@ -63,8 +63,21 @@ class App {
       });
     }
 
-    // Клавиша Escape закрывает модальные окна
+    // Клавиатурная навигация в читалке и закрытие окон по Escape
     document.addEventListener('keydown', (e) => {
+      const readerModal = document.getElementById('reader-modal');
+      if (readerModal && readerModal.classList.contains('active')) {
+        if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'Enter' || e.key === 'PageDown') {
+          e.preventDefault();
+          window.reader.nextPage();
+          return;
+        } else if (e.key === 'ArrowLeft' || e.key === 'PageUp' || e.key === 'Backspace') {
+          e.preventDefault();
+          window.reader.prevPage();
+          return;
+        }
+      }
+
       if (e.key === 'Escape') {
         this.closeAllModals();
         if (window.reader) window.reader.closeReader();
