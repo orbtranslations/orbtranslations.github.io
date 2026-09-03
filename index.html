@@ -434,23 +434,31 @@
   <div class="modal-backdrop" id="archive-upload-modal">
     <div class="modal-card">
       <div class="modal-header">
-        <h3 class="modal-title"><span data-i18n="modal_archive_title">📖 Открытие перевода:</span> <span id="archive-work-title" style="color: var(--accent-secondary);"></span></h3>
+        <h3 class="modal-title"><span id="archive-modal-title-prefix" data-i18n="modal_archive_title">📖 Открытие перевода:</span> <span id="archive-work-title" style="color: var(--accent-secondary);"></span></h3>
         <button class="modal-close-btn">&times;</button>
       </div>
       <div class="modal-body">
-        <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1.25rem; line-height: 1.5;" data-i18n="modal_archive_desc">
+        <p id="archive-modal-desc" style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1.25rem; line-height: 1.5;" data-i18n="modal_archive_desc">
           Вы приобрели доступ к скрипту перевода этой работы. Чтобы начать чтение, загрузите официальный архив (.zip) или папку с оригинальными изображениями. Читалка распакует их в браузере и наложит перевод.
         </p>
 
         <!-- Dropzone -->
         <div class="dropzone" id="archive-dropzone">
           <div class="dropzone-icon">📦</div>
-          <h4 style="margin-bottom: 0.5rem; font-size: 1.1rem;" data-i18n="modal_archive_drop">Перетащите сюда ZIP-архив с изображениями</h4>
-          <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 1rem;" data-i18n="modal_archive_sub">
-            или нажмите для выбора файла на вашем компьютере (.zip, .cbz)
+          <h4 style="margin-bottom: 0.5rem; font-size: 1.1rem;">Перетащите сюда ZIP-архив или папку с графикой</h4>
+          <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 1rem;">
+            Поддерживаются архивы (.zip, .cbz) или папки с оригинальными файлами изображений
           </p>
-          <button type="button" class="btn btn-secondary btn-small" data-i18n="modal_archive_pick_btn">Выбрать файл архива</button>
+          <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+            <button type="button" class="btn btn-secondary btn-small" onclick="document.getElementById('archive-file-input').click()">
+              📦 Выбрать ZIP-архив (.zip)
+            </button>
+            <button type="button" class="btn btn-secondary btn-small" onclick="document.getElementById('archive-folder-input').click()">
+              📂 Выбрать папку с графикой
+            </button>
+          </div>
           <input type="file" id="archive-file-input" accept=".zip,.cbz" style="display: none;">
+          <input type="file" id="archive-folder-input" webkitdirectory directory style="display: none;">
         </div>
 
         <div style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between;">

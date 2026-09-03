@@ -323,7 +323,7 @@ class App {
   /**
    * Обработка покупки работы
    */
-  handlePurchaseWork(workId) {
+  handlePurchaseWork(workId, fromInsideReader = false) {
     if (window.auth.isGuest()) {
       this.showAuthModal();
       return;
@@ -339,8 +339,12 @@ class App {
       this.showToast(`Успешно! Вы приобрели перевод "${title}"`, 'success');
       this.renderUserHeader();
       this.renderStorefront();
-      // Сразу предлагаем открыть читалку
-      window.reader.openFullTranslationModal(workId);
+
+      if (fromInsideReader && window.reader) {
+        window.reader.unlockFullReading();
+      } else {
+        window.reader.openFullTranslationModal(workId);
+      }
     } else {
       // Недостаточно Орбов
       this.showInsufficientOrbsModal(work, result.needOrbs);
@@ -435,14 +439,32 @@ class App {
   }
 
   /**
-   * Модальное окно загрузки архива (.zip) для купленного перевода
+   * Модальное окно загрузки архива (.zip) или папки с графикой
+   * Поддерживает режимы: preview (бесплатный предпросмотр N страниц) и full (полное чтение)
    */
-  showArchiveUploadModal(work) {
+  showArchiveUploadModal(work, mode = 'preview') {
     const modal = document.getElementById('archive-upload-modal');
     if (!modal) return;
 
     const title = window.i18n ? window.i18n.getWorkTitle(work) : work.title;
+    const prefixEl = document.getElementById('archive-modal-title-prefix');
+    const descEl = document.getElementById('archive-modal-desc');
+    const isEn = window.i18n && window.i18n.getLang() === 'en';
+
     document.getElementById('archive-work-title').textContent = title;
+
+    if (mode === 'preview') {
+      if (prefixEl) prefixEl.textContent = isEn ? '👁️ Free Preview:' : '👁️ Бесплатное превью:';
+      if (descEl) descEl.textContent = isEn
+        ? `To preview the first ${work.previewPagesCount || 3} pages with live translation overlay, select your official archive (.zip) or graphics folder. The reader will apply translations directly in your browser.`
+        : `Для просмотра первых ${work.previewPagesCount || 3} страниц с наложением перевода выберите официальный архив (.zip) или папку с графикой. Читалка наложит адаптированный текст поверх оригинальных иллюстраций прямо в браузере.`;
+    } else {
+      if (prefixEl) prefixEl.textContent = isEn ? '📖 Launch Translation:' : '📖 Открытие перевода:';
+      if (descEl) descEl.textContent = isEn
+        ? `You own this translation script. To begin reading with full text overlays, select your official archive (.zip) or graphics folder.`
+        : `Вы приобрели доступ к переводу. Чтобы начать чтение новеллы с полным наложением текста, выберите официальный архив (.zip) или папку с графикой.`;
+    }
+
     modal.classList.add('active');
     document.body.classList.add('modal-open');
   }
@@ -534,13 +556,12 @@ class App {
       btn.addEventListener('click', () => this.closeAllModals());
     });
 
-    // Drag & drop для архива
+    // Drag & drop для архива и папок
     const dropZone = document.getElementById('archive-dropzone');
     const fileInput = document.getElementById('archive-file-input');
+    const folderInput = document.getElementById('archive-folder-input');
 
-    if (dropZone && fileInput) {
-      dropZone.addEventListener('click', () => fileInput.click());
-
+    if (dropZone) {
       dropZone.addEventListener('dragover', (e) => {
         e.preventDefault();
         dropZone.classList.add('drag-over');
@@ -553,14 +574,31 @@ class App {
       dropZone.addEventListener('drop', (e) => {
         e.preventDefault();
         dropZone.classList.remove('drag-over');
-        if (e.dataTransfer.files.length > 0) {
-          this.handleArchiveFile(e.dataTransfer.files[0]);
+        if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+          const files = e.dataTransfer.files;
+          if (files.length === 1 && (files[0].name.toLowerCase().endsWith('.zip') || files[0].name.toLowerCase().endsWith('.cbz'))) {
+            this.handleArchiveFile(files[0]);
+          } else {
+            this.handleArchiveFolder(files);
+          }
         }
       });
+    }
 
+    if (fileInput) {
       fileInput.addEventListener('change', (e) => {
-        if (e.target.files.length > 0) {
+        if (e.target.files && e.target.files.length > 0) {
           this.handleArchiveFile(e.target.files[0]);
+          e.target.value = '';
+        }
+      });
+    }
+
+    if (folderInput) {
+      folderInput.addEventListener('change', (e) => {
+        if (e.target.files && e.target.files.length > 0) {
+          this.handleArchiveFolder(e.target.files);
+          e.target.value = '';
         }
       });
     }
@@ -568,11 +606,21 @@ class App {
 
   async handleArchiveFile(file) {
     try {
-      this.showToast('Распаковка и чтение архива...', 'info');
+      this.showToast('Индексация архива...', 'info');
       await window.reader.loadUserZipFile(file);
       this.closeAllModals();
     } catch (err) {
       this.showToast(err.message || 'Ошибка чтения архива', 'error');
+    }
+  }
+
+  async handleArchiveFolder(files) {
+    try {
+      this.showToast('Чтение папки с изображениями...', 'info');
+      await window.reader.loadUserFolder(files);
+      this.closeAllModals();
+    } catch (err) {
+      this.showToast(err.message || 'Ошибка чтения папки', 'error');
     }
   }
 
