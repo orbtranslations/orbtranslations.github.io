@@ -41,6 +41,89 @@ class ReaderService {
     this._eventsSetup = false;
   }
 
+  static BORDER_CONFIGS = [
+    { // Рамка 1: портрет слева, текст справа
+      portraitZones: [{ x: 0.2, y: 0.5, w: 18.0, h: 99.0 }],
+      bgZone: { x: 17.5, y: 0.5, w: 82.3, h: 99.0 },
+      textZone: { x: 21.5, y: 7.5, w: 75.5, h: 81.0 }
+    },
+    { // Рамка 2: текст слева, портрет справа
+      portraitZones: [{ x: 82.0, y: 0.5, w: 17.8, h: 99.0 }],
+      bgZone: { x: 0.2, y: 0.5, w: 82.3, h: 99.0 },
+      textZone: { x: 3.5, y: 7.5, w: 76.5, h: 81.0 }
+    },
+    { // Рамка 3: портреты слева и справа, текст в центре
+      portraitZones: [
+        { x: 0.2, y: 0.5, w: 18.0, h: 99.0 },
+        { x: 82.0, y: 0.5, w: 17.8, h: 99.0 }
+      ],
+      bgZone: { x: 18.0, y: 0.5, w: 64.0, h: 99.0 },
+      textZone: { x: 21.5, y: 7.5, w: 57.0, h: 81.0 }
+    },
+    { // Рамка 4: без портретов, сплошной текст по всей ширине
+      portraitZones: [],
+      bgZone: { x: 0.8, y: 2.0, w: 98.4, h: 96.0 },
+      textZone: { x: 3.5, y: 7.5, w: 93.0, h: 81.0 }
+    }
+  ];
+
+  /**
+   * Поиск наиболее подходящего портрета с поддержкой русских и английских алиасов
+   */
+  findBestPortrait(portraits, charName, sceneKey, explicitName = '') {
+    if (!portraits || portraits.length === 0) return null;
+
+    // 1. Точное или частичное совпадение по явному имени из dialogData
+    if (explicitName) {
+      const expClean = explicitName.toLowerCase().trim();
+      const exact = portraits.find(p => p.name.toLowerCase() === expClean);
+      if (exact) return exact;
+      const partial = portraits.find(p => p.name.toLowerCase().includes(expClean));
+      if (partial) return partial;
+    }
+
+    if (!charName) return null;
+
+    const cLower = charName.toLowerCase().trim();
+    const cleanScene = (sceneKey || '').split(/[\/\\]/).pop().replace(/\.[^/.]+$/, '').toLowerCase();
+    const sceneMatch = cleanScene.match(/^([a-z]*\d+)[-](\d+|[a-z]+)/);
+    const sceneNum = sceneMatch ? sceneMatch[1] : cleanScene;
+
+    // Таблица алиасов имен для сопоставления английских и русских вариантов
+    const aliases = {
+      'hasami': ['хасами', 'hasami'],
+      'хасами': ['хасами', 'hasami'],
+      'tayun': ['таюн', 'tayun', 'комунэ', 'komune', 'yun'],
+      'таюн': ['таюн', 'tayun', 'комунэ', 'komune', 'yun'],
+      'yuurin': ['юрин', 'yuurin', 'никё', 'nikyou'],
+      'юрин': ['юрин', 'yuurin', 'никё', 'nikyou'],
+      'momimomi': ['момимоми', 'momimomi', 'оомомо', 'oomomo'],
+      'момимоми': ['момимоми', 'momimomi', 'оомомо', 'oomomo'],
+      'kureha': ['куреха', 'kureha'],
+      'куреха': ['куреха', 'kureha']
+    };
+
+    const targetAliases = aliases[cLower] || [cLower];
+
+    // Приоритет 1: Имя + сцена (например, Хасами для сцены 10-02 -> Хасами 10-01A)
+    const matchScene = portraits.find(p => {
+      const pLower = p.name.toLowerCase();
+      const sLower = (p.sourceImage || '').toLowerCase();
+      const hasChar = targetAliases.some(a => pLower.includes(a));
+      const hasScene = pLower.includes(cleanScene) || sLower.includes(cleanScene) ||
+                       (sceneNum && (pLower.includes(sceneNum) || sLower.includes(sceneNum)));
+      return hasChar && hasScene;
+    });
+    if (matchScene) return matchScene;
+
+    // Приоритет 2: Любой портрет данного персонажа
+    const matchAny = portraits.find(p => {
+      const pLower = p.name.toLowerCase();
+      return targetAliases.some(a => pLower.includes(a));
+    });
+    return matchAny || null;
+  }
+
   /**
    * Определение приоритетного языка для читалки на основе текущего языка интерфейса сайта
    */
@@ -1178,12 +1261,30 @@ class ReaderService {
       let charName = charMatch ? charMatch[1].trim() : '';
       let speechText = charMatch ? cleanBlockText.replace(/^[\(（【][^)）】]+[\)）】]\s*/, '') : cleanBlockText;
 
-      const bKey1 = `${page.key}_block_${safeBlockIdx}`;
-      const bKey2 = `${cleanBase}_block_${safeBlockIdx}`;
-      const bSettings = dialogData[bKey1] || dialogData[bKey2] || {};
+      const candKeys = [
+        page.key,
+        cleanBase,
+        page.targetKey,
+        `Image/${cleanBase}`,
+        `Image/${page.key}`
+      ].filter(Boolean);
+      let bSettings = {};
+      for (const k of candKeys) {
+        const fullKey = `${k}_block_${safeBlockIdx}`;
+        if (dialogData[fullKey]) {
+          bSettings = dialogData[fullKey];
+          break;
+        }
+      }
 
       const defBorderIdx = charName ? 0 : 3;
-      const borderIdx = bSettings.borderIndex !== undefined ? bSettings.borderIndex : defBorderIdx;
+      let borderIdx = defBorderIdx;
+      if (bSettings.borderIndex !== undefined && bSettings.borderIndex !== null) {
+        borderIdx = typeof bSettings.borderIndex === 'number' 
+          ? bSettings.borderIndex 
+          : parseInt(bSettings.borderIndex, 10);
+        if (isNaN(borderIdx)) borderIdx = defBorderIdx;
+      }
       const presetName = bSettings.preset;
       const preset = presets.find(p => p.name === presetName) || {};
 
@@ -1196,64 +1297,65 @@ class ReaderService {
         this.nextPage();
       });
 
-      // Белая подложка
+      const bCfg = ReaderService.BORDER_CONFIGS[borderIdx] || ReaderService.BORDER_CONFIGS[0];
+
+      // 1. Белая подложка под текст
       const bgSlot = document.createElement('div');
       bgSlot.className = 'dialog-bg-slot';
-      if (borderIdx === 0) {
-        bgSlot.style.left = '17.5%'; bgSlot.style.top = '0.5%'; bgSlot.style.width = '82.3%'; bgSlot.style.height = '99%';
-      } else {
-        bgSlot.style.left = '0.8%'; bgSlot.style.top = '2%'; bgSlot.style.width = '98.4%'; bgSlot.style.height = '96%';
-      }
+      bgSlot.style.left = `${bCfg.bgZone.x}%`;
+      bgSlot.style.top = `${bCfg.bgZone.y}%`;
+      bgSlot.style.width = `${bCfg.bgZone.w}%`;
+      bgSlot.style.height = `${bCfg.bgZone.h}%`;
       frameWrapper.appendChild(bgSlot);
 
-      // Слот портрета говорящего персонажа (слева при Рамке 1)
-      const portraitSlot = document.createElement('div');
-      portraitSlot.className = 'dialog-portrait-slot portrait-1';
-      portraitSlot.style.left = '0.2%';
-      portraitSlot.style.width = '18.0%';
+      // 2. Портреты согласно конфигурации зон рамки (Рамка 1: слева; Рамка 2: справа; Рамка 3: слева и справа)
+      if (bCfg.portraitZones && bCfg.portraitZones.length > 0) {
+        bCfg.portraitZones.forEach((pz, pIdx) => {
+          let portraitObj = null;
+          if (pIdx === 0) {
+            // Основной портрет говорящего персонажа (в Рамке 1 слева, в Рамке 2 справа)
+            portraitObj = this.findBestPortrait(portraits, charName, cleanBase, bSettings.portraitName);
+          } else if (pIdx === 1) {
+            // Второй портрет (в Рамке 3 справа)
+            portraitObj = this.findBestPortrait(portraits, '', cleanBase, bSettings.portrait2Name);
+          }
 
-      const portraitImg = document.createElement('img');
-      portraitImg.alt = charName;
+          if (portraitObj) {
+            const portraitSlot = document.createElement('div');
+            portraitSlot.className = `dialog-portrait-slot portrait-${pIdx + 1}`;
+            portraitSlot.style.left = `${pz.x}%`;
+            portraitSlot.style.top = `${pz.y}%`;
+            portraitSlot.style.width = `${pz.w}%`;
+            portraitSlot.style.height = `${pz.h}%`;
 
-      let portraitObj = null;
-      if (bSettings.portraitName) {
-        portraitObj = portraits.find(p => p.name === bSettings.portraitName);
-      } else if (charName) {
-        // Автопоиск подходящего портрета по имени говорящего и сцене
-        portraitObj = portraits.find(p => {
-          const pLower = p.name.toLowerCase();
-          const cLower = charName.toLowerCase();
-          return pLower.includes(cLower) && (pLower.includes(cleanBase.toLowerCase()) || p.sourceImage.toLowerCase().includes(cleanBase.toLowerCase()));
-        }) || portraits.find(p => p.name.toLowerCase().includes(charName.toLowerCase()));
-      }
+            const portraitImg = document.createElement('img');
+            portraitImg.alt = portraitObj.name;
 
-      if (portraitObj && borderIdx === 0) {
-        this.getPortraitUrl(portraitObj).then(url => {
-          if (url) {
-            portraitImg.src = url;
-            portraitSlot.classList.remove('hidden');
+            this.getPortraitUrl(portraitObj).then(url => {
+              if (url) {
+                portraitImg.src = url;
+              }
+            });
+
+            portraitSlot.appendChild(portraitImg);
+            frameWrapper.appendChild(portraitSlot);
           }
         });
-        portraitSlot.appendChild(portraitImg);
-        frameWrapper.appendChild(portraitSlot);
-      } else {
-        portraitSlot.classList.add('hidden');
       }
 
-      // Металлическая рамка (Рамка 1 или Рамка 4)
+      // 3. Металлическая рамка (Рамка 1, 2, 3 или 4)
       const frameBorderImg = document.createElement('img');
       frameBorderImg.className = 'dialog-frame-img';
       frameBorderImg.src = this.getBorderUrl(borderIdx);
       frameWrapper.appendChild(frameBorderImg);
 
-      // Текстовый слот диалога с безопасным отступом от фаски рамки
+      // 4. Текстовый слот диалога с безопасным отступом от фаски рамки
       const textSlot = document.createElement('div');
       textSlot.className = 'dialog-text-slot';
-      if (borderIdx === 0) {
-        textSlot.style.left = '21.5%'; textSlot.style.top = '7.5%'; textSlot.style.width = '75.5%'; textSlot.style.height = '81.0%';
-      } else {
-        textSlot.style.left = '3.5%'; textSlot.style.top = '7.5%'; textSlot.style.width = '93.0%'; textSlot.style.height = '81.0%';
-      }
+      textSlot.style.left = `${bCfg.textZone.x}%`;
+      textSlot.style.top = `${bCfg.textZone.y}%`;
+      textSlot.style.width = `${bCfg.textZone.w}%`;
+      textSlot.style.height = `${bCfg.textZone.h}%`;
 
       const textContent = document.createElement('div');
       textContent.className = 'dialog-text-content';
