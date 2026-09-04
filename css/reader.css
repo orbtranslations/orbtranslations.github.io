@@ -432,7 +432,6 @@
 
 .reader-bottom-trigger:hover .reader-bottom-bar,
 .reader-bottom-bar:hover,
-.reader-bottom-bar:focus-within,
 .reader-bottom-bar.force-show {
   opacity: 1;
   transform: translateY(0);

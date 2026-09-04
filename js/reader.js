@@ -833,6 +833,13 @@ class ReaderService {
         return;
       }
 
+      // При скролле колесиком снимаем фокус с ползунка страниц и убираем принудительный показ
+      if (document.activeElement && document.activeElement.closest('#reader-bottom-bar')) {
+        document.activeElement.blur();
+      }
+      const bBar = document.getElementById('reader-bottom-bar');
+      if (bBar) bBar.classList.remove('force-show');
+
       const textSlot = getScrollableTextSlot(e.target);
       if (textSlot) {
         const canScrollDown = e.deltaY > 0 && (textSlot.scrollTop + textSlot.clientHeight < textSlot.scrollHeight - 2);
@@ -904,14 +911,40 @@ class ReaderService {
       this.toggleZoom();
     });
 
-    // Удержание панели видимой при перетаскивании слайдера страниц
+    // Управление видимостью панели при взаимодействии со слайдером страниц
     const bottomBar = document.getElementById('reader-bottom-bar');
+    const trigger = document.getElementById('reader-bottom-trigger');
+    const slider = document.getElementById('reader-slider');
+
     if (bottomBar) {
       bottomBar.addEventListener('mousedown', () => {
         bottomBar.classList.add('force-show');
       });
       window.addEventListener('mouseup', () => {
         bottomBar.classList.remove('force-show');
+        if (document.activeElement && document.activeElement.closest('#reader-bottom-bar')) {
+          document.activeElement.blur();
+        }
+      });
+    }
+
+    if (slider) {
+      const releaseSlider = () => {
+        slider.blur();
+        if (bottomBar) bottomBar.classList.remove('force-show');
+      };
+      slider.addEventListener('change', releaseSlider);
+      slider.addEventListener('pointerup', releaseSlider);
+      slider.addEventListener('mouseup', releaseSlider);
+      slider.addEventListener('touchend', releaseSlider);
+    }
+
+    if (trigger) {
+      trigger.addEventListener('mouseleave', () => {
+        if (bottomBar) bottomBar.classList.remove('force-show');
+        if (document.activeElement && document.activeElement.closest('#reader-bottom-bar')) {
+          document.activeElement.blur();
+        }
       });
     }
 
