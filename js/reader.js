@@ -29,7 +29,7 @@ class ReaderService {
     this.currentLang = 'Русский';
     this.workArchives = {}; // workId -> { rawFiles, loadedAt }
     this.fileMap = new Map(); // нормализованные имена -> { zipEntry, file, name }
-    this.activeBlobPages = []; // LRU кэш Blob URL
+    this.createdBlobUrls = new Set(); // Постоянные Blob URL текущей сессии (без преждевременного отзыва)
     this.portraitCache = new Map(); // name -> dataURL
     this.zoomLevel = 1.0;
     this.panX = 0;
@@ -255,6 +255,7 @@ class ReaderService {
       ? this.parsedScript.allowedSubfolders.map(s => s.toLowerCase().replace(/\\/g, '/').trim())
       : null;
 
+    this.revokeSessionBlobs();
     this.fileMap.clear();
     const rawFiles = [];
 
@@ -307,6 +308,7 @@ class ReaderService {
       ? this.parsedScript.allowedSubfolders.map(s => s.toLowerCase().replace(/\\/g, '/').trim())
       : null;
 
+    this.revokeSessionBlobs();
     this.fileMap.clear();
     const rawFiles = [];
 
@@ -508,7 +510,7 @@ class ReaderService {
   }
 
   /**
-   * Разрешение Blob URL для сырого файла
+   * Разрешение постоянного URL для сырого файла на время сессии
    */
   async resolveRawFileUrl(rawFile) {
     if (!rawFile) return '';
@@ -516,28 +518,49 @@ class ReaderService {
 
     if (rawFile.file) {
       rawFile.url = URL.createObjectURL(rawFile.file);
+      this.createdBlobUrls.add(rawFile.url);
       return rawFile.url;
     }
 
     if (rawFile.zipEntry) {
       const blob = await rawFile.zipEntry.async('blob');
       rawFile.url = URL.createObjectURL(blob);
-      this.trackLoadedBlob(rawFile);
+      this.createdBlobUrls.add(rawFile.url);
       return rawFile.url;
     }
 
     return '';
   }
 
-  trackLoadedBlob(rawFile) {
-    this.activeBlobPages.push(rawFile);
-    if (this.activeBlobPages.length > 15) {
-      const oldest = this.activeBlobPages.shift();
-      if (oldest.url && !oldest.file) {
-        URL.revokeObjectURL(oldest.url);
-        oldest.url = null;
+  /**
+   * Очистка Blob URL сессии при смене архива
+   */
+  revokeSessionBlobs() {
+    if (this.createdBlobUrls && this.createdBlobUrls.size > 0) {
+      for (const url of this.createdBlobUrls) {
+        try { URL.revokeObjectURL(url); } catch (e) {}
       }
+      this.createdBlobUrls.clear();
     }
+    if (this.pages) {
+      this.pages.forEach(p => { p.url = null; });
+    }
+  }
+
+  /**
+   * Проверка, является ли страница карточкой персонажа, оверлеем или чистой графикой (где весь текст уже на экране)
+   */
+  isPageCleanFrame(page) {
+    if (!page) return false;
+    const fData = this.getFrameForPage(page, this.currentLang);
+    if (fData && (fData.image || fData.customImage || fData.textZone)) {
+      return true;
+    }
+    const cleanBase = (page.key || '').split(/[\/\\]/).pop().replace(/\.[^/.]+$/, '').toLowerCase();
+    if (cleanBase.startsWith('01_') || cleanBase.startsWith('02_') || cleanBase.startsWith('03_') || cleanBase.startsWith('04_') || cleanBase.startsWith('05_') || cleanBase === 'title') {
+      return true;
+    }
+    return false;
   }
 
   /**
@@ -758,7 +781,8 @@ class ReaderService {
    */
   nextPage() {
     const curPage = this.pages[this.currentIndex];
-    if (curPage && !curPage.isLocked) {
+    const isClean = this.isPageCleanFrame(curPage);
+    if (curPage && !curPage.isLocked && !isClean) {
       const blocks = ScriptParser.getBlocks((curPage.entry && curPage.entry.text) || '');
       if (blocks.length > 1 && this.currentDialogBlockIndex < blocks.length - 1) {
         this.currentDialogBlockIndex++;
@@ -779,18 +803,27 @@ class ReaderService {
    * Переход назад: к предыдущей реплике диалога или предыдущей сцене
    */
   prevPage() {
-    if (this.currentDialogBlockIndex > 0) {
-      this.currentDialogBlockIndex--;
-      this.updateReaderDisplay();
-      return;
+    const curPage = this.pages[this.currentIndex];
+    const isClean = this.isPageCleanFrame(curPage);
+    if (curPage && !curPage.isLocked && !isClean) {
+      if (this.currentDialogBlockIndex > 0) {
+        this.currentDialogBlockIndex--;
+        this.updateReaderDisplay();
+        return;
+      }
     }
 
     const step = this.isTwoPageSpread ? 2 : 1;
     if (this.currentIndex - step >= 0) {
       this.currentIndex -= step;
       const prevPage = this.pages[this.currentIndex];
-      const blocks = prevPage ? ScriptParser.getBlocks((prevPage.entry && prevPage.entry.text) || '') : [];
-      this.currentDialogBlockIndex = Math.max(0, blocks.length - 1);
+      const prevIsClean = this.isPageCleanFrame(prevPage);
+      if (prevPage && !prevIsClean) {
+        const blocks = ScriptParser.getBlocks((prevPage.entry && prevPage.entry.text) || '');
+        this.currentDialogBlockIndex = Math.max(0, blocks.length - 1);
+      } else {
+        this.currentDialogBlockIndex = 0;
+      }
       this.updateReaderDisplay();
     }
   }
@@ -879,11 +912,12 @@ class ReaderService {
       counter.textContent = `${this.currentIndex + 1} / ${this.pages.length}`;
     }
 
-    // Обновление счетчика реплик диалога в нижней панели управления (ниже окна диалога)
+    // Обновление счетчика реплик диалога в нижней панели управления (только для новелл с отдельными репликами)
     const dialogStepCounter = document.getElementById('reader-dialog-step-counter');
     if (dialogStepCounter) {
       const curPage = this.pages[this.currentIndex];
-      const blocks = (curPage && !curPage.isLocked && curPage.entry && curPage.entry.text)
+      const isClean = this.isPageCleanFrame(curPage);
+      const blocks = (curPage && !curPage.isLocked && !isClean && curPage.entry && curPage.entry.text)
         ? ScriptParser.getBlocks(curPage.entry.text)
         : [];
       if (blocks.length > 1) {
@@ -959,6 +993,23 @@ class ReaderService {
     const baseImg = document.createElement('img');
     baseImg.className = 'reader-base-image';
     baseImg.alt = page.name || page.key;
+
+    // Резервная защита на случай блокировки blob браузером: авто-конвертация в Base64 Data URL
+    baseImg.onerror = async () => {
+      if (page.rawFile && page.rawFile.zipEntry) {
+        try {
+          const base64 = await page.rawFile.zipEntry.async('base64');
+          const ext = (page.rawFile.name || '').split('.').pop().toLowerCase();
+          const mime = ext === 'png' ? 'image/png' : 'image/jpeg';
+          const dataUrl = `data:${mime};base64,${base64}`;
+          page.url = dataUrl;
+          if (page.rawFile) page.rawFile.url = dataUrl;
+          baseImg.src = dataUrl;
+        } catch (e) {
+          console.warn('Резервная конвертация в base64 не удалась:', e);
+        }
+      }
+    };
 
     // Ленивое получение URL сцены
     if (!page.url && page.rawFile) {
@@ -1265,7 +1316,9 @@ class ReaderService {
   preloadNextPage() {
     const nextIdx = this.currentIndex + (this.isTwoPageSpread ? 2 : 1);
     if (nextIdx < this.pages.length && !this.pages[nextIdx].isLocked && this.pages[nextIdx].rawFile) {
-      this.resolveRawFileUrl(this.pages[nextIdx].rawFile).catch(() => {});
+      this.resolveRawFileUrl(this.pages[nextIdx].rawFile).then(url => {
+        if (url) this.pages[nextIdx].url = url;
+      }).catch(() => {});
     }
   }
 
