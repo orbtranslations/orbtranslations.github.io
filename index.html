@@ -343,27 +343,29 @@
         <div class="reader-stage-slot" id="reader-stage-right" style="display: none;"></div>
       </div>
 
-      <!-- Floating Bottom Nav Bar -->
-      <div class="reader-bottom-bar" id="reader-bottom-bar">
-        <button class="reader-nav-btn" onclick="window.reader.prevPage()" title="Предыдущая страница (←)">◀</button>
-        <input type="range" class="reader-slider" id="reader-slider" min="0" max="1" value="0" oninput="window.reader.goToPage(Number(this.value))">
-        <span class="reader-counter" id="reader-counter">1 / 1</span>
-        <button class="reader-dialog-step-counter" id="reader-dialog-step-counter" onclick="window.reader.nextPage()" title="Следующая реплика диалога (Клик / Пробел)" style="display: none;">1 / 1 ▾</button>
-        <button class="reader-nav-btn" onclick="window.reader.nextPage()" title="Следующая страница (→)">▶</button>
+      <!-- Auto-hiding Bottom Bar & Trigger Zone -->
+      <div class="reader-bottom-trigger" id="reader-bottom-trigger">
+        <div class="reader-bottom-bar" id="reader-bottom-bar">
+          <button class="reader-nav-btn" onclick="window.reader.prevPage()" title="Предыдущая страница (←)">◀</button>
+          <input type="range" class="reader-slider" id="reader-slider" min="0" max="1" value="0" oninput="window.reader.goToPage(Number(this.value))">
+          <span class="reader-counter" id="reader-counter">1 / 1</span>
+          <button class="reader-dialog-step-counter" id="reader-dialog-step-counter" onclick="window.reader.nextPage()" title="Следующая реплика диалога (Клик / Пробел)" style="display: none;">1 / 1 ▾</button>
+          <button class="reader-nav-btn" onclick="window.reader.nextPage()" title="Следующая страница (→)">▶</button>
 
-        <div class="reader-bar-divider"></div>
+          <div class="reader-bar-divider"></div>
 
-        <!-- Масштабирование изображения (Zoom) -->
-        <button class="reader-tool-btn" onclick="window.reader.zoomOut()" title="Уменьшить масштаб (Zoom Out)">🔍−</button>
-        <button class="reader-tool-btn" id="reader-zoom-reset-btn" onclick="window.reader.resetZoom()" title="Сбросить масштаб (100%)">100%</button>
-        <button class="reader-tool-btn" onclick="window.reader.zoomIn()" title="Увеличить масштаб (Zoom In / 2x)">🔍+</button>
+          <!-- Масштабирование изображения (Zoom) -->
+          <button class="reader-tool-btn" onclick="window.reader.zoomOut()" title="Уменьшить масштаб (Zoom Out)">🔍−</button>
+          <button class="reader-tool-btn" id="reader-zoom-reset-btn" onclick="window.reader.resetZoom()" title="Сбросить масштаб (100%)">100%</button>
+          <button class="reader-tool-btn" onclick="window.reader.zoomIn()" title="Увеличить масштаб (Zoom In / 2x)">🔍+</button>
 
-        <div class="reader-bar-divider"></div>
+          <div class="reader-bar-divider"></div>
 
-        <!-- Переключение на 2 экрана -->
-        <button class="reader-tool-btn reader-tool-spread" id="reader-spread-bottom-btn" onclick="window.reader.toggleSpread()" title="Переключить 1 / 2 экрана">
-          📖 1 экран
-        </button>
+          <!-- Переключение на 2 экрана -->
+          <button class="reader-tool-btn reader-tool-spread" id="reader-spread-bottom-btn" onclick="window.reader.toggleSpread()" title="Переключить 1 / 2 экрана">
+            📖 1 экран
+          </button>
+        </div>
       </div>
     </div>
   </div>

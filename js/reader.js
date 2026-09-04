@@ -804,20 +804,116 @@ class ReaderService {
     const container = document.getElementById('reader-stage-container');
     if (!container) return;
 
-    // Скролл колесиком мыши по текстовому слою прокручивает текст вниз/вверх без смены страниц
-    container.addEventListener('wheel', (e) => {
-      const textSlot = e.target.closest('.clean-frame-text-slot, .dialog-text-slot');
-      if (textSlot) {
-        e.preventDefault();
-        textSlot.scrollTop += e.deltaY * 0.7;
+    // Вспомогательная функция: поиск текстового слота с активным скроллом (переполнение контентом)
+    const getScrollableTextSlot = (target) => {
+      if (!target) return null;
+      // Прямой клик/наведение на текстовый контейнер
+      const directSlot = target.closest('.clean-frame-text-slot, .dialog-text-slot');
+      if (directSlot && directSlot.scrollHeight > directSlot.clientHeight + 4) {
+        return directSlot;
       }
-    }, { passive: false });
+      // Наведение на обертку диалога или слота
+      const wrapper = target.closest('.dialog-frame-wrapper, .clean-frame-wrapper, .reader-stage-slot, .reader-dom-box');
+      if (wrapper) {
+        const dialogSlot = wrapper.querySelector('.dialog-text-slot');
+        if (dialogSlot && dialogSlot.scrollHeight > dialogSlot.clientHeight + 4) return dialogSlot;
+        const cleanSlot = wrapper.querySelector('.clean-frame-text-slot');
+        if (cleanSlot && cleanSlot.scrollHeight > cleanSlot.clientHeight + 4) return cleanSlot;
+      }
+      return null;
+    };
+
+    // Скролл колесиком мыши:
+    // - Если курсор над переполненным текстом, плавно скроллим текст.
+    // - Если текст полностью помещается, либо скролл достиг конца, либо курсор на любом другом участке сцены/экрана —
+    //   колесико мыши листает реплики диалогов и страницы!
+    const onStageWheel = (e) => {
+      // Игнорируем скролл над всплывающей панелью инструментов
+      if (e.target.closest('#reader-bottom-bar') || e.target.closest('.reader-header') || e.target.closest('select')) {
+        return;
+      }
+
+      const textSlot = getScrollableTextSlot(e.target);
+      if (textSlot) {
+        const canScrollDown = e.deltaY > 0 && (textSlot.scrollTop + textSlot.clientHeight < textSlot.scrollHeight - 2);
+        const canScrollUp = e.deltaY < 0 && textSlot.scrollTop > 2;
+        if (canScrollDown || canScrollUp) {
+          e.preventDefault();
+          textSlot.scrollTop += e.deltaY * 0.7;
+          return;
+        }
+      }
+
+      e.preventDefault();
+      const now = Date.now();
+      if (!this.lastWheelTime) this.lastWheelTime = 0;
+      if (now - this.lastWheelTime < 110) return;
+      if (Math.abs(e.deltaY) < 4) return;
+      this.lastWheelTime = now;
+
+      if (e.deltaY > 0) {
+        this.nextPage();
+      } else {
+        this.prevPage();
+      }
+    };
+
+    container.addEventListener('wheel', onStageWheel, { passive: false });
+
+    // Клик по сцене читалки для перехода вперед/назад
+    let stageClickTimer = null;
+    container.addEventListener('click', (e) => {
+      if (e.target.closest('#reader-bottom-bar') || e.target.closest('.btn') || e.target.closest('select') || e.target.closest('input')) {
+        return;
+      }
+      if (this.didPan) {
+        this.didPan = false;
+        return;
+      }
+      if (e.target.closest('.dialog-frame-wrapper')) return;
+
+      const textSlot = getScrollableTextSlot(e.target);
+      if (textSlot) return;
+
+      if (stageClickTimer) {
+        clearTimeout(stageClickTimer);
+        stageClickTimer = null;
+      }
+
+      stageClickTimer = setTimeout(() => {
+        stageClickTimer = null;
+        if (this.didPan) return;
+
+        const clickX = e.clientX;
+        const width = window.innerWidth;
+        if (clickX > width * 0.35) {
+          this.nextPage();
+        } else {
+          this.prevPage();
+        }
+      }, 200);
+    });
 
     // Двойной клик переключает масштаб 2x / 1x (как в Overlaying text on graphics)
     container.addEventListener('dblclick', (e) => {
       if (e.target.closest('#reader-bottom-bar') || e.target.closest('.btn') || e.target.closest('select')) return;
+      if (stageClickTimer) {
+        clearTimeout(stageClickTimer);
+        stageClickTimer = null;
+      }
       this.toggleZoom();
     });
+
+    // Удержание панели видимой при перетаскивании слайдера страниц
+    const bottomBar = document.getElementById('reader-bottom-bar');
+    if (bottomBar) {
+      bottomBar.addEventListener('mousedown', () => {
+        bottomBar.classList.add('force-show');
+      });
+      window.addEventListener('mouseup', () => {
+        bottomBar.classList.remove('force-show');
+      });
+    }
 
     // Перемещение панорамирования мышью при увеличенном масштабе
     container.addEventListener('mousedown', (e) => {
