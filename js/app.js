@@ -5,9 +5,13 @@
 class App {
   constructor() {
     this.currentTab = 'storefront';
+    this.store = (typeof window !== 'undefined' && window.store) ? window.store : null;
   }
 
   init() {
+    if (!this.store && typeof window !== 'undefined') {
+      this.store = window.store;
+    }
     this.bindGlobalEvents();
     this.renderUserHeader();
     this.renderStorefront();
@@ -387,11 +391,20 @@ class App {
       </tr>
     `;
 
-    if (tbodyPurchases) tbodyPurchases.innerHTML = loadingHtml;
-    if (tbodyModal) tbodyModal.innerHTML = loadingHtml;
+    const hasExistingRows = (tbodyPurchases && tbodyPurchases.children && tbodyPurchases.children.length > 0) || 
+                            (tbodyModal && tbodyModal.children && tbodyModal.children.length > 0);
+    if (!hasExistingRows) {
+      if (tbodyPurchases) tbodyPurchases.innerHTML = loadingHtml;
+      if (tbodyModal) tbodyModal.innerHTML = loadingHtml;
+    }
 
     try {
-      const history = await this.store.getDepositHistory();
+      const store = this.store || (typeof window !== 'undefined' ? window.store : null);
+      if (!store) {
+        console.warn('Store is not available for renderDepositHistory');
+        return;
+      }
+      const history = await store.getDepositHistory();
       if (badge) badge.textContent = history.length;
 
       if (history.length === 0) {
@@ -507,8 +520,7 @@ class App {
     }
   }
 
-  showDepositHistoryModal() {
-    this.renderDepositHistory();
+  async showDepositHistoryModal() {
     const modal = document.getElementById('deposits-history-modal');
     if (modal) {
       modal.classList.add('active');
@@ -517,6 +529,7 @@ class App {
       this.switchTab('purchases');
       this.switchPurchasesSubtab('deposits');
     }
+    return await this.renderDepositHistory();
   }
 
   /**
