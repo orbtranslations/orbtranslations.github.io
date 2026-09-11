@@ -986,8 +986,8 @@
 
 /* Кнопка открытия активной сделки из истории */
 .btn-resume-deal {
-  padding: 4px 10px;
-  font-size: 0.78rem;
+  padding: 3px 8px;
+  font-size: 0.75rem;
   font-weight: 600;
   border-radius: var(--radius-sm);
   background: linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%);
@@ -1001,7 +1001,6 @@
   gap: 4px;
   white-space: nowrap;
   flex-shrink: 0;
-  min-width: 76px;
   box-sizing: border-box;
 }
 
@@ -1010,4 +1009,19 @@
   box-shadow: 0 2px 10px rgba(124, 58, 237, 0.4);
   transform: translateY(-1px);
 }
+
+/* Модальное окно истории сделок — просторный полноразмерный адаптивный лэйаут */
+#deposits-history-modal {
+  padding: 0.75rem;
+}
+
+#deposits-history-modal .modal-card {
+  max-width: 1320px;
+  width: 98%;
+}
+
+#deposits-history-modal .modal-body {
+  padding: 1rem 1.25rem;
+}
+
 

@@ -20,9 +20,9 @@
   <meta http-equiv="Expires" content="0">
 
   <!-- Custom Styles -->
-  <link rel="stylesheet" href="css/style.css?v=2.8.0">
-  <link rel="stylesheet" href="css/components.css?v=2.8.0">
-  <link rel="stylesheet" href="css/reader.css?v=2.8.0">
+  <link rel="stylesheet" href="css/style.css?v=2.9.0">
+  <link rel="stylesheet" href="css/components.css?v=2.9.0">
+  <link rel="stylesheet" href="css/reader.css?v=2.9.0">
 </head>
 <body>
 
@@ -151,17 +151,17 @@
             <button class="btn btn-secondary btn-small" onclick="window.app.renderDepositHistory()" data-i18n="deposits_refresh_btn">🔄 Refresh History</button>
           </div>
           <div class="modal-body" style="padding: 0; overflow-x: auto; -webkit-overflow-scrolling: touch;">
-            <table style="width: 100%; min-width: 960px; border-collapse: collapse; text-align: left; font-size: 0.85rem;">
+            <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 0.82rem;">
               <thead>
                 <tr style="border-bottom: 1px solid var(--border-color); background: rgba(255, 255, 255, 0.03); color: var(--text-muted);">
-                  <th style="padding: 0.75rem 0.85rem; white-space: nowrap;" data-i18n="deposits_th_date">Date</th>
-                  <th style="padding: 0.75rem 0.85rem; white-space: nowrap;" data-i18n="deposits_th_order">Order ID</th>
-                  <th style="padding: 0.75rem 0.85rem; white-space: nowrap;" data-i18n="deposits_th_network">Network / Currency</th>
-                  <th style="padding: 0.75rem 0.85rem; white-space: nowrap;" data-i18n="deposits_th_amount">Amount</th>
-                  <th style="padding: 0.75rem 0.85rem; white-space: nowrap;" data-i18n="deposits_th_orbs">Orbs Credited</th>
-                  <th style="padding: 0.75rem 0.85rem; white-space: nowrap;" data-i18n="deposits_th_tx">Blockchain Transaction</th>
-                  <th style="padding: 0.75rem 0.85rem; white-space: nowrap;" data-i18n="deposits_th_status">Status</th>
-                  <th style="padding: 0.75rem 0.85rem; text-align: center; white-space: nowrap;" data-i18n="deposits_th_action">Action</th>
+                  <th style="padding: 0.65rem 0.6rem; white-space: nowrap;" data-i18n="deposits_th_date">Date</th>
+                  <th style="padding: 0.65rem 0.6rem; white-space: nowrap;" data-i18n="deposits_th_order">Order ID</th>
+                  <th style="padding: 0.65rem 0.6rem; white-space: nowrap;" data-i18n="deposits_th_network">Network / Currency</th>
+                  <th style="padding: 0.65rem 0.6rem; white-space: nowrap;" data-i18n="deposits_th_amount">Amount</th>
+                  <th style="padding: 0.65rem 0.6rem; white-space: nowrap;" data-i18n="deposits_th_orbs">Orbs Credited</th>
+                  <th style="padding: 0.65rem 0.6rem; white-space: nowrap;" data-i18n="deposits_th_tx">Blockchain Transaction</th>
+                  <th style="padding: 0.65rem 0.6rem; white-space: nowrap;" data-i18n="deposits_th_status">Status</th>
+                  <th style="padding: 0.65rem 0.6rem; text-align: center; white-space: nowrap;" data-i18n="deposits_th_action">Action</th>
                 </tr>
               </thead>
               <tbody id="deposits-history-table-body">
@@ -711,13 +711,13 @@
   <!-- ========================================================================
        MODAL 2.5: Dedicated Deposit History Modal
        ======================================================================== -->
-  <div class="modal-backdrop" id="deposits-history-modal">
-    <div class="modal-card" style="max-width: 1100px; width: 96%;">
-      <div class="modal-header" style="justify-content: space-between;">
+  <div class="modal-backdrop" id="deposits-history-modal" style="padding: 0.75rem;">
+    <div class="modal-card" style="max-width: 1320px; width: 98%;">
+      <div class="modal-header" style="justify-content: space-between; padding: 1rem 1.25rem;">
         <h3 class="modal-title" data-i18n="deposits_table_title">🪙 Crypto Deposit History (USDT / BTC)</h3>
         <button class="modal-close-btn">&times;</button>
       </div>
-      <div class="modal-body" style="padding: 1.25rem;">
+      <div class="modal-body" style="padding: 1rem 1.25rem;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 8px;">
           <span style="font-size: 0.82rem; color: var(--text-muted);" data-i18n="deposits_modal_sub">
             Активные сделки можно открыть повторно до истечения времени. Отменённые сделки не содержат подробностей.
@@ -725,17 +725,17 @@
           <button class="btn btn-secondary btn-small" onclick="window.app.renderDepositHistory()" data-i18n="deposits_refresh_btn">🔄 Refresh History</button>
         </div>
         <div style="overflow-x: auto; border: 1px solid var(--border-color); border-radius: var(--radius-sm); -webkit-overflow-scrolling: touch;">
-          <table style="width: 100%; min-width: 960px; border-collapse: collapse; text-align: left; font-size: 0.83rem;">
+          <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 0.82rem;">
             <thead>
               <tr style="border-bottom: 1px solid var(--border-color); background: rgba(255, 255, 255, 0.03); color: var(--text-muted);">
-                <th style="padding: 0.75rem 0.85rem; white-space: nowrap;" data-i18n="deposits_th_date">Date</th>
-                <th style="padding: 0.75rem 0.85rem; white-space: nowrap;" data-i18n="deposits_th_order">Order ID</th>
-                <th style="padding: 0.75rem 0.85rem; white-space: nowrap;" data-i18n="deposits_th_network">Network</th>
-                <th style="padding: 0.75rem 0.85rem; white-space: nowrap;" data-i18n="deposits_th_amount">Amount</th>
-                <th style="padding: 0.75rem 0.85rem; white-space: nowrap;" data-i18n="deposits_th_orbs">Orbs</th>
-                <th style="padding: 0.75rem 0.85rem; white-space: nowrap;" data-i18n="deposits_th_tx">Blockchain Tx</th>
-                <th style="padding: 0.75rem 0.85rem; white-space: nowrap;" data-i18n="deposits_th_status">Status</th>
-                <th style="padding: 0.75rem 0.85rem; text-align: center; white-space: nowrap;" data-i18n="deposits_th_action">Action</th>
+                <th style="padding: 0.65rem 0.6rem; white-space: nowrap;" data-i18n="deposits_th_date">Date</th>
+                <th style="padding: 0.65rem 0.6rem; white-space: nowrap;" data-i18n="deposits_th_order">Order ID</th>
+                <th style="padding: 0.65rem 0.6rem; white-space: nowrap;" data-i18n="deposits_th_network">Network</th>
+                <th style="padding: 0.65rem 0.6rem; white-space: nowrap;" data-i18n="deposits_th_amount">Amount</th>
+                <th style="padding: 0.65rem 0.6rem; white-space: nowrap;" data-i18n="deposits_th_orbs">Orbs</th>
+                <th style="padding: 0.65rem 0.6rem; white-space: nowrap;" data-i18n="deposits_th_tx">Blockchain Tx</th>
+                <th style="padding: 0.65rem 0.6rem; white-space: nowrap;" data-i18n="deposits_th_status">Status</th>
+                <th style="padding: 0.65rem 0.6rem; text-align: center; white-space: nowrap;" data-i18n="deposits_th_action">Action</th>
               </tr>
             </thead>
             <tbody id="modal-deposits-history-table-body">
@@ -810,15 +810,15 @@
        Application JavaScript Modules
        ======================================================================== -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="js/supabase-client.js?v=2.8.0"></script>
-  <script src="js/store.js?v=2.8.0"></script>
-  <script src="js/i18n.js?v=2.8.0"></script>
-  <script src="js/script-parser.js?v=2.8.0"></script>
-  <script src="js/auth.js?v=2.8.0"></script>
-  <script src="js/qrcode.min.js?v=2.8.0"></script>
-  <script src="js/crypto-pay.js?v=2.8.0"></script>
-  <script src="js/reader.js?v=2.8.0"></script>
-  <script src="js/admin.js?v=2.8.0"></script>
-  <script src="js/app.js?v=2.8.0"></script>
+  <script src="js/supabase-client.js?v=2.9.0"></script>
+  <script src="js/store.js?v=2.9.0"></script>
+  <script src="js/i18n.js?v=2.9.0"></script>
+  <script src="js/script-parser.js?v=2.9.0"></script>
+  <script src="js/auth.js?v=2.9.0"></script>
+  <script src="js/qrcode.min.js?v=2.9.0"></script>
+  <script src="js/crypto-pay.js?v=2.9.0"></script>
+  <script src="js/reader.js?v=2.9.0"></script>
+  <script src="js/admin.js?v=2.9.0"></script>
+  <script src="js/app.js?v=2.9.0"></script>
 </body>
 </html>

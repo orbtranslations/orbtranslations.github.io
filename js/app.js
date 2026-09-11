@@ -430,7 +430,7 @@ class App {
 
       const rowsHtml = history.map(item => {
         const locale = isEn ? 'en-US' : 'ru-RU';
-        const dateFormatted = item.date ? new Date(item.date).toLocaleString(locale) : '—';
+        const dateFormatted = item.date ? new Date(item.date).toLocaleString(locale, { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
         const isBtc = (item.network || '').includes('BTC');
         const networkBadgeClass = isBtc ? 'badge-gold' : (item.network || '').includes('Polygon') ? 'badge-accent' : 'badge-info';
 
@@ -480,14 +480,14 @@ class App {
 
         return `
           <tr style="border-bottom: 1px solid var(--border-color); transition: background 0.2s ease;">
-            <td style="padding: 0.75rem 0.85rem; white-space: nowrap; color: var(--text-secondary);">${dateFormatted}</td>
-            <td style="padding: 0.75rem 0.85rem; white-space: nowrap; font-weight: 600; font-family: monospace; color: #fff;">${item.id || '—'}</td>
-            <td style="padding: 0.75rem 0.85rem; white-space: nowrap;"><span class="badge ${networkBadgeClass}">${item.network || 'USDT'}</span></td>
-            <td style="padding: 0.75rem 0.85rem; white-space: nowrap; font-weight: 600; ${isCancelled ? 'color: var(--text-muted);' : ''}">${amountVal} ${isBtc ? 'BTC' : 'USDT'}</td>
-            <td style="padding: 0.75rem 0.85rem; white-space: nowrap; ${isCancelled ? 'color: var(--text-muted);' : 'color: #fbbf24; font-weight: 700;'}">+${orbsVal.toFixed(2)} 🪙</td>
-            <td style="padding: 0.75rem 0.85rem; white-space: nowrap;">${txHashCell}</td>
-            <td style="padding: 0.75rem 0.85rem; white-space: nowrap;">${statusBadge}</td>
-            <td style="padding: 0.75rem 0.85rem; white-space: nowrap; text-align: center;">${actionCell}</td>
+            <td style="padding: 0.65rem 0.6rem; white-space: nowrap; color: var(--text-secondary); font-size: 0.82rem;">${dateFormatted}</td>
+            <td style="padding: 0.65rem 0.6rem; white-space: nowrap; font-weight: 600; font-family: monospace; color: #fff; font-size: 0.82rem;">${item.id || '—'}</td>
+            <td style="padding: 0.65rem 0.6rem; white-space: nowrap;"><span class="badge ${networkBadgeClass}" style="font-size: 0.72rem; padding: 2px 7px;">${item.network || 'USDT'}</span></td>
+            <td style="padding: 0.65rem 0.6rem; white-space: nowrap; font-weight: 600; font-size: 0.82rem; ${isCancelled ? 'color: var(--text-muted);' : ''}">${amountVal} ${isBtc ? 'BTC' : 'USDT'}</td>
+            <td style="padding: 0.65rem 0.6rem; white-space: nowrap; font-size: 0.82rem; ${isCancelled ? 'color: var(--text-muted);' : 'color: #fbbf24; font-weight: 700;'}">+${orbsVal.toFixed(2)} 🪙</td>
+            <td style="padding: 0.65rem 0.6rem; white-space: nowrap; font-size: 0.82rem;">${txHashCell}</td>
+            <td style="padding: 0.65rem 0.6rem; white-space: nowrap;"><span style="font-size: 0.76rem;">${statusBadge}</span></td>
+            <td style="padding: 0.65rem 0.6rem; white-space: nowrap; text-align: center;">${actionCell}</td>
           </tr>
         `;
       }).join('');
