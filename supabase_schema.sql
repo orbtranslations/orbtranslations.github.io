@@ -182,6 +182,7 @@ DROP POLICY IF EXISTS "Update own profile" ON public.profiles;
 DROP POLICY IF EXISTS "Read own purchases" ON public.purchases;
 DROP POLICY IF EXISTS "Insert own purchases" ON public.purchases;
 DROP POLICY IF EXISTS "Read own orders" ON public.crypto_orders;
+DROP POLICY IF EXISTS "Read orders" ON public.crypto_orders;
 DROP POLICY IF EXISTS "Insert orders" ON public.crypto_orders;
 DROP POLICY IF EXISTS "Update orders" ON public.crypto_orders;
 
@@ -198,6 +199,15 @@ CREATE POLICY "Read own purchases" ON public.purchases FOR SELECT USING (auth.ui
 CREATE POLICY "Insert own purchases" ON public.purchases FOR INSERT WITH CHECK (auth.uid() = user_id);
 
 -- Заказы: пользователи могут создавать, просматривать и обновлять заказы
-CREATE POLICY "Read own orders" ON public.crypto_orders FOR SELECT USING (auth.uid() = user_id OR user_id IS NULL);
+CREATE POLICY "Read orders" ON public.crypto_orders FOR SELECT USING (true);
 CREATE POLICY "Insert orders" ON public.crypto_orders FOR INSERT WITH CHECK (true);
 CREATE POLICY "Update orders" ON public.crypto_orders FOR UPDATE USING (true) WITH CHECK (true);
+
+-- 9. Права доступа к таблицам и процедурам для PostgREST API (роли anon и authenticated)
+GRANT USAGE ON SCHEMA public TO anon, authenticated;
+GRANT ALL ON TABLE public.profiles TO anon, authenticated;
+GRANT SELECT ON TABLE public.works TO anon, authenticated;
+GRANT ALL ON TABLE public.purchases TO anon, authenticated;
+GRANT ALL ON TABLE public.crypto_orders TO anon, authenticated;
+GRANT SELECT ON TABLE public.wallet_settings TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.complete_crypto_order(TEXT, TEXT) TO anon, authenticated;

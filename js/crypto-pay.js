@@ -168,27 +168,8 @@ class CryptoPaymentService {
       detectedNotified: false
     };
 
-    // Сохраняем сессию в локальное хранилище и Supabase
+    // Сохраняем сессию в локальное хранилище и синхронизируем с Supabase
     this.store.saveCryptoSession(this.activeSession);
-
-    // Запись заказа в базу данных Supabase
-    if (window.supabaseClient) {
-      const user = this.store.getCurrentUser();
-      const userId = (user.id && !user.id.startsWith('usr_') && user.id !== 'guest') ? user.id : null;
-      window.supabaseClient
-        .from('crypto_orders')
-        .insert({
-          id: this.activeSession.orderId,
-          user_id: userId,
-          network: this.activeSession.network,
-          deposit_address: this.activeSession.address,
-          orbs_amount: this.activeSession.orbsAmount,
-          expected_amount: this.activeSession.expectedAmount,
-          status: 'pending'
-        })
-        .then(() => {})
-        .catch(err => console.warn('Создание заказа в Supabase ожидает настройки таблиц:', err));
-    }
 
     // Запуск таймера обратного отсчета 30 минут
     this.startCountdownTimer();
