@@ -721,30 +721,44 @@ The fate of the kingdom is now in your hands.
   getActiveCryptoSession() {
     if (!this.data.cryptoSessions) return null;
     const now = Date.now();
+    let changed = false;
     for (const s of this.data.cryptoSessions) {
+      const createdAtMs = s.createdAt ? new Date(s.createdAt).getTime() : 0;
+      const expiresAtMs = s.expiresAt || (createdAtMs ? createdAtMs + 30 * 60 * 1000 : 0);
+      const awaitingExpMs = s.awaitingExpiresAt || (createdAtMs ? createdAtMs + 45 * 60 * 1000 : 0);
+
       if (s.status === 'awaiting_confirmations') {
-        // Если прошло более 3 часов без фиксации транзакции в сети — сделка аннулируется
-        if (!s.txHash && s.awaitingExpiresAt && s.awaitingExpiresAt <= now) {
+        // Если прошло более 45 минут без фиксации транзакции в сети — сделка аннулируется
+        if (!s.txHash && awaitingExpMs && awaitingExpMs <= now) {
           s.status = 'cancelled';
           s.cancelReason = 'unconfirmed_timeout';
           delete s.txHash;
           delete s.explorerUrl;
-          this.saveToStorage();
+          changed = true;
+          if (window.supabaseClient && s.orderId) {
+            window.supabaseClient.from('crypto_orders').update({ status: 'cancelled' }).eq('id', s.orderId).then(() => {}).catch(() => {});
+          }
           continue;
         }
         return s;
       }
       if (s.status === 'pending') {
-        if (s.expiresAt && s.expiresAt > now) {
+        if (expiresAtMs && expiresAtMs > now) {
           return s;
-        } else if (s.expiresAt && s.expiresAt <= now) {
+        } else if (expiresAtMs && expiresAtMs <= now) {
           s.status = 'cancelled';
           s.cancelReason = 'expired';
           delete s.txHash;
           delete s.explorerUrl;
-          this.saveToStorage();
+          changed = true;
+          if (window.supabaseClient && s.orderId) {
+            window.supabaseClient.from('crypto_orders').update({ status: 'cancelled' }).eq('id', s.orderId).then(() => {}).catch(() => {});
+          }
         }
       }
+    }
+    if (changed) {
+      this.saveToStorage();
     }
     return null;
   }
@@ -754,6 +768,9 @@ The fate of the kingdom is now in your hands.
    */
   async getDepositHistory() {
     const list = [];
+    const now = Date.now();
+    const EXPIRY_DURATION_MS = 30 * 60 * 1000; // 30 минут
+    const AWAITING_TIMEOUT_MS = 45 * 60 * 1000; // 45 минут для неподтверждённых
 
     // 1. Пополнения из локального хранилища store.orders
     const localTopups = (this.data.orders || [])
@@ -780,13 +797,15 @@ The fate of the kingdom is now in your hands.
           network,
           txHash,
           explorerUrl,
-          status: 'completed'
+          status: 'completed',
+          canResume: false
         };
       });
 
     list.push(...localTopups);
 
     // 2. Сессии из data.cryptoSessions (включая pending, awaiting_confirmations, cancelled)
+    let sessionsChanged = false;
     if (this.data.cryptoSessions && Array.isArray(this.data.cryptoSessions)) {
       this.data.cryptoSessions.forEach(s => {
         const isBtc = (s.network || '').includes('BTC');
@@ -801,18 +820,31 @@ The fate of the kingdom is now in your hands.
           }
         }
 
-        const isUnconfirmedExpired = (s.status === 'awaiting_confirmations' && !s.txHash && s.awaitingExpiresAt && s.awaitingExpiresAt <= Date.now());
-        const isPendingExpired = (s.status === 'pending' && s.expiresAt && s.expiresAt <= Date.now());
+        const createdAtMs = s.createdAt ? new Date(s.createdAt).getTime() : 0;
+        const expiresAtMs = s.expiresAt || (createdAtMs ? createdAtMs + EXPIRY_DURATION_MS : 0);
+        const awaitingExpMs = s.awaitingExpiresAt || (createdAtMs ? createdAtMs + AWAITING_TIMEOUT_MS : 0);
+
+        const isUnconfirmedExpired = (s.status === 'awaiting_confirmations' && !s.txHash && awaitingExpMs && awaitingExpMs <= now);
+        const isPendingExpired = (s.status === 'pending' && expiresAtMs && expiresAtMs <= now);
         if (isUnconfirmedExpired || isPendingExpired) {
           s.status = 'cancelled';
           s.cancelReason = isUnconfirmedExpired ? 'unconfirmed_timeout' : 'expired';
           delete s.txHash;
           delete s.explorerUrl;
+          sessionsChanged = true;
+          if (window.supabaseClient && s.orderId) {
+            window.supabaseClient
+              .from('crypto_orders')
+              .update({ status: 'cancelled' })
+              .eq('id', s.orderId)
+              .then(() => {})
+              .catch(() => {});
+          }
         }
 
         const canResume = (
-          (s.status === 'awaiting_confirmations' && (s.txHash || !s.awaitingExpiresAt || s.awaitingExpiresAt > Date.now())) ||
-          (s.status === 'pending' && s.expiresAt > Date.now())
+          (s.status === 'awaiting_confirmations' && (s.txHash || !awaitingExpMs || awaitingExpMs > now)) ||
+          (s.status === 'pending' && expiresAtMs > now)
         );
 
         const itemObj = {
@@ -827,7 +859,7 @@ The fate of the kingdom is now in your hands.
           expiresAt: s.expiresAt || null,
           confirmations: s.confirmations || 0,
           requiredConfirmations: s.requiredConfirmations || 3,
-          canResume
+          canResume: Boolean(canResume)
         };
 
         const existingIndex = list.findIndex(item => item.id === s.orderId);
@@ -837,6 +869,9 @@ The fate of the kingdom is now in your hands.
           list[existingIndex] = { ...list[existingIndex], ...itemObj };
         }
       });
+      if (sessionsChanged) {
+        this.saveToStorage();
+      }
     }
 
     // 3. Пополнения из таблицы crypto_orders в Supabase
@@ -855,8 +890,24 @@ The fate of the kingdom is now in your hands.
 
         const { data: dbOrders, error } = await query;
         if (!error && Array.isArray(dbOrders)) {
+          const expiredIdsToSync = [];
+
           dbOrders.forEach(ord => {
-            const isCancelled = ord.status === 'cancelled';
+            let status = ord.status || 'pending';
+            const createdAtMs = ord.created_at ? new Date(ord.created_at).getTime() : 0;
+            const expiresAtMs = createdAtMs ? (createdAtMs + EXPIRY_DURATION_MS) : 0;
+
+            // Если сделка висит в pending, но прошло более 30 минут — она автоматически отменена по тайм-ауту
+            if (status === 'pending' && expiresAtMs && expiresAtMs <= now) {
+              status = 'cancelled';
+              expiredIdsToSync.push(ord.id);
+            } else if (status === 'awaiting_confirmations' && !ord.tx_hash && createdAtMs && (now - createdAtMs > AWAITING_TIMEOUT_MS)) {
+              status = 'cancelled';
+              expiredIdsToSync.push(ord.id);
+            }
+
+            const isCancelled = status === 'cancelled';
+            const isCompleted = status === 'completed';
             const txHash = isCancelled ? '' : (ord.tx_hash || '');
             const network = ord.network || 'USDT (TRC-20)';
             let explorerUrl = '';
@@ -870,6 +921,12 @@ The fate of the kingdom is now in your hands.
               }
             }
 
+            // Открывать повторно можно ТОЛЬКО живые активные сделки, чей таймер ещё не истёк
+            const canResume = !isCancelled && !isCompleted && (
+              (status === 'pending' && expiresAtMs > now) ||
+              (status === 'awaiting_confirmations')
+            );
+
             const existingIndex = list.findIndex(item => item.id === ord.id || (txHash && item.txHash === txHash));
             if (existingIndex === -1) {
               list.push({
@@ -880,17 +937,38 @@ The fate of the kingdom is now in your hands.
                 network,
                 txHash,
                 explorerUrl,
-                status: ord.status || 'pending',
-                canResume: ord.status === 'pending' || ord.status === 'awaiting_confirmations'
+                status,
+                canResume: Boolean(canResume)
               });
             } else {
-              if (txHash) list[existingIndex].txHash = txHash;
-              if (explorerUrl) list[existingIndex].explorerUrl = explorerUrl;
-              if (ord.status && list[existingIndex].status !== 'completed') {
-                list[existingIndex].status = ord.status;
+              // Если в локальном хранилище сделка уже отменена или завершена — ни в коем случае не возвращаем её в pending!
+              if (list[existingIndex].status !== 'completed' && list[existingIndex].status !== 'cancelled') {
+                list[existingIndex].status = status;
+                list[existingIndex].canResume = Boolean(canResume);
+              }
+              if (list[existingIndex].status === 'cancelled') {
+                list[existingIndex].canResume = false;
+                list[existingIndex].txHash = '';
+                list[existingIndex].explorerUrl = '';
+              }
+              if (txHash && list[existingIndex].status !== 'cancelled') {
+                list[existingIndex].txHash = txHash;
+              }
+              if (explorerUrl && list[existingIndex].status !== 'cancelled') {
+                list[existingIndex].explorerUrl = explorerUrl;
               }
             }
           });
+
+          // Пакетно переводим истёкшие заказы в cancelled в базе Supabase
+          if (expiredIdsToSync.length > 0) {
+            window.supabaseClient
+              .from('crypto_orders')
+              .update({ status: 'cancelled' })
+              .in('id', expiredIdsToSync)
+              .then(() => console.log('✅ Истёкшие заказы переведены в cancelled в Supabase:', expiredIdsToSync))
+              .catch(err => console.warn('Ошибка обновления истёкших заказов в Supabase:', err));
+          }
         }
       } catch (e) {
         console.warn('Загрузка crypto_orders из Supabase:', e);

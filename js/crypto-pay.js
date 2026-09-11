@@ -266,11 +266,16 @@ class CryptoPaymentService {
 
   getActiveSession() {
     if (this.activeSession) {
-      if (this.activeSession.status === 'pending' && this.activeSession.expiresAt && this.activeSession.expiresAt <= Date.now()) {
+      const now = Date.now();
+      const createdAtMs = this.activeSession.createdAt ? new Date(this.activeSession.createdAt).getTime() : 0;
+      const expiresAtMs = this.activeSession.expiresAt || (createdAtMs ? createdAtMs + 30 * 60 * 1000 : 0);
+      const awaitingExpMs = this.activeSession.awaitingExpiresAt || (createdAtMs ? createdAtMs + 45 * 60 * 1000 : 0);
+
+      if (this.activeSession.status === 'pending' && expiresAtMs && expiresAtMs <= now) {
         this.cancelSession('expired');
         return null;
       }
-      if (this.activeSession.status === 'awaiting_confirmations' && !this.activeSession.txHash && this.activeSession.awaitingExpiresAt && this.activeSession.awaitingExpiresAt <= Date.now()) {
+      if (this.activeSession.status === 'awaiting_confirmations' && !this.activeSession.txHash && awaitingExpMs && awaitingExpMs <= now) {
         this.cancelSession('unconfirmed_timeout');
         return null;
       }
@@ -285,13 +290,28 @@ class CryptoPaymentService {
    * Возобновление сессии из истории пополнений
    */
   resumeSession(orderId) {
-    const session = this.store.getCryptoSession(orderId);
+    let session = this.store.getCryptoSession(orderId);
     if (!session) return null;
 
+    const now = Date.now();
+    const createdAtMs = session.createdAt ? new Date(session.createdAt).getTime() : 0;
+    const expiresAtMs = session.expiresAt || (createdAtMs ? createdAtMs + 30 * 60 * 1000 : 0);
+
     if (session.status === 'pending') {
-      if (session.expiresAt && session.expiresAt <= Date.now()) {
+      if (expiresAtMs && expiresAtMs <= now) {
         session.status = 'cancelled';
+        session.cancelReason = 'expired';
+        delete session.txHash;
+        delete session.explorerUrl;
         this.store.saveCryptoSession(session);
+        if (window.supabaseClient && session.orderId) {
+          window.supabaseClient
+            .from('crypto_orders')
+            .update({ status: 'cancelled' })
+            .eq('id', session.orderId)
+            .then(() => {})
+            .catch(() => {});
+        }
         return null;
       }
       this.activeSession = session;
@@ -302,12 +322,21 @@ class CryptoPaymentService {
     }
 
     if (session.status === 'awaiting_confirmations') {
-      if (!session.txHash && session.awaitingExpiresAt && session.awaitingExpiresAt <= Date.now()) {
+      const awaitingExpMs = session.awaitingExpiresAt || (createdAtMs ? createdAtMs + 45 * 60 * 1000 : 0);
+      if (!session.txHash && awaitingExpMs && awaitingExpMs <= now) {
         session.status = 'cancelled';
         session.cancelReason = 'unconfirmed_timeout';
         delete session.txHash;
         delete session.explorerUrl;
         this.store.saveCryptoSession(session);
+        if (window.supabaseClient && session.orderId) {
+          window.supabaseClient
+            .from('crypto_orders')
+            .update({ status: 'cancelled' })
+            .eq('id', session.orderId)
+            .then(() => {})
+            .catch(() => {});
+        }
         return null;
       }
       this.activeSession = session;
