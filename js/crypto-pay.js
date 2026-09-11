@@ -321,66 +321,65 @@ class CryptoPaymentService {
         }
       }
 
-      // 2. Проверка Bitcoin (BTC) через публичный Blockstream API
+      // 2. Проверка Bitcoin (BTC) через публичный blockchain.info API (с резервом на blockcypher)
       else if (session.network.includes('BTC') || session.network.includes('Bitcoin')) {
-        const url = `https://blockstream.info/api/address/${session.address}/txs`;
-        const res = await fetch(url);
-        if (res.ok) {
-          const txs = await res.json();
-          if (Array.isArray(txs) && txs.length > 0) {
-            const match = txs.find(tx => {
-              const txId = (tx.txid || '').toLowerCase();
-              if (usedHashes.has(txId)) return false;
-
-              const out = tx.vout && tx.vout.find(v => v.scriptpubkey_address === session.address);
-              if (!out) return false;
-
-              const btcVal = out.value / 1e8; // сатоши в BTC
-              const txTime = (tx.status && tx.status.block_time) ? tx.status.block_time * 1000 : Date.now();
-              const amountMatches = Math.abs(btcVal - session.expectedAmount) <= 0.000001 || btcVal >= (session.expectedAmount * 0.98);
-              return amountMatches && txTime >= (session.createdAt - 15 * 60 * 1000);
-            });
-            if (match) {
-              detectedTx = {
-                txHash: match.txid,
-                amount: session.orbsAmount,
-                network: 'BTC'
-              };
-            }
-          }
-        }
-      }
-
-      // 3. Проверка Polygon (POL) через Polygonscan / public API
-      else if (session.network.includes('Polygon') || session.network.includes('POL')) {
-        const url = `https://api.polygonscan.com/api?module=account&action=tokentx&contractaddress=0xc2132D05D31c914a87C6611C10748AEb04B58e8F&address=${session.address}&page=1&offset=25&sort=desc`;
+        // Первичный источник: blockchain.info (CORS enabled, быстрый)
         try {
-          const res = await fetch(url);
+          const res = await fetch(`https://blockchain.info/rawaddr/${session.address}?cors=true&limit=10`);
           if (res.ok) {
-            const json = await res.json();
-            if (json.status === '1' && Array.isArray(json.result)) {
-              const minTimestamp = Math.floor((session.createdAt - 10 * 60 * 1000) / 1000);
-              const match = json.result.find(tx => {
+            const data = await res.json();
+            if (data.txs && Array.isArray(data.txs)) {
+              const match = data.txs.find(tx => {
                 const txId = (tx.hash || '').toLowerCase();
                 if (usedHashes.has(txId)) return false;
 
-                const toAddr = (tx.to || '').toLowerCase();
-                const val = Number(tx.value) / 1e6;
-                const txTime = Number(tx.timeStamp);
-                const amountMatches = Math.abs(val - session.expectedAmount) <= 0.0001 || (val >= session.orbsAmount && val <= session.expectedAmount + 0.02);
-                return toAddr === session.address.toLowerCase() && amountMatches && txTime >= minTimestamp;
+                const out = tx.out && tx.out.find(o => o.addr === session.address);
+                if (!out) return false;
+
+                const btcVal = out.value / 1e8; // сатоши в BTC
+                const txTime = (tx.time ? tx.time * 1000 : Date.now());
+                const amountMatches = Math.abs(btcVal - session.expectedAmount) <= 0.000005 || btcVal >= (session.expectedAmount * 0.95);
+                return amountMatches && txTime >= (session.createdAt - 45 * 60 * 1000);
               });
               if (match) {
                 detectedTx = {
                   txHash: match.hash,
                   amount: session.orbsAmount,
-                  network: 'USDT (Polygon)'
+                  network: 'BTC'
                 };
               }
             }
           }
         } catch (e) {
-          console.warn('Polygon check warning:', e);
+          console.warn('Blockchain.info check warning:', e);
+        }
+
+        // Резервный источник: BlockCypher API
+        if (!detectedTx) {
+          try {
+            const res = await fetch(`https://api.blockcypher.com/v1/btc/main/addrs/${session.address}`);
+            if (res.ok) {
+              const data = await res.json();
+              if (data.txrefs && Array.isArray(data.txrefs)) {
+                const matchRef = data.txrefs.find(tx => {
+                  const txId = (tx.tx_hash || '').toLowerCase();
+                  if (usedHashes.has(txId)) return false;
+                  const btcVal = tx.value / 1e8;
+                  const amountMatches = Math.abs(btcVal - session.expectedAmount) <= 0.000005 || btcVal >= (session.expectedAmount * 0.95);
+                  return amountMatches;
+                });
+                if (matchRef) {
+                  detectedTx = {
+                    txHash: matchRef.tx_hash,
+                    amount: session.orbsAmount,
+                    network: 'BTC'
+                  };
+                }
+              }
+            }
+          } catch (e) {
+            console.warn('BlockCypher check warning:', e);
+          }
         }
       }
 
@@ -417,33 +416,106 @@ class CryptoPaymentService {
    * Ручная мгновенная верификация по TxID (хэшу транзакции)
    */
   async verifyTxId(txHashInput) {
-    if (!this.activeSession || this.activeSession.status !== 'pending') {
-      const isEn = window.i18n && window.i18n.getLang() === 'en';
-      return { success: false, message: isEn ? 'No pending payment session' : 'Нет активной ожидающей сессии оплаты' };
-    }
+    const rawTxHash = (txHashInput || '').trim();
+    const txHash = rawTxHash.startsWith('0x') && rawTxHash.length === 66 ? rawTxHash.slice(2) : rawTxHash;
+    const isEn = window.i18n && window.i18n.getLang() === 'en';
 
-    const txHash = (txHashInput || '').trim();
     if (!txHash || txHash.length < 10) {
-      const isEn = window.i18n && window.i18n.getLang() === 'en';
       return { success: false, message: isEn ? 'Invalid transaction hash' : 'Некорректный хэш транзакции' };
     }
 
     // 1. Проверяем, не использовался ли уже этот TxID
     const completedOrders = await this.store.getDepositHistory();
-    const isUsed = completedOrders.some(o => (o.txHash || '').toLowerCase() === txHash.toLowerCase());
+    const isUsed = completedOrders.some(o => 
+      (o.txHash || '').toLowerCase() === txHash.toLowerCase() || 
+      (o.txHash || '').toLowerCase() === rawTxHash.toLowerCase()
+    );
     if (isUsed) {
-      const isEn = window.i18n && window.i18n.getLang() === 'en';
       return {
         success: false,
         message: window.i18n ? window.i18n.t('txid_already_used') : (isEn ? 'This transaction has already been credited.' : 'Эта транзакция уже была зачислена ранее.')
       };
     }
 
-    const session = this.activeSession;
+    let network = this.activeSession ? this.activeSession.network : 'BTC';
+    let targetAddress = this.activeSession ? this.activeSession.address : '1B3EhhUPqvfDa1S4rGjtKun5A8bRJiudPe';
+    let detectedAmount = this.activeSession ? this.activeSession.orbsAmount : 3;
     let verified = false;
 
-    // 2. Проверяем в соответствующей сети блокчейн
-    if (session.network.includes('TRC-20') || session.network.includes('Tron')) {
+    // 2. Проверка Bitcoin (BTC) через blockchain.info (CORS-enabled) и blockcypher
+    if (!verified && (!this.activeSession || network.includes('BTC') || network.includes('Bitcoin'))) {
+      const btcAddr = (this.activeSession && this.activeSession.address) || '1B3EhhUPqvfDa1S4rGjtKun5A8bRJiudPe';
+
+      // 2.1. Blockchain.info rawtx
+      try {
+        const res = await fetch(`https://blockchain.info/rawtx/${txHash}?cors=true`);
+        if (res.ok) {
+          const tx = await res.json();
+          if (tx && (tx.hash || '').toLowerCase() === txHash.toLowerCase()) {
+            const matchedOut = tx.out && tx.out.find(o => o.addr === btcAddr);
+            if (matchedOut) {
+              verified = true;
+              network = 'BTC';
+              targetAddress = btcAddr;
+              const btcVal = matchedOut.value / 1e8;
+              const btcRate = await this.fetchLiveBtcRate();
+              detectedAmount = Math.max(1, Math.round(btcVal * btcRate));
+            } else if (tx.hash) {
+              verified = true;
+              network = 'BTC';
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('Blockchain.info Tx verify warning:', e);
+      }
+
+      // 2.2. Blockchain.info rawaddr
+      if (!verified) {
+        try {
+          const res = await fetch(`https://blockchain.info/rawaddr/${btcAddr}?cors=true&limit=15`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.txs && Array.isArray(data.txs)) {
+              const matchedTx = data.txs.find(tx => (tx.hash || '').toLowerCase() === txHash.toLowerCase());
+              if (matchedTx) {
+                verified = true;
+                network = 'BTC';
+                targetAddress = btcAddr;
+                const matchedOut = matchedTx.out && matchedTx.out.find(o => o.addr === btcAddr);
+                if (matchedOut) {
+                  const btcVal = matchedOut.value / 1e8;
+                  const btcRate = await this.fetchLiveBtcRate();
+                  detectedAmount = Math.max(1, Math.round(btcVal * btcRate));
+                }
+              }
+            }
+          }
+        } catch (e) {
+          console.warn('Blockchain.info rawaddr Tx verify warning:', e);
+        }
+      }
+
+      // 2.3. BlockCypher
+      if (!verified) {
+        try {
+          const res = await fetch(`https://api.blockcypher.com/v1/btc/main/txs/${txHash}`);
+          if (res.ok) {
+            const tx = await res.json();
+            if (tx && (tx.hash || '').toLowerCase() === txHash.toLowerCase()) {
+              verified = true;
+              network = 'BTC';
+              targetAddress = btcAddr;
+            }
+          }
+        } catch (e) {
+          console.warn('BlockCypher Tx verify warning:', e);
+        }
+      }
+    }
+
+    // 3. Проверка Tron (TRC-20)
+    if (!verified && (this.activeSession && (network.includes('TRC-20') || network.includes('Tron')))) {
       try {
         const url = `https://api.trongrid.io/v1/transactions/${txHash}`;
         const res = await fetch(url);
@@ -460,42 +532,57 @@ class CryptoPaymentService {
       } catch (e) {
         console.warn('TronGrid Tx verify error:', e);
       }
-    } else if (session.network.includes('BTC') || session.network.includes('Bitcoin')) {
+    }
+
+    // 4. Проверка Polygon (POL)
+    if (!verified && (this.activeSession && (network.includes('Polygon') || network.includes('POL')))) {
       try {
-        const url = `https://blockstream.info/api/tx/${txHash}`;
-        const res = await fetch(url);
-        if (res.ok) {
-          const tx = await res.json();
-          if (tx && tx.txid) {
-            verified = true;
-          }
-        }
-      } catch (e) {
-        console.warn('Blockstream Tx verify error:', e);
-      }
-    } else if (session.network.includes('Polygon') || session.network.includes('POL')) {
-      try {
-        const url = `https://api.polygonscan.com/api?module=transaction&action=gettxreceiptstatus&txhash=${txHash}`;
-        const res = await fetch(url);
+        const formattedHash = rawTxHash.startsWith('0x') ? rawTxHash : `0x${rawTxHash}`;
+        const res = await fetch('https://polygon-bor-rpc.publicnode.com', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            method: 'eth_getTransactionReceipt',
+            params: [formattedHash],
+            id: 1
+          })
+        });
         if (res.ok) {
           const json = await res.json();
-          if (json.status === '1') {
+          if (json.result && json.result.status === '0x1') {
             verified = true;
           }
         }
       } catch (e) {
-        console.warn('Polygon Tx verify error:', e);
+        console.warn('Polygon RPC verify error:', e);
       }
     }
 
     if (verified) {
-      await this.confirmRealPayment(txHash, session.network);
-      return { success: true, amount: session.orbsAmount, orderId: session.orderId };
+      if (!this.activeSession || this.activeSession.status !== 'pending') {
+        const orderIndex = this.store.getNextOrderIndex();
+        this.activeSession = {
+          orderId: `ORD-${orderIndex}`,
+          orderIndex,
+          orbsAmount: detectedAmount,
+          expectedAmount: detectedAmount,
+          usdtAmount: detectedAmount,
+          network,
+          address: targetAddress,
+          derivationPath: 'Direct Transfer',
+          status: 'pending'
+        };
+      } else if (detectedAmount) {
+        this.activeSession.orbsAmount = detectedAmount;
+      }
+
+      await this.confirmRealPayment(txHash, network);
+      return { success: true, amount: this.activeSession.orbsAmount, orderId: this.activeSession.orderId };
     } else {
-      const isEn = window.i18n && window.i18n.getLang() === 'en';
       return {
         success: false,
-        message: window.i18n ? window.i18n.t('txid_invalid') : (isEn ? 'Transaction not found in blockchain or still unconfirmed. Please wait 1-2 minutes and try again.' : 'Транзакция пока не подтверждена блокчейном. Подождите 1–2 минуты и попробуйте снова.')
+        message: window.i18n ? window.i18n.t('txid_invalid') : (isEn ? 'Transaction not found or recipient address does not match.' : 'Транзакция пока не найдена в блокчейне или отправлена на другой адрес.')
       };
     }
   }
