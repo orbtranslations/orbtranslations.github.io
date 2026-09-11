@@ -105,6 +105,20 @@ class I18nManager {
         // Topup Modal
         modal_topup_title: '🪙 Пополнение баланса Орбов',
         modal_topup_desc: '1 Орб = 1 USDT. Оплата происходит прямым переводом на уникальный адрес кошелька выбранной сети.',
+        modal_topup_step1_badge: 'Шаг 1 из 2: Настройка платежа',
+        modal_topup_step2_badge: 'Шаг 2 из 2: Оплата и реквизиты',
+        modal_topup_step1_desc: 'Выберите количество Орбов и сеть для оплаты. Курс будет зафиксирован ровно на 30 минут после перехода к оплате.',
+        modal_topup_preset_label: 'Быстрый выбор количества:',
+        modal_topup_calc_receive: 'Будет начислено:',
+        modal_topup_calc_rate: 'Текущий курс обмена:',
+        modal_topup_calc_approx: 'К оплате (расчёт):',
+        modal_topup_calc_lock_notice: '🔒 Точный курс и уникальная сумма будут зафиксированы на 30 минут на следующем шаге.',
+        modal_topup_btn_proceed: 'Перейти к оплате →',
+        modal_topup_btn_cancel_step: '✕ Отменить заказ и вернуться',
+        modal_topup_rate_locked_badge: '🔒 Курс зафиксирован на 30 мин',
+        modal_topup_timer_label: '⏱️ Окно оплаты:',
+        modal_topup_timer_notice: 'Отправьте перевод или отмените заказ до истечения 30 минут.',
+        modal_topup_expired_alert: '⚠️ Время бронирования курса (30 мин) истекло. Вернитесь на Шаг 1 для перерасчёта по актуальному курсу.',
         modal_topup_amount: 'Количество Орбов',
         modal_topup_network: 'Способ оплаты / Валюта',
         modal_topup_order: 'Заказ:',
@@ -317,6 +331,20 @@ class I18nManager {
         // Topup Modal
         modal_topup_title: '🪙 Deposit Orbs Balance',
         modal_topup_desc: '1 Orb = 1 USDT. Payments are made via direct transfer to the unique address of the selected blockchain network.',
+        modal_topup_step1_badge: 'Step 1 of 2: Configure Deposit',
+        modal_topup_step2_badge: 'Step 2 of 2: Payment & Invoice',
+        modal_topup_step1_desc: 'Select the amount of Orbs and payment network. The exchange rate will be locked for exactly 30 minutes once you proceed.',
+        modal_topup_preset_label: 'Quick amount select:',
+        modal_topup_calc_receive: 'You will receive:',
+        modal_topup_calc_rate: 'Current Exchange Rate:',
+        modal_topup_calc_approx: 'Estimated Payment:',
+        modal_topup_calc_lock_notice: '🔒 Exact rate and unique payment amount will be locked for 30 minutes on the next step.',
+        modal_topup_btn_proceed: 'Proceed to Payment →',
+        modal_topup_btn_cancel_step: '✕ Cancel Order & Go Back',
+        modal_topup_rate_locked_badge: '🔒 Rate Locked for 30 min',
+        modal_topup_timer_label: '⏱️ Payment Window:',
+        modal_topup_timer_notice: 'Complete your transfer or cancel order before the 30-minute timer expires.',
+        modal_topup_expired_alert: '⚠️ Payment window (30 min) has expired. Return to Step 1 to refresh with the current live rate.',
         modal_topup_amount: 'Orbs Amount',
         modal_topup_network: 'Payment Method / Currency',
         modal_topup_order: 'Order:',
@@ -468,6 +496,7 @@ class I18nManager {
       window.app.renderStorefront();
       window.app.renderUserHeader();
       window.app.renderPurchases();
+      if (window.app.onTopupConfigChange) window.app.onTopupConfigChange();
       if (window.admin) window.admin.renderWorksTable();
     }
     if (window.reader && window.reader.isOpen) {

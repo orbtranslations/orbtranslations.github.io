@@ -524,51 +524,208 @@ class App {
   }
 
   /**
-   * Модальное окно пополнения через xPub USDT
+   * Модальное окно пополнения баланса (2-шаговый интерфейс)
    */
   showTopupModal(defaultAmount = 5) {
     const modal = document.getElementById('topup-modal');
     if (!modal) return;
 
-    const amountInput = document.getElementById('topup-amount-input');
-    if (amountInput) amountInput.value = Math.max(1, defaultAmount);
+    // Проверяем, есть ли уже активная незавершённая сессия с неистёкшим временем (30 минут)
+    const activeSession = window.cryptoPay ? window.cryptoPay.getActiveSession() : null;
+    if (activeSession && activeSession.status === 'pending' && activeSession.expiresAt > Date.now()) {
+      this.populateTopupStep2(activeSession);
+      this.switchToTopupStep(2);
+    } else {
+      const amountInput = document.getElementById('topup-amount-input');
+      if (amountInput) amountInput.value = Math.max(1, defaultAmount);
+      this.switchToTopupStep(1);
+      this.onTopupConfigChange();
+    }
 
-    this.renderTopupInvoice();
     modal.classList.add('active');
     document.body.classList.add('modal-open');
   }
 
-  renderTopupInvoice() {
+  /**
+   * Переключение между Шагом 1 (настройка) и Шагом 2 (оплата)
+   */
+  switchToTopupStep(stepNumber) {
+    const step1 = document.getElementById('topup-step-1');
+    const step2 = document.getElementById('topup-step-2');
+    const expiredAlert = document.getElementById('topup-expired-alert');
+
+    if (expiredAlert) expiredAlert.style.display = 'none';
+
+    if (stepNumber === 1) {
+      if (step1) step1.style.display = 'block';
+      if (step2) step2.style.display = 'none';
+    } else {
+      if (step1) step1.style.display = 'none';
+      if (step2) step2.style.display = 'block';
+    }
+  }
+
+  /**
+   * Быстрый выбор количества Орбов через чипсы (+1, +5, +10, ...)
+   */
+  setTopupAmount(amount) {
+    const input = document.getElementById('topup-amount-input');
+    if (input) {
+      input.value = Math.max(1, Number(amount) || 1);
+      this.onTopupConfigChange();
+    }
+  }
+
+  /**
+   * Обновление расчёта стоимости и живого курса BTC на Шаге 1
+   */
+  async onTopupConfigChange() {
     const amountInput = document.getElementById('topup-amount-input');
     const networkSelect = document.getElementById('topup-network-select');
-    const orbsAmount = Number(amountInput ? amountInput.value : 5) || 5;
+    const previewOrbs = document.getElementById('topup-preview-orbs');
+    const previewRate = document.getElementById('topup-preview-rate');
+    const previewPayable = document.getElementById('topup-preview-payable');
+
+    const orbsAmount = Math.max(1, Number(amountInput ? amountInput.value : 5) || 5);
     const network = networkSelect ? networkSelect.value : 'USDT (TRC-20)';
+    const isEn = window.i18n && window.i18n.getLang() === 'en';
+
+    if (previewOrbs) {
+      previewOrbs.textContent = `${orbsAmount} ${isEn ? 'Orbs' : 'Орб'}`;
+    }
+
+    if (network.includes('BTC') || network.includes('Bitcoin')) {
+      if (previewRate) previewRate.textContent = isEn ? '⏳ Fetching live BTC rate...' : '⏳ Загрузка живого курса BTC...';
+      try {
+        const rate = await window.cryptoPay.fetchLiveBtcRate();
+        const estBtc = (orbsAmount / rate).toFixed(7);
+        if (previewRate) {
+          previewRate.textContent = `1 BTC ≈ $${rate.toLocaleString()} USD (${isEn ? 'Live' : 'Биржа'})`;
+        }
+        if (previewPayable) {
+          previewPayable.textContent = `~${estBtc} BTC (~$${orbsAmount})`;
+        }
+      } catch (e) {
+        if (previewRate) previewRate.textContent = '1 BTC ≈ $65,000 USD (est.)';
+        if (previewPayable) previewPayable.textContent = `~${(orbsAmount / 65000).toFixed(7)} BTC`;
+      }
+    } else {
+      if (previewRate) {
+        previewRate.textContent = '1 USDT = $1.00 USD';
+      }
+      if (previewPayable) {
+        previewPayable.textContent = `${orbsAmount.toFixed(2)} USDT`;
+      }
+    }
+  }
+
+  /**
+   * Переход с Шага 1 на Шаг 2: создание заказа с фиксацией курса на 30 минут
+   */
+  async goToTopupStep2() {
+    const amountInput = document.getElementById('topup-amount-input');
+    const networkSelect = document.getElementById('topup-network-select');
+    const proceedBtn = document.getElementById('topup-proceed-btn');
+    const orbsAmount = Math.max(1, Number(amountInput ? amountInput.value : 5) || 5);
+    const network = networkSelect ? networkSelect.value : 'USDT (TRC-20)';
+    const isEn = window.i18n && window.i18n.getLang() === 'en';
+
+    if (proceedBtn) {
+      proceedBtn.disabled = true;
+      proceedBtn.textContent = isEn ? '⏳ Locking rate & creating order...' : '⏳ Фиксация курса и создание заказа...';
+    }
 
     try {
-      const invoice = window.cryptoPay.createInvoice(orbsAmount, network);
-      
-      const orderIdEl = document.getElementById('invoice-order-id');
-      const amountUsdtEl = document.getElementById('invoice-amount-usdt');
-      const amountOrbsEl = document.getElementById('invoice-amount-orbs');
-      const networkEl = document.getElementById('invoice-network');
-      const addressEl = document.getElementById('invoice-address');
-      const pathEl = document.getElementById('invoice-derivation-path');
-
-      if (orderIdEl) orderIdEl.textContent = invoice.orderId;
-      if (amountUsdtEl) amountUsdtEl.textContent = invoice.formattedAmount || `${invoice.usdtAmount} USDT`;
-      if (amountOrbsEl) amountOrbsEl.textContent = `${invoice.orbsAmount} Орб`;
-      if (networkEl) networkEl.textContent = invoice.networkBadge || invoice.network;
-      if (addressEl) addressEl.value = invoice.address;
-      if (pathEl) pathEl.textContent = invoice.derivationPath;
-
-      // Рендер QR-кода на canvas
-      const canvas = document.getElementById('invoice-qr-canvas');
-      if (canvas) {
-        window.cryptoPay.renderQRCodeToCanvas(canvas, invoice.address);
-      }
+      const invoice = await window.cryptoPay.createInvoice(orbsAmount, network);
+      this.populateTopupStep2(invoice);
+      this.switchToTopupStep(2);
+      this.showToast(isEn ? '🔒 Exchange rate locked for 30 minutes!' : '🔒 Курс обмена зафиксирован на 30 минут!', 'info');
     } catch (e) {
-      this.showToast(e.message, 'error');
+      this.showToast(e.message || (isEn ? 'Failed to create invoice' : 'Ошибка создания счёта'), 'error');
+    } finally {
+      if (proceedBtn) {
+        proceedBtn.disabled = false;
+        proceedBtn.textContent = isEn ? 'Proceed to Payment →' : 'Перейти к оплате →';
+      }
     }
+  }
+
+  /**
+   * Заполнение реквизитов и QR-кода на Шаге 2
+   */
+  populateTopupStep2(invoice) {
+    if (!invoice) return;
+
+    const orderIdEl = document.getElementById('invoice-order-id');
+    const amountUsdtEl = document.getElementById('invoice-amount-usdt');
+    const networkEl = document.getElementById('invoice-network');
+    const addressEl = document.getElementById('invoice-address');
+    const pathEl = document.getElementById('invoice-derivation-path');
+    const orbsInfoEl = document.getElementById('invoice-amount-orbs-info');
+    const isEn = window.i18n && window.i18n.getLang() === 'en';
+
+    if (orderIdEl) orderIdEl.textContent = invoice.orderId;
+    if (amountUsdtEl) amountUsdtEl.textContent = invoice.formattedAmount || `${invoice.usdtAmount} USDT`;
+    if (networkEl) networkEl.textContent = invoice.networkBadge || invoice.network;
+    if (addressEl) addressEl.value = invoice.address;
+    if (pathEl) pathEl.textContent = invoice.derivationPath;
+    if (orbsInfoEl) orbsInfoEl.textContent = `+${invoice.orbsAmount} ${isEn ? 'Orbs' : 'Орб'}`;
+
+    // Рендер высокоточного ISO QR-кода на canvas
+    const canvas = document.getElementById('invoice-qr-canvas');
+    if (canvas && window.cryptoPay) {
+      window.cryptoPay.renderQRCodeToCanvas(canvas, invoice.address);
+    }
+  }
+
+  /**
+   * Отмена текущего заказа и возврат на Шаг 1
+   */
+  handleCancelTopup() {
+    if (window.cryptoPay) {
+      window.cryptoPay.cancelSession();
+    }
+    this.switchToTopupStep(1);
+    this.onTopupConfigChange();
+    const isEn = window.i18n && window.i18n.getLang() === 'en';
+    this.showToast(isEn ? 'Payment order cancelled' : 'Заказ на пополнение отменён', 'info');
+  }
+
+  /**
+   * Обновление отображения таймера 30 минут
+   */
+  updateTopupTimerUI(formatted, totalSec) {
+    const timerDisplay = document.getElementById('invoice-timer-display');
+    if (timerDisplay) {
+      timerDisplay.textContent = formatted;
+      if (totalSec <= 300) {
+        timerDisplay.style.color = '#ef4444'; // Красный в последние 5 минут
+        timerDisplay.style.borderColor = 'rgba(239, 68, 68, 0.5)';
+      } else {
+        timerDisplay.style.color = '#fbbf24';
+        timerDisplay.style.borderColor = 'rgba(245, 158, 11, 0.3)';
+      }
+    }
+  }
+
+  /**
+   * Обработка истечения 30-минутного окна фиксации курса
+   */
+  handleTopupExpired() {
+    const timerDisplay = document.getElementById('invoice-timer-display');
+    const expiredAlert = document.getElementById('topup-expired-alert');
+    const isEn = window.i18n && window.i18n.getLang() === 'en';
+
+    if (timerDisplay) {
+      timerDisplay.textContent = '00:00';
+      timerDisplay.style.color = '#ef4444';
+    }
+
+    if (expiredAlert) {
+      expiredAlert.style.display = 'block';
+    }
+
+    this.showToast(isEn ? '⚠️ Payment window expired. Please refresh the rate.' : '⚠️ Время фиксации курса истекло. Пожалуйста, обновите курс.', 'warning');
   }
 
   copyInvoiceAddress() {

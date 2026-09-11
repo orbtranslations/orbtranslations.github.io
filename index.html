@@ -470,93 +470,195 @@
         <button class="modal-close-btn">&times;</button>
       </div>
       <div class="modal-body">
-        <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1rem;" data-i18n="modal_topup_desc">
-          1 Орб = 1 USDT. Оплата происходит прямым переводом на уникальный адрес вашего заказа, сгенерированный HD-кошельком (xPub).
-        </p>
-
-        <div class="form-grid-2" style="margin-bottom: 1rem;">
-          <div>
-            <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;" data-i18n="modal_topup_amount">Количество Орбов</label>
-            <input type="number" id="topup-amount-input" class="input-styled" min="1" max="500" value="5" onchange="window.app.renderTopupInvoice()">
+        <!-- ================================================================
+             STEP 1: Choose Amount, Network & Live Rate Preview
+             ================================================================ -->
+        <div id="topup-step-1" class="topup-step-container">
+          <!-- Step Indicator Bar -->
+          <div class="step-nav-bar">
+            <div class="step-nav-pill active">
+              <span class="step-nav-num">1</span>
+              <span data-i18n="modal_topup_step1_badge">Шаг 1: Настройка платежа</span>
+            </div>
+            <div class="step-nav-arrow">→</div>
+            <div class="step-nav-pill">
+              <span class="step-nav-num">2</span>
+              <span data-i18n="modal_topup_step2_badge">Шаг 2: Оплата и реквизиты</span>
+            </div>
           </div>
-          <div>
-            <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;" data-i18n="modal_topup_network">Способ оплаты / Валюта</label>
-            <select id="topup-network-select" class="select-styled" onchange="window.app.renderTopupInvoice()">
-              <option value="USDT (TRC-20)" selected>USDT (TRC-20) — Tron (TRX)</option>
-              <option value="USDT (Polygon)">USDT (POL) — Polygon</option>
-              <option value="BTC">Bitcoin (BTC)</option>
-            </select>
+
+          <p style="font-size: 0.85rem; color: var(--text-secondary); margin: 0.85rem 0 1rem;" data-i18n="modal_topup_step1_desc">
+            Выберите количество Орбов и сеть для оплаты. Курс будет зафиксирован ровно на 30 минут после перехода к оплате.
+          </p>
+
+          <div class="form-grid-2" style="margin-bottom: 0.75rem;">
+            <div>
+              <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;" data-i18n="modal_topup_amount">Количество Орбов</label>
+              <input type="number" id="topup-amount-input" class="input-styled" min="1" max="500" value="5" oninput="window.app.onTopupConfigChange()">
+            </div>
+            <div>
+              <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;" data-i18n="modal_topup_network">Способ оплаты / Валюта</label>
+              <select id="topup-network-select" class="select-styled" onchange="window.app.onTopupConfigChange()">
+                <option value="USDT (TRC-20)" selected>USDT (TRC-20) — Tron (TRX)</option>
+                <option value="USDT (Polygon)">USDT (POL) — Polygon</option>
+                <option value="BTC">Bitcoin (BTC) — Mainnet</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Quick Amount Chips -->
+          <div style="margin-bottom: 1rem;">
+            <label style="font-size: 0.75rem; color: var(--text-muted); display: block; margin-bottom: 6px;" data-i18n="modal_topup_preset_label">Быстрый выбор количества:</label>
+            <div class="preset-amounts-row">
+              <button type="button" class="preset-chip" onclick="window.app.setTopupAmount(1)">1 🪙</button>
+              <button type="button" class="preset-chip" onclick="window.app.setTopupAmount(5)">5 🪙</button>
+              <button type="button" class="preset-chip" onclick="window.app.setTopupAmount(10)">10 🪙</button>
+              <button type="button" class="preset-chip" onclick="window.app.setTopupAmount(25)">25 🪙</button>
+              <button type="button" class="preset-chip" onclick="window.app.setTopupAmount(50)">50 🪙</button>
+              <button type="button" class="preset-chip" onclick="window.app.setTopupAmount(100)">100 🪙</button>
+            </div>
+          </div>
+
+          <!-- Calculation & Live Rate Preview Card -->
+          <div class="topup-calc-box">
+            <div class="calc-row">
+              <span style="color: var(--text-secondary);" data-i18n="modal_topup_calc_receive">Будет начислено:</span>
+              <strong id="topup-preview-orbs" style="color: var(--accent-gold); font-size: 1.05rem;">5 Орб</strong>
+            </div>
+            <div class="calc-row">
+              <span style="color: var(--text-secondary);" data-i18n="modal_topup_calc_rate">Текущий курс обмена:</span>
+              <span id="topup-preview-rate" style="color: #fff; font-family: monospace; font-size: 0.85rem;">1 USDT = $1.00 USD</span>
+            </div>
+            <div class="calc-row" style="border-top: 1px solid rgba(255,255,255,0.08); padding-top: 8px; margin-top: 6px;">
+              <span style="color: var(--text-primary); font-weight: 600;" data-i18n="modal_topup_calc_approx">К оплате (расчёт):</span>
+              <strong id="topup-preview-payable" style="color: #38bdf8; font-size: 1.1rem; font-family: monospace;">5.00 USDT</strong>
+            </div>
+            <div class="calc-notice">
+              <span>🔒</span>
+              <span data-i18n="modal_topup_calc_lock_notice">Точный курс и уникальная сумма будут зафиксированы на 30 минут на следующем шаге.</span>
+            </div>
+          </div>
+
+          <div style="margin-top: 1.25rem; display: flex; flex-direction: column; gap: 8px;">
+            <button type="button" class="btn btn-accent btn-large" id="topup-proceed-btn" onclick="window.app.goToTopupStep2()" style="width: 100%; font-weight: 600;" data-i18n="modal_topup_btn_proceed">
+              Перейти к оплате →
+            </button>
+            <button type="button" class="btn btn-secondary" style="width: 100%;" onclick="window.app.closeAllModals(); window.app.showDepositHistoryModal()" data-i18n="modal_topup_history_btn">
+              📜 Посмотреть историю моих пополнений
+            </button>
           </div>
         </div>
 
-        <!-- Generated xPub Invoice Card -->
-        <div class="invoice-card">
-          <div class="invoice-header-row">
+        <!-- ================================================================
+             STEP 2: Payment, QR Code, Address & 30-min Locked Rate
+             ================================================================ -->
+        <div id="topup-step-2" class="topup-step-container" style="display: none;">
+          <!-- Step Indicator Bar -->
+          <div class="step-nav-bar">
+            <div class="step-nav-pill completed" onclick="window.app.handleCancelTopup()" style="cursor: pointer;" title="Вернуться к настройке">
+              <span class="step-nav-num">✓</span>
+              <span data-i18n="modal_topup_step1_badge">Шаг 1: Настройка</span>
+            </div>
+            <div class="step-nav-arrow">→</div>
+            <div class="step-nav-pill active">
+              <span class="step-nav-num">2</span>
+              <span data-i18n="modal_topup_step2_badge">Шаг 2: Оплата и реквизиты</span>
+            </div>
+          </div>
+
+          <!-- 30-min Timer & Rate Locked Banner -->
+          <div class="timer-countdown-banner" id="invoice-timer-banner" style="margin-top: 0.85rem;">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; flex-wrap: wrap; gap: 6px;">
+              <span class="badge badge-accent" id="invoice-rate-locked-badge" data-i18n="modal_topup_rate_locked_badge">🔒 Курс зафиксирован на 30 мин</span>
+              <div class="timer-countdown-box">
+                <span style="font-size: 0.8rem; color: var(--text-muted);" data-i18n="modal_topup_timer_label">⏱️ Окно оплаты:</span>
+                <strong id="invoice-timer-display" class="timer-display-digits">30:00</strong>
+              </div>
+            </div>
+            <p style="font-size: 0.72rem; color: var(--text-secondary); margin: 0;" data-i18n="modal_topup_timer_notice">
+              Отправьте перевод или отмените заказ до истечения 30 минут.
+            </p>
+          </div>
+
+          <!-- Session Expired Alert Box (hidden by default) -->
+          <div id="topup-expired-alert" style="display: none; margin-top: 0.75rem; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); border-radius: var(--radius-sm); padding: 10px 12px; text-align: center;">
+            <p style="font-size: 0.8rem; color: #fca5a5; margin: 0 0 8px 0;" data-i18n="modal_topup_expired_alert">
+              ⚠️ Время бронирования курса (30 мин) истекло. Вернитесь на Шаг 1 для перерасчёта по актуальному курсу.
+            </p>
+            <button type="button" class="btn btn-secondary btn-small" onclick="window.app.handleCancelTopup()" style="margin: 0 auto;">
+              ← Вернуться на Шаг 1
+            </button>
+          </div>
+
+          <!-- Generated xPub Invoice Card -->
+          <div class="invoice-card" id="invoice-card-container">
+            <div class="invoice-header-row">
+              <div>
+                <span style="font-size: 0.8rem; color: var(--text-muted);" data-i18n="modal_topup_order">Заказ:</span>
+                <strong id="invoice-order-id" style="color: #fff; margin-left: 4px;">ORD-142</strong>
+              </div>
+              <div>
+                <span class="badge badge-gold"><span data-i18n="modal_topup_to_pay">К оплате:</span> <strong id="invoice-amount-usdt">5 USDT</strong></span>
+              </div>
+            </div>
+
+            <!-- QR Code Canvas -->
+            <div class="invoice-qr-wrap" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;">
+              <div style="background: #ffffff; padding: 12px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);">
+                <canvas id="invoice-qr-canvas" class="invoice-qr-canvas" style="cursor: pointer; display: block; border-radius: 0; padding: 0; background: #fff;" title="Click to copy address" onclick="window.app.copyInvoiceAddress()"></canvas>
+              </div>
+              <span style="font-size: 0.72rem; color: var(--text-muted);" data-i18n="modal_topup_qr_hint">📷 Scan in wallet (TronLink / Trust Wallet / Binance)</span>
+              <div id="invoice-exact-amount-hint" style="font-size: 0.74rem; color: #fbbf24; background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.35); border-radius: var(--radius-sm); padding: 6px 10px; width: 100%; text-align: center; line-height: 1.4;" data-i18n="modal_topup_exact_hint">
+                ⚠️ Please transfer the exact amount shown above so our system automatically identifies your order.
+              </div>
+            </div>
+
             <div>
-              <span style="font-size: 0.8rem; color: var(--text-muted);" data-i18n="modal_topup_order">Заказ:</span>
-              <strong id="invoice-order-id" style="color: #fff; margin-left: 4px;">ORD-142</strong>
+              <label style="font-size: 0.75rem; color: var(--text-muted); display: block;">
+                <span data-i18n="modal_topup_address">Deposit Address</span> (<span id="invoice-network">TRC-20</span>):
+              </label>
+              <div class="copy-input-row">
+                <input type="text" id="invoice-address" class="copy-input" readonly value="TA1qqbnwAaGaZuJRyjxvwrLp6Wxy6aEFnW">
+                <button class="btn btn-secondary btn-small" onclick="window.app.copyInvoiceAddress()" title="Copy address" data-i18n="modal_topup_copy">📋 Copy</button>
+              </div>
             </div>
-            <div>
-              <span class="badge badge-gold"><span data-i18n="modal_topup_to_pay">К оплате:</span> <strong id="invoice-amount-usdt">5 USDT</strong></span>
-            </div>
-          </div>
 
-          <!-- QR Code Canvas -->
-          <div class="invoice-qr-wrap" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;">
-            <div style="background: #ffffff; padding: 12px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);">
-              <canvas id="invoice-qr-canvas" class="invoice-qr-canvas" style="cursor: pointer; display: block; border-radius: 0; padding: 0; background: #fff;" title="Click to copy address" onclick="window.app.copyInvoiceAddress()"></canvas>
-            </div>
-            <span style="font-size: 0.72rem; color: var(--text-muted);" data-i18n="modal_topup_qr_hint">📷 Scan in wallet (TronLink / Trust Wallet / Binance)</span>
-            <div id="invoice-exact-amount-hint" style="font-size: 0.74rem; color: #fbbf24; background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.35); border-radius: var(--radius-sm); padding: 6px 10px; width: 100%; text-align: center; line-height: 1.4;" data-i18n="modal_topup_exact_hint">
-              ⚠️ Please transfer the exact amount shown above so our system automatically identifies your order.
+            <div style="margin-top: 0.75rem; font-size: 0.75rem; color: var(--text-muted); display: flex; justify-content: space-between;">
+              <span><span data-i18n="modal_topup_derivation">Network / Method:</span> <code id="invoice-derivation-path" style="color: var(--accent-secondary);">TRC-20 (Tron Network)</code></span>
+              <span id="invoice-amount-orbs-info" style="color: var(--accent-gold); font-weight: 600;">+5 Орб</span>
             </div>
           </div>
 
-          <div>
-            <label style="font-size: 0.75rem; color: var(--text-muted); display: block;">
-              <span data-i18n="modal_topup_address">Deposit Address</span> (<span id="invoice-network">TRC-20</span>):
-            </label>
-            <div class="copy-input-row">
-              <input type="text" id="invoice-address" class="copy-input" readonly value="TA1qqbnwAaGaZuJRyjxvwrLp6Wxy6aEFnW">
-              <button class="btn btn-secondary btn-small" onclick="window.app.copyInvoiceAddress()" title="Copy address" data-i18n="modal_topup_copy">📋 Copy</button>
+          <div style="margin-top: 1.25rem; display: flex; flex-direction: column; gap: 8px;">
+            <!-- Status Banner for Live Blockchain Tracking -->
+            <div id="blockchain-live-tracker" style="display: flex; align-items: center; justify-content: center; gap: 8px; padding: 0.6rem 0.8rem; background: rgba(59, 130, 246, 0.12); border: 1px solid rgba(59, 130, 246, 0.35); border-radius: var(--radius-sm); font-size: 0.8rem; color: #93c5fd;">
+              <span style="width: 8px; height: 8px; border-radius: 50%; background: #38bdf8; display: inline-block; box-shadow: 0 0 8px #38bdf8;"></span>
+              <span id="blockchain-tracker-text" data-i18n="modal_topup_tracking_text">📡 Scanning blockchain every 12s...</span>
             </div>
-          </div>
 
-          <div style="margin-top: 0.75rem; font-size: 0.75rem; color: var(--text-muted); display: flex; justify-content: space-between;">
-            <span><span data-i18n="modal_topup_derivation">Network / Method:</span> <code id="invoice-derivation-path" style="color: var(--accent-secondary);">TRC-20 (Tron Network)</code></span>
-            <span><span data-i18n="modal_topup_time">⏱️ Payment Window:</span> <strong>30:00</strong></span>
-          </div>
-        </div>
+            <!-- Real Blockchain Check Button -->
+            <button type="button" class="btn btn-accent btn-large" style="width: 100%;" id="check-blockchain-tx-btn" onclick="window.app.checkPaymentInBlockchain()" data-i18n="modal_topup_check_btn">
+              🔄 Check Blockchain for Payment
+            </button>
 
-        <div style="margin-top: 1.25rem; display: flex; flex-direction: column; gap: 8px;">
-          <!-- Status Banner for Live Blockchain Tracking -->
-          <div id="blockchain-live-tracker" style="display: flex; align-items: center; justify-content: center; gap: 8px; padding: 0.6rem 0.8rem; background: rgba(59, 130, 246, 0.12); border: 1px solid rgba(59, 130, 246, 0.35); border-radius: var(--radius-sm); font-size: 0.8rem; color: #93c5fd;">
-            <span style="width: 8px; height: 8px; border-radius: 50%; background: #38bdf8; display: inline-block; box-shadow: 0 0 8px #38bdf8;"></span>
-            <span id="blockchain-tracker-text" data-i18n="modal_topup_tracking_text">📡 Scanning blockchain every 12s...</span>
-          </div>
-
-          <!-- Real Blockchain Check Button -->
-          <button type="button" class="btn btn-accent btn-large" style="width: 100%;" id="check-blockchain-tx-btn" onclick="window.app.checkPaymentInBlockchain()" data-i18n="modal_topup_check_btn">
-            🔄 Check Blockchain for Payment
-          </button>
-
-          <!-- Optional manual TxID verification -->
-          <div style="background: rgba(0, 0, 0, 0.3); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 8px 10px; margin-top: 2px;">
-            <label style="font-size: 0.73rem; color: var(--text-muted); display: block; margin-bottom: 4px;" data-i18n="modal_topup_txid_label">
-              Already sent transfer? Verify instantly by Transaction Hash (TxID):
-            </label>
-            <div style="display: flex; gap: 6px;">
-              <input type="text" id="invoice-txid-input" class="copy-input" placeholder="Paste transaction hash / TxID..." style="font-size: 0.75rem; padding: 0.45rem 0.65rem;" data-i18n-placeholder="modal_topup_txid_placeholder">
-              <button type="button" class="btn btn-secondary btn-small" id="verify-txid-btn" onclick="window.app.verifyManualTxId()" style="white-space: nowrap;" data-i18n="modal_topup_txid_btn">
-                ⚡ Check TxID
-              </button>
+            <!-- Optional manual TxID verification -->
+            <div style="background: rgba(0, 0, 0, 0.3); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 8px 10px; margin-top: 2px;">
+              <label style="font-size: 0.73rem; color: var(--text-muted); display: block; margin-bottom: 4px;" data-i18n="modal_topup_txid_label">
+                Already sent transfer? Verify instantly by Transaction Hash (TxID):
+              </label>
+              <div style="display: flex; gap: 6px;">
+                <input type="text" id="invoice-txid-input" class="copy-input" placeholder="Paste transaction hash / TxID..." style="font-size: 0.75rem; padding: 0.45rem 0.65rem;" data-i18n-placeholder="modal_topup_txid_placeholder">
+                <button type="button" class="btn btn-secondary btn-small" id="verify-txid-btn" onclick="window.app.verifyManualTxId()" style="white-space: nowrap;" data-i18n="modal_topup_txid_btn">
+                  ⚡ Check TxID
+                </button>
+              </div>
             </div>
-          </div>
 
-          <!-- Quick link to history -->
-          <button type="button" class="btn btn-secondary" style="width: 100%; margin-top: 4px;" onclick="window.app.closeAllModals(); window.app.showDepositHistoryModal()" data-i18n="modal_topup_history_btn">
-            📜 View Deposit History
-          </button>
+            <!-- Cancel / Return to Step 1 Button -->
+            <button type="button" class="btn btn-secondary" id="topup-cancel-order-btn" style="width: 100%; border-color: rgba(239, 68, 68, 0.35); color: #fca5a5;" onclick="window.app.handleCancelTopup()" data-i18n="modal_topup_btn_cancel_step">
+              ✕ Отменить заказ и вернуться
+            </button>
+          </div>
         </div>
       </div>
     </div>

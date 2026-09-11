@@ -13,6 +13,51 @@ class CryptoPaymentService {
     this.store = store;
     this.activeSession = null;
     this.timerInterval = null;
+    this.cachedBtcRate = 68000;
+    this.btcRateCachedAt = 0;
+  }
+
+  /**
+   * Получение живого биржевого курса BTC/USD с кэшированием на 45 секунд
+   */
+  async fetchLiveBtcRate() {
+    const now = Date.now();
+    if (this.cachedBtcRate && (now - this.btcRateCachedAt < 45000)) {
+      return this.cachedBtcRate;
+    }
+
+    try {
+      // 1. Публичный быстрый тикер Binance (без ключей)
+      const res = await fetch('https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT');
+      if (res.ok) {
+        const data = await res.json();
+        const price = Number(data.price);
+        if (price && price > 1000) {
+          this.cachedBtcRate = price;
+          this.btcRateCachedAt = now;
+          return price;
+        }
+      }
+    } catch (e) {
+      console.warn('Binance BTC price fetch warning:', e);
+    }
+
+    try {
+      // 2. Резервный источник CoinGecko
+      const res = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.bitcoin && data.bitcoin.usd) {
+          this.cachedBtcRate = Number(data.bitcoin.usd);
+          this.btcRateCachedAt = now;
+          return this.cachedBtcRate;
+        }
+      }
+    } catch (e) {
+      console.warn('CoinGecko BTC price fetch warning:', e);
+    }
+
+    return this.cachedBtcRate || 68000;
   }
 
   /**
@@ -55,9 +100,9 @@ class CryptoPaymentService {
   }
 
   /**
-   * Создание новой платежной сессии
+   * Создание новой платежной сессии с фиксацией курса на 30 минут
    */
-  createInvoice(orbsAmount, network = 'USDT (TRC-20)') {
+  async createInvoice(orbsAmount, network = 'USDT (TRC-20)') {
     const amount = Number(orbsAmount);
     if (!amount || amount <= 0) {
       const isEn = window.i18n && window.i18n.getLang() === 'en';
@@ -68,17 +113,18 @@ class CryptoPaymentService {
     const address = this.deriveAddress(null, orderIndex, network);
     const isEn = window.i18n && window.i18n.getLang() === 'en';
 
-    // Уникальный микро-хвостик к сумме (например, для заказа 146: +0.0146 USDT или сатоши в BTC),
-    // чтобы при общем кошельке блокчейн безошибочно различал платежи каждого пользователя
-    const tailUnits = (orderIndex % 900) + 100; // от 100 до 999
+    // Уникальный микро-хвостик к сумме для 100% идентификации конкретного заказа
+    const tailUnits = (orderIndex % 900) + 100;
     let derivationPath = 'Direct Wallet Transfer';
     let formattedAmount = `${amount} USDT`;
     let networkBadge = 'TRC-20';
     let expectedAmount = amount;
+    let btcRate = null;
 
     if (network.includes('BTC') || network.includes('Bitcoin')) {
       derivationPath = isEn ? 'Bitcoin Mainnet • Direct Transfer' : 'Bitcoin Mainnet • Прямой перевод';
-      const btcBase = amount / 65000;
+      btcRate = await this.fetchLiveBtcRate();
+      const btcBase = amount / btcRate;
       const btcTail = (tailUnits * 1e-7);
       const btcVal = Number((btcBase + btcTail).toFixed(7));
       expectedAmount = btcVal;
@@ -86,24 +132,27 @@ class CryptoPaymentService {
       networkBadge = 'BTC';
     } else if (network.includes('Polygon') || network.includes('POL')) {
       derivationPath = isEn ? 'Polygon (POL) • Direct Transfer' : 'Polygon Network (POL) • Прямой перевод';
-      const usdtTail = tailUnits * 0.0001; // например, +0.0146 USDT
+      const usdtTail = tailUnits * 0.0001;
       expectedAmount = Number((amount + usdtTail).toFixed(4));
       formattedAmount = `${expectedAmount.toFixed(4)} USDT`;
       networkBadge = 'POL';
     } else {
       derivationPath = isEn ? 'TRON Network (TRC-20) • Direct Transfer' : 'TRON Network (TRC-20) • Прямой перевод';
-      const usdtTail = tailUnits * 0.0001; // например, +0.0146 USDT
+      const usdtTail = tailUnits * 0.0001;
       expectedAmount = Number((amount + usdtTail).toFixed(4));
       formattedAmount = `${expectedAmount.toFixed(4)} USDT`;
       networkBadge = 'TRC-20';
     }
 
+    const expiresAt = Date.now() + 30 * 60 * 1000; // Ровно 30 минут фиксации курса и реквизитов
+
     this.activeSession = {
       orderId: `ORD-${orderIndex}`,
       orderIndex,
-      orbsAmount: amount,          // Количество зачисляемых Орбов (например, ровно 3)
-      expectedAmount,              // Точная сумма для распознавания в блокчейне (например, 3.0146 USDT)
+      orbsAmount: amount,          // Количество зачисляемых Орбов
+      expectedAmount,              // Точная зафиксированная сумма в крипте
       usdtAmount: expectedAmount,
+      btcRate,                     // Зафиксированный курс BTC/USD
       formattedAmount,
       network,
       networkBadge,
@@ -111,8 +160,8 @@ class CryptoPaymentService {
       isDirect: true,
       derivationPath,
       createdAt: Date.now(),
-      expiresAt: Date.now() + 30 * 60 * 1000, // 30 минут
-      status: 'pending' // 'pending' | 'completed' | 'expired'
+      expiresAt,
+      status: 'pending' // 'pending' | 'completed' | 'expired' | 'cancelled'
     };
 
     // Запись заказа в базу данных Supabase
@@ -134,10 +183,55 @@ class CryptoPaymentService {
         .catch(err => console.warn('Создание заказа в Supabase ожидает настройки таблиц:', err));
     }
 
+    // Запуск таймера обратного отсчета 30 минут
+    this.startCountdownTimer();
+
     // Запуск фонового сканера блокчейна
     this.startBlockchainWatcher();
 
     return this.activeSession;
+  }
+
+  /**
+   * Живой таймер обратного отсчета 30 минут
+   */
+  startCountdownTimer() {
+    this.stopCountdownTimer();
+    const tick = () => {
+      if (!this.activeSession || this.activeSession.status !== 'pending') {
+        this.stopCountdownTimer();
+        return;
+      }
+
+      const timeLeftMs = this.activeSession.expiresAt - Date.now();
+      if (timeLeftMs <= 0) {
+        this.activeSession.status = 'expired';
+        this.stopCountdownTimer();
+        this.stopBlockchainWatcher();
+        if (window.app && window.app.handleTopupExpired) {
+          window.app.handleTopupExpired();
+        }
+        return;
+      }
+
+      const totalSec = Math.floor(timeLeftMs / 1000);
+      const mins = Math.floor(totalSec / 60);
+      const secs = totalSec % 60;
+      const formatted = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+      if (window.app && window.app.updateTopupTimerUI) {
+        window.app.updateTopupTimerUI(formatted, totalSec);
+      }
+    };
+
+    tick();
+    this.timerInterval = setInterval(tick, 1000);
+  }
+
+  stopCountdownTimer() {
+    if (this.timerInterval) {
+      clearInterval(this.timerInterval);
+      this.timerInterval = null;
+    }
   }
 
   getActiveSession() {
@@ -412,6 +506,7 @@ class CryptoPaymentService {
     if (!this.activeSession || this.activeSession.status !== 'pending') return;
 
     this.activeSession.status = 'completed';
+    this.stopCountdownTimer();
     this.stopBlockchainWatcher();
 
     const amount = this.activeSession.orbsAmount;
@@ -521,6 +616,7 @@ class CryptoPaymentService {
       return { success: false, message: 'Нет активной ожидающей сессии оплаты' };
     }
 
+    this.stopCountdownTimer();
     this.stopBlockchainWatcher();
     this.activeSession.status = 'completed';
     const amount = this.activeSession.orbsAmount;
@@ -534,10 +630,6 @@ class CryptoPaymentService {
       usdt: this.activeSession.usdtAmount
     });
 
-    if (this.timerInterval) {
-      clearInterval(this.timerInterval);
-    }
-
     return {
       success: true,
       amount,
@@ -547,9 +639,10 @@ class CryptoPaymentService {
   }
 
   cancelSession() {
+    this.stopCountdownTimer();
     this.stopBlockchainWatcher();
-    if (this.timerInterval) {
-      clearInterval(this.timerInterval);
+    if (this.activeSession && this.activeSession.status === 'pending') {
+      this.activeSession.status = 'cancelled';
     }
     this.activeSession = null;
   }
