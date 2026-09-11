@@ -6,6 +6,7 @@ class App {
   constructor() {
     this.currentTab = 'storefront';
     this.store = (typeof window !== 'undefined' && window.store) ? window.store : null;
+    this.openedFromHistory = false;
   }
 
   init() {
@@ -87,6 +88,13 @@ class App {
       }
 
       if (e.key === 'Escape') {
+        const topupModal = document.getElementById('topup-modal');
+        if (topupModal && topupModal.classList.contains('active') && this.openedFromHistory) {
+          this.openedFromHistory = false;
+          this.closeAllModals();
+          this.showDepositHistoryModal();
+          return;
+        }
         this.closeAllModals();
         if (window.reader) window.reader.closeReader();
       }
@@ -472,14 +480,14 @@ class App {
 
         return `
           <tr style="border-bottom: 1px solid var(--border-color); transition: background 0.2s ease;">
-            <td style="padding: 0.85rem 1rem; color: var(--text-secondary);">${dateFormatted}</td>
-            <td style="padding: 0.85rem 1rem; font-weight: 600; font-family: monospace; color: #fff;">${item.id || '—'}</td>
-            <td style="padding: 0.85rem 1rem;"><span class="badge ${networkBadgeClass}">${item.network || 'USDT'}</span></td>
-            <td style="padding: 0.85rem 1rem; font-weight: 600; ${isCancelled ? 'color: var(--text-muted);' : ''}">${amountVal} ${isBtc ? 'BTC' : 'USDT'}</td>
-            <td style="padding: 0.85rem 1rem; ${isCancelled ? 'color: var(--text-muted);' : 'color: #fbbf24; font-weight: 700;'}">+${orbsVal.toFixed(2)} 🪙</td>
-            <td style="padding: 0.85rem 1rem;">${txHashCell}</td>
-            <td style="padding: 0.85rem 1rem;">${statusBadge}</td>
-            <td style="padding: 0.85rem 1rem; text-align: center;">${actionCell}</td>
+            <td style="padding: 0.75rem 0.85rem; white-space: nowrap; color: var(--text-secondary);">${dateFormatted}</td>
+            <td style="padding: 0.75rem 0.85rem; white-space: nowrap; font-weight: 600; font-family: monospace; color: #fff;">${item.id || '—'}</td>
+            <td style="padding: 0.75rem 0.85rem; white-space: nowrap;"><span class="badge ${networkBadgeClass}">${item.network || 'USDT'}</span></td>
+            <td style="padding: 0.75rem 0.85rem; white-space: nowrap; font-weight: 600; ${isCancelled ? 'color: var(--text-muted);' : ''}">${amountVal} ${isBtc ? 'BTC' : 'USDT'}</td>
+            <td style="padding: 0.75rem 0.85rem; white-space: nowrap; ${isCancelled ? 'color: var(--text-muted);' : 'color: #fbbf24; font-weight: 700;'}">+${orbsVal.toFixed(2)} 🪙</td>
+            <td style="padding: 0.75rem 0.85rem; white-space: nowrap;">${txHashCell}</td>
+            <td style="padding: 0.75rem 0.85rem; white-space: nowrap;">${statusBadge}</td>
+            <td style="padding: 0.75rem 0.85rem; white-space: nowrap; text-align: center;">${actionCell}</td>
           </tr>
         `;
       }).join('');
@@ -550,6 +558,7 @@ class App {
       return;
     }
 
+    this.openedFromHistory = true;
     this.closeAllModals();
     this.populateTopupStep2(session);
     this.switchToTopupStep(2);
@@ -630,10 +639,8 @@ class App {
   /**
    * Модальное окно пополнения баланса (2-шаговый интерфейс)
    */
-  /**
-   * Модальное окно пополнения баланса (2-шаговый интерфейс)
-   */
   showTopupModal(defaultAmount = 5) {
+    this.openedFromHistory = false;
     const modal = document.getElementById('topup-modal');
     if (!modal) return;
 
@@ -1027,11 +1034,17 @@ class App {
     if (window.cryptoPay) {
       window.cryptoPay.cancelSession('user_cancelled');
     }
+    const wasFromHistory = this.openedFromHistory;
+    this.openedFromHistory = false;
     this.switchToTopupStep(1);
     this.onTopupConfigChange();
     const isEn = window.i18n && window.i18n.getLang() === 'en';
     this.showToast(isEn ? 'Payment deal cancelled' : 'Сделка отменена и перемещена в историю', 'info');
     this.renderDepositHistory();
+    if (wasFromHistory) {
+      this.closeAllModals();
+      this.showDepositHistoryModal();
+    }
   }
 
   /**
@@ -1473,6 +1486,13 @@ class App {
     document.querySelectorAll('.modal-close-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
+        const parentModal = btn.closest('.modal-backdrop');
+        if (parentModal && parentModal.id === 'topup-modal' && this.openedFromHistory) {
+          this.openedFromHistory = false;
+          this.closeAllModals();
+          this.showDepositHistoryModal();
+          return;
+        }
         this.closeAllModals();
       });
     });

@@ -997,7 +997,12 @@
   transition: var(--transition);
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 4px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  min-width: 76px;
+  box-sizing: border-box;
 }
 
 .btn-resume-deal:hover {
