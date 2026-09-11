@@ -359,43 +359,53 @@ class App {
   }
 
   async renderDepositHistory() {
-    const tbody = document.getElementById('deposits-history-table-body');
+    const tbodyPurchases = document.getElementById('deposits-history-table-body');
+    const tbodyModal = document.getElementById('modal-deposits-history-table-body');
     const badge = document.getElementById('deposits-count-badge');
-    if (!tbody) return;
-
     const isEn = window.i18n && window.i18n.getLang() === 'en';
 
-    tbody.innerHTML = `
+    const loadingHtml = `
       <tr>
-        <td colspan="7" style="padding: 2rem; text-align: center; color: var(--text-muted);">
+        <td colspan="8" style="padding: 2rem; text-align: center; color: var(--text-muted);">
           ${isEn ? '⏳ Loading transaction history...' : '⏳ Загрузка истории транзакций...'}
         </td>
       </tr>
     `;
+
+    if (tbodyPurchases) tbodyPurchases.innerHTML = loadingHtml;
+    if (tbodyModal) tbodyModal.innerHTML = loadingHtml;
 
     try {
       const history = await this.store.getDepositHistory();
       if (badge) badge.textContent = history.length;
 
       if (history.length === 0) {
-        tbody.innerHTML = `
+        const emptyHtml = `
           <tr>
-            <td colspan="7" style="padding: 2.5rem 1rem; text-align: center; color: var(--text-muted);">
+            <td colspan="8" style="padding: 2.5rem 1rem; text-align: center; color: var(--text-muted);">
               ${isEn ? '🪙 Deposit history is currently empty. Top up your balance using the "+" button next to your balance.' : '🪙 История пополнений пока пуста. Пополните баланс через кнопку «+» возле баланса.'}
             </td>
           </tr>
         `;
+        if (tbodyPurchases) tbodyPurchases.innerHTML = emptyHtml;
+        if (tbodyModal) tbodyModal.innerHTML = emptyHtml;
         return;
       }
 
-      tbody.innerHTML = history.map(item => {
+      const rowsHtml = history.map(item => {
         const locale = isEn ? 'en-US' : 'ru-RU';
         const dateFormatted = item.date ? new Date(item.date).toLocaleString(locale) : '—';
         const isBtc = (item.network || '').includes('BTC');
         const networkBadgeClass = isBtc ? 'badge-gold' : (item.network || '').includes('Polygon') ? 'badge-accent' : 'badge-info';
 
+        const isCancelled = item.status === 'cancelled';
+        const isCompleted = item.status === 'completed';
+        const isAwaiting = item.status === 'awaiting_confirmations';
+        const isPending = item.status === 'pending';
+
+        // В отличие от завершенных сделок, в отмененных не сохраняются подробности
         let txHashCell = '<span style="color: var(--text-muted);">—</span>';
-        if (item.txHash) {
+        if (!isCancelled && item.txHash) {
           const shortHash = item.txHash.length > 16 ? `${item.txHash.slice(0, 8)}...${item.txHash.slice(-6)}` : item.txHash;
           const expTitle = isEn ? 'Open in blockchain explorer' : 'Открыть в блокчейн-эксплорере';
           if (item.explorerUrl) {
@@ -407,35 +417,58 @@ class App {
           }
         }
 
-        const isCompleted = item.status === 'completed';
-        const statusBadge = isCompleted
-          ? `<span class="badge badge-success">${isEn ? '✅ Completed' : '✅ Завершено'}</span>`
-          : `<span class="badge badge-warning">${isEn ? '⏳ Pending' : '⏳ Ожидание'}</span>`;
+        // Статус
+        let statusBadge = '';
+        if (isCompleted) {
+          statusBadge = `<span class="badge badge-success">${isEn ? '✅ Completed' : '✅ Завершено'}</span>`;
+        } else if (isAwaiting) {
+          statusBadge = `<span class="badge badge-info" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.4);">${isEn ? '⛓️ Confirming' : '⛓️ Подтверждения'} (${item.confirmations || 0}/3)</span>`;
+        } else if (isCancelled) {
+          statusBadge = `<span class="badge" style="background: rgba(239, 68, 68, 0.15); color: #fca5a5; border: 1px solid rgba(239, 68, 68, 0.3);">${isEn ? '✕ Cancelled' : '✕ Отменена'}</span>`;
+        } else {
+          statusBadge = `<span class="badge badge-warning">${isEn ? '⏳ Pending' : '⏳ Ожидание'}</span>`;
+        }
 
         const orbsVal = Number(item.orbs || 0);
         const amountVal = Number(item.amountUsdt || 0);
+
+        // Кнопка действия (открытие активной/ожидающей сделки)
+        let actionCell = '<span style="color: var(--text-muted); font-size: 0.75rem;">—</span>';
+        if (item.canResume) {
+          actionCell = `
+            <button type="button" class="btn btn-resume-deal" onclick="window.app.resumeTopupSession('${item.id}')" title="${isEn ? 'Open active deal' : 'Открыть сделку'}">
+              👁️ ${isEn ? 'Open' : 'Открыть'}
+            </button>
+          `;
+        }
 
         return `
           <tr style="border-bottom: 1px solid var(--border-color); transition: background 0.2s ease;">
             <td style="padding: 0.85rem 1rem; color: var(--text-secondary);">${dateFormatted}</td>
             <td style="padding: 0.85rem 1rem; font-weight: 600; font-family: monospace; color: #fff;">${item.id || '—'}</td>
             <td style="padding: 0.85rem 1rem;"><span class="badge ${networkBadgeClass}">${item.network || 'USDT'}</span></td>
-            <td style="padding: 0.85rem 1rem; font-weight: 600;">${amountVal} ${isBtc ? 'BTC' : 'USDT'}</td>
-            <td style="padding: 0.85rem 1rem; color: #fbbf24; font-weight: 700;">+${orbsVal.toFixed(2)} 🪙</td>
+            <td style="padding: 0.85rem 1rem; font-weight: 600; ${isCancelled ? 'color: var(--text-muted);' : ''}">${amountVal} ${isBtc ? 'BTC' : 'USDT'}</td>
+            <td style="padding: 0.85rem 1rem; ${isCancelled ? 'color: var(--text-muted);' : 'color: #fbbf24; font-weight: 700;'}">+${orbsVal.toFixed(2)} 🪙</td>
             <td style="padding: 0.85rem 1rem;">${txHashCell}</td>
             <td style="padding: 0.85rem 1rem;">${statusBadge}</td>
+            <td style="padding: 0.85rem 1rem; text-align: center;">${actionCell}</td>
           </tr>
         `;
       }).join('');
+
+      if (tbodyPurchases) tbodyPurchases.innerHTML = rowsHtml;
+      if (tbodyModal) tbodyModal.innerHTML = rowsHtml;
     } catch (err) {
       console.warn('Ошибка рендера истории пополнений:', err);
-      tbody.innerHTML = `
+      const errHtml = `
         <tr>
-          <td colspan="7" style="padding: 1.5rem; text-align: center; color: var(--accent-danger);">
+          <td colspan="8" style="padding: 1.5rem; text-align: center; color: var(--accent-danger);">
             ${isEn ? 'Failed to load transaction history' : 'Не удалось загрузить историю транзакций'}
           </td>
         </tr>
       `;
+      if (tbodyPurchases) tbodyPurchases.innerHTML = errHtml;
+      if (tbodyModal) tbodyModal.innerHTML = errHtml;
     }
   }
 
@@ -460,8 +493,51 @@ class App {
   }
 
   showDepositHistoryModal() {
-    this.switchTab('purchases');
-    this.switchPurchasesSubtab('deposits');
+    this.renderDepositHistory();
+    const modal = document.getElementById('deposits-history-modal');
+    if (modal) {
+      modal.classList.add('active');
+      document.body.classList.add('modal-open');
+    } else {
+      this.switchTab('purchases');
+      this.switchPurchasesSubtab('deposits');
+    }
+  }
+
+  /**
+   * Открытие активной сделки из истории пополнений
+   */
+  resumeTopupSession(orderId) {
+    if (!window.cryptoPay) return;
+    const session = window.cryptoPay.resumeSession(orderId);
+    if (!session) {
+      const isEn = window.i18n && window.i18n.getLang() === 'en';
+      this.showToast(
+        isEn
+          ? 'This transaction has expired or was already finished.'
+          : 'Время ожидания оплаты этой сделки истекло или сделка уже завершена.',
+        'warning'
+      );
+      this.renderDepositHistory();
+      return;
+    }
+
+    this.closeAllModals();
+    this.populateTopupStep2(session);
+    this.switchToTopupStep(2);
+    const modal = document.getElementById('topup-modal');
+    if (modal) {
+      modal.classList.add('active');
+      document.body.classList.add('modal-open');
+    }
+
+    const isEn = window.i18n && window.i18n.getLang() === 'en';
+    this.showToast(
+      isEn
+        ? `👁️ Opened active transaction ${orderId}`
+        : `👁️ Открыта активная сделка ${orderId}`,
+      'info'
+    );
   }
 
   /**
@@ -526,13 +602,19 @@ class App {
   /**
    * Модальное окно пополнения баланса (2-шаговый интерфейс)
    */
+  /**
+   * Модальное окно пополнения баланса (2-шаговый интерфейс)
+   */
   showTopupModal(defaultAmount = 5) {
     const modal = document.getElementById('topup-modal');
     if (!modal) return;
 
-    // Проверяем, есть ли уже активная незавершённая сессия с неистёкшим временем (30 минут)
+    // Проверяем, есть ли уже активная незавершённая сессия
     const activeSession = window.cryptoPay ? window.cryptoPay.getActiveSession() : null;
-    if (activeSession && activeSession.status === 'pending' && activeSession.expiresAt > Date.now()) {
+    if (activeSession && (
+      activeSession.status === 'awaiting_confirmations' || 
+      (activeSession.status === 'pending' && activeSession.expiresAt && activeSession.expiresAt > Date.now())
+    )) {
       this.populateTopupStep2(activeSession);
       this.switchToTopupStep(2);
     } else {
@@ -640,6 +722,7 @@ class App {
       this.populateTopupStep2(invoice);
       this.switchToTopupStep(2);
       this.showToast(isEn ? '🔒 Exchange rate locked for 30 minutes!' : '🔒 Курс обмена зафиксирован на 30 минут!', 'info');
+      this.renderDepositHistory();
     } catch (e) {
       this.showToast(e.message || (isEn ? 'Failed to create invoice' : 'Ошибка создания счёта'), 'error');
     } finally {
@@ -651,7 +734,7 @@ class App {
   }
 
   /**
-   * Заполнение реквизитов и QR-кода на Шаге 2
+   * Заполнение реквизитов, QR-кода и статуса на Шаге 2
    */
   populateTopupStep2(invoice) {
     if (!invoice) return;
@@ -662,6 +745,9 @@ class App {
     const addressEl = document.getElementById('invoice-address');
     const pathEl = document.getElementById('invoice-derivation-path');
     const orbsInfoEl = document.getElementById('invoice-amount-orbs-info');
+    const timerBanner = document.getElementById('invoice-timer-banner');
+    const markPaidBtn = document.getElementById('invoice-mark-paid-btn');
+    const confBox = document.getElementById('invoice-confirmations-box');
     const isEn = window.i18n && window.i18n.getLang() === 'en';
 
     if (orderIdEl) orderIdEl.textContent = invoice.orderId;
@@ -676,19 +762,129 @@ class App {
     if (canvas && window.cryptoPay) {
       window.cryptoPay.renderQRCodeToCanvas(canvas, invoice.address);
     }
+
+    // Состояние: ожидание первого перевода (pending) vs ожидание подтверждений в сети (awaiting_confirmations)
+    if (invoice.status === 'awaiting_confirmations') {
+      if (timerBanner) timerBanner.style.display = 'none';
+      if (markPaidBtn) markPaidBtn.style.display = 'none';
+      if (confBox) confBox.style.display = 'flex';
+      this.updateConfirmationsUI(invoice.confirmations || 0, invoice.requiredConfirmations || 3, invoice.txHash);
+    } else {
+      if (timerBanner) timerBanner.style.display = 'block';
+      if (markPaidBtn) {
+        markPaidBtn.style.display = 'flex';
+        markPaidBtn.disabled = false;
+        markPaidBtn.textContent = isEn ? '✅ I Have Paid' : '✅ Я оплатил';
+      }
+      if (confBox) confBox.style.display = 'none';
+    }
   }
 
   /**
-   * Отмена текущего заказа и возврат на Шаг 1
+   * Пользователь нажал кнопку "Оплачено" — убираем таймер, переводим сделку в ожидание 3 подтверждений
+   */
+  handleMarkAsPaid() {
+    if (!window.cryptoPay) return;
+    const session = window.cryptoPay.markSessionAsPaid();
+    if (!session) return;
+
+    const timerBanner = document.getElementById('invoice-timer-banner');
+    const markPaidBtn = document.getElementById('invoice-mark-paid-btn');
+    const confBox = document.getElementById('invoice-confirmations-box');
+
+    if (timerBanner) timerBanner.style.display = 'none';
+    if (markPaidBtn) markPaidBtn.style.display = 'none';
+    if (confBox) confBox.style.display = 'flex';
+
+    this.updateConfirmationsUI(session.confirmations || 0, session.requiredConfirmations || 3, session.txHash);
+
+    const isEn = window.i18n && window.i18n.getLang() === 'en';
+    this.showToast(
+      isEn
+        ? '✅ Marked as paid! Tracking blockchain confirmations (0/3)...'
+        : '✅ Сделка переведена в режим ожидания подтверждений в сети (0/3)...',
+      'info'
+    );
+    this.renderDepositHistory();
+  }
+
+  /**
+   * Обновление визуального счётчика подтверждений и прогресс-бара
+   */
+  updateConfirmationsUI(conf, total = 3, txHash = '') {
+    const box = document.getElementById('invoice-confirmations-box');
+    const badge = document.getElementById('confirmations-counter-badge');
+    const fill = document.getElementById('confirmations-bar-fill');
+    const note = document.getElementById('confirmations-status-note');
+    const step1 = document.getElementById('conf-step-1');
+    const step2 = document.getElementById('conf-step-2');
+    const step3 = document.getElementById('conf-step-3');
+    const isEn = window.i18n && window.i18n.getLang() === 'en';
+
+    if (box) box.style.display = 'flex';
+    if (badge) badge.textContent = `${Math.min(conf, total)} / ${total}`;
+
+    // Процент заполнения шкалы
+    const pct = conf <= 0 ? 12 : Math.min(100, Math.round((conf / total) * 100));
+    if (fill) fill.style.width = `${pct}%`;
+
+    // Шаги 1, 2, 3
+    const updateStep = (el, stepNum) => {
+      if (!el) return;
+      el.classList.remove('active', 'completed');
+      const numSpan = el.querySelector('.conf-step-num');
+      if (conf >= stepNum) {
+        el.classList.add('completed');
+        if (numSpan) numSpan.textContent = '✓';
+      } else if (conf === stepNum - 1) {
+        el.classList.add('active');
+        if (numSpan) numSpan.textContent = String(stepNum);
+      } else {
+        if (numSpan) numSpan.textContent = String(stepNum);
+      }
+    };
+
+    updateStep(step1, 1);
+    updateStep(step2, 2);
+    updateStep(step3, 3);
+
+    if (note) {
+      if (conf === 0) {
+        note.textContent = isEn
+          ? '📡 Transfer detected or awaiting first block confirmation...'
+          : '📡 Перевод обнаружен или ожидается первое включение в блок...';
+        note.style.borderLeftColor = '#38bdf8';
+      } else if (conf === 1) {
+        note.textContent = isEn
+          ? '⛓️ 1st confirmation received! 2 confirmations remaining...'
+          : '⛓️ 1-е подтверждение получено! Ожидаем еще 2 подтверждения...';
+        note.style.borderLeftColor = '#38bdf8';
+      } else if (conf === 2) {
+        note.textContent = isEn
+          ? '⛓️ 2nd confirmation received! 1 confirmation remaining...'
+          : '⛓️ 2-е подтверждение получено! Остался 1 блок до зачисления...';
+        note.style.borderLeftColor = '#38bdf8';
+      } else {
+        note.textContent = isEn
+          ? '🎉 All 3 confirmations confirmed! Deal completed, Orbs credited!'
+          : '🎉 Все 3 подтверждения получены! Сделка завершена, Орбы зачислены!';
+        note.style.borderLeftColor = '#10b981';
+      }
+    }
+  }
+
+  /**
+   * Отмена текущего заказа и возврат на Шаг 1 (только при явном клике пользователем)
    */
   handleCancelTopup() {
     if (window.cryptoPay) {
-      window.cryptoPay.cancelSession();
+      window.cryptoPay.cancelSession('user_cancelled');
     }
     this.switchToTopupStep(1);
     this.onTopupConfigChange();
     const isEn = window.i18n && window.i18n.getLang() === 'en';
-    this.showToast(isEn ? 'Payment order cancelled' : 'Заказ на пополнение отменён', 'info');
+    this.showToast(isEn ? 'Payment deal cancelled' : 'Сделка отменена и перемещена в историю', 'info');
+    this.renderDepositHistory();
   }
 
   /**
@@ -726,6 +922,7 @@ class App {
     }
 
     this.showToast(isEn ? '⚠️ Payment window expired. Please refresh the rate.' : '⚠️ Время фиксации курса истекло. Пожалуйста, обновите курс.', 'warning');
+    this.renderDepositHistory();
   }
 
   copyInvoiceAddress() {
@@ -735,7 +932,6 @@ class App {
       this.showToast(window.i18n && window.i18n.getLang() === 'en' ? 'Wallet address copied to clipboard' : 'Адрес кошелька скопирован в буфер обмена', 'success');
     }
   }
-
 
   checkPaymentInBlockchain() {
     if (window.cryptoPay) {
@@ -762,10 +958,24 @@ class App {
     try {
       const result = await window.cryptoPay.verifyTxId(txHash);
       if (result.success) {
-        this.showToast(isEn ? `🎉 Payment confirmed! +${result.amount} Orbs credited.` : `🎉 Платёж подтверждён! Зачислено +${result.amount} Орбов.`, 'success');
-        this.closeAllModals();
-        this.renderUserHeader();
-        this.renderPurchases();
+        if (result.completed) {
+          this.showToast(isEn ? `🎉 Payment confirmed (3/3)! +${result.amount} Orbs credited.` : `🎉 Платёж подтверждён (3/3)! Зачислено +${result.amount} Орбов.`, 'success');
+          this.closeAllModals();
+          this.renderUserHeader();
+          this.renderPurchases();
+        } else {
+          this.showToast(
+            isEn
+              ? `📡 Transaction detected (${result.confirmations || 0}/3 confirmations). Awaiting remaining blocks...`
+              : `📡 Транзакция найдена в сети (${result.confirmations || 0}/3 подтверждений). Ожидаем оставшиеся блоки...`,
+            'info'
+          );
+          this.updateConfirmationsUI(result.confirmations || 0, 3, txHash);
+          const timerBanner = document.getElementById('invoice-timer-banner');
+          const markPaidBtn = document.getElementById('invoice-mark-paid-btn');
+          if (timerBanner) timerBanner.style.display = 'none';
+          if (markPaidBtn) markPaidBtn.style.display = 'none';
+        }
       } else {
         this.showToast(result.message, 'error');
       }

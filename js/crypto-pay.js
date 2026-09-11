@@ -162,8 +162,14 @@ class CryptoPaymentService {
       derivationPath,
       createdAt: Date.now(),
       expiresAt,
-      status: 'pending' // 'pending' | 'completed' | 'expired' | 'cancelled'
+      status: 'pending', // 'pending' | 'awaiting_confirmations' | 'completed' | 'cancelled'
+      confirmations: 0,
+      requiredConfirmations: 3,
+      detectedNotified: false
     };
+
+    // Сохраняем сессию в локальное хранилище и Supabase
+    this.store.saveCryptoSession(this.activeSession);
 
     // Запись заказа в базу данных Supabase
     if (window.supabaseClient) {
@@ -194,21 +200,58 @@ class CryptoPaymentService {
   }
 
   /**
+   * Пользователь нажал кнопку "Оплачено" — убираем таймер и переводим в режим подтверждений
+   */
+  markSessionAsPaid() {
+    if (!this.activeSession) {
+      const active = this.store.getActiveCryptoSession();
+      if (active) this.activeSession = active;
+      else return null;
+    }
+
+    this.stopCountdownTimer();
+    this.activeSession.status = 'awaiting_confirmations';
+    this.activeSession.paidAt = Date.now();
+    if (typeof this.activeSession.confirmations !== 'number') this.activeSession.confirmations = 0;
+    this.activeSession.requiredConfirmations = 3;
+
+    this.store.saveCryptoSession(this.activeSession);
+
+    if (window.app && window.app.updateTopupStep2UI) {
+      window.app.updateTopupStep2UI(this.activeSession);
+    }
+
+    this.startBlockchainWatcher();
+    this.checkBlockchainPayment(false);
+    return this.activeSession;
+  }
+
+  /**
    * Живой таймер обратного отсчета 30 минут
    */
   startCountdownTimer() {
     this.stopCountdownTimer();
     const tick = () => {
-      if (!this.activeSession || this.activeSession.status !== 'pending') {
+      if (!this.activeSession) {
+        this.stopCountdownTimer();
+        return;
+      }
+
+      // Если пользователь нажал "Оплачено" или сделку подтверждают, таймер не тикает
+      if (this.activeSession.status === 'awaiting_confirmations' || this.activeSession.status === 'completed') {
+        this.stopCountdownTimer();
+        return;
+      }
+
+      if (this.activeSession.status !== 'pending') {
         this.stopCountdownTimer();
         return;
       }
 
       const timeLeftMs = this.activeSession.expiresAt - Date.now();
       if (timeLeftMs <= 0) {
-        this.activeSession.status = 'expired';
-        this.stopCountdownTimer();
-        this.stopBlockchainWatcher();
+        // Таймер истёк, а пользователь не нажал "Оплачено" — отменяем сделку
+        this.cancelSession('expired');
         if (window.app && window.app.handleTopupExpired) {
           window.app.handleTopupExpired();
         }
@@ -236,7 +279,37 @@ class CryptoPaymentService {
   }
 
   getActiveSession() {
-    return this.activeSession;
+    if (this.activeSession) return this.activeSession;
+    return this.store.getActiveCryptoSession();
+  }
+
+  /**
+   * Возобновление сессии из истории пополнений
+   */
+  resumeSession(orderId) {
+    const session = this.store.getCryptoSession(orderId);
+    if (!session) return null;
+
+    if (session.status === 'pending') {
+      if (session.expiresAt && session.expiresAt <= Date.now()) {
+        session.status = 'cancelled';
+        this.store.saveCryptoSession(session);
+        return null;
+      }
+      this.activeSession = session;
+      this.startCountdownTimer();
+      this.startBlockchainWatcher();
+      return this.activeSession;
+    }
+
+    if (session.status === 'awaiting_confirmations') {
+      this.activeSession = session;
+      this.stopCountdownTimer();
+      this.startBlockchainWatcher();
+      return this.activeSession;
+    }
+
+    return null;
   }
 
   /**
@@ -244,17 +317,17 @@ class CryptoPaymentService {
    */
   startBlockchainWatcher() {
     this.stopBlockchainWatcher();
-    // Опрос через 4 секунды, затем каждые 12 секунд
+    // Опрос через 3 секунды, затем каждые 12 секунд
     this.watcherTimeout = setTimeout(() => {
       this.checkBlockchainPayment(false);
       this.watcherInterval = setInterval(() => {
-        if (this.activeSession && this.activeSession.status === 'pending') {
+        if (this.activeSession && (this.activeSession.status === 'pending' || this.activeSession.status === 'awaiting_confirmations')) {
           this.checkBlockchainPayment(false);
         } else {
           this.stopBlockchainWatcher();
         }
       }, 12000);
-    }, 4000);
+    }, 3000);
   }
 
   stopBlockchainWatcher() {
@@ -269,10 +342,26 @@ class CryptoPaymentService {
   }
 
   /**
-   * Проверка входящих транзакций через публичные API TronGrid, Blockstream, Polygon
+   * Получение актуальной высоты последнего блока в сети Bitcoin через blockchain.info
+   */
+  async getBitcoinLatestBlockHeight() {
+    try {
+      const res = await fetch('https://blockchain.info/q/getblockcount?cors=true');
+      if (res.ok) {
+        const count = parseInt(await res.text(), 10);
+        if (!isNaN(count) && count > 0) return count;
+      }
+    } catch (e) {
+      console.warn('getBitcoinLatestBlockHeight error:', e);
+    }
+    return null;
+  }
+
+  /**
+   * Проверка входящих транзакций через публичные API TronGrid, Blockchain.info, BlockCypher, Polygon
    */
   async checkBlockchainPayment(isManual = false) {
-    if (!this.activeSession || this.activeSession.status !== 'pending') return;
+    if (!this.activeSession || (this.activeSession.status !== 'pending' && this.activeSession.status !== 'awaiting_confirmations')) return;
 
     const session = this.activeSession;
     const trackerText = document.getElementById('blockchain-tracker-text');
@@ -288,7 +377,7 @@ class CryptoPaymentService {
     try {
       let detectedTx = null;
       const completedOrders = await this.store.getDepositHistory();
-      const usedHashes = new Set(completedOrders.map(o => (o.txHash || '').toLowerCase()).filter(Boolean));
+      const usedHashes = new Set(completedOrders.filter(o => o.status === 'completed').map(o => (o.txHash || '').toLowerCase()).filter(Boolean));
 
       // 1. Проверка USDT TRC-20 через публичный TronGrid API
       if (session.network.includes('TRC-20') || session.network.includes('Tron') || session.network.includes('TRX')) {
@@ -314,7 +403,8 @@ class CryptoPaymentService {
               detectedTx = {
                 txHash: match.transaction_id,
                 amount: session.orbsAmount,
-                network: 'USDT (TRC-20)'
+                network: 'USDT (TRC-20)',
+                confirmations: 3 // Tron 3-second blocks are final
               };
             }
           }
@@ -323,9 +413,11 @@ class CryptoPaymentService {
 
       // 2. Проверка Bitcoin (BTC) через публичный blockchain.info API (с резервом на blockcypher)
       else if (session.network.includes('BTC') || session.network.includes('Bitcoin')) {
+        let latestHeight = null;
+
         // Первичный источник: blockchain.info (CORS enabled, быстрый)
         try {
-          const res = await fetch(`https://blockchain.info/rawaddr/${session.address}?cors=true&limit=10`);
+          const res = await fetch(`https://blockchain.info/rawaddr/${session.address}?cors=true&limit=15`);
           if (res.ok) {
             const data = await res.json();
             if (data.txs && Array.isArray(data.txs)) {
@@ -339,13 +431,21 @@ class CryptoPaymentService {
                 const btcVal = out.value / 1e8; // сатоши в BTC
                 const txTime = (tx.time ? tx.time * 1000 : Date.now());
                 const amountMatches = Math.abs(btcVal - session.expectedAmount) <= 0.000005 || btcVal >= (session.expectedAmount * 0.95);
-                return amountMatches && txTime >= (session.createdAt - 45 * 60 * 1000);
+                return amountMatches && txTime >= (session.createdAt - 60 * 60 * 1000);
               });
+
               if (match) {
+                let conf = 0;
+                if (match.block_height && match.block_height > 0) {
+                  latestHeight = await this.getBitcoinLatestBlockHeight();
+                  conf = latestHeight ? Math.max(1, latestHeight - match.block_height + 1) : 1;
+                }
                 detectedTx = {
                   txHash: match.hash,
                   amount: session.orbsAmount,
-                  network: 'BTC'
+                  network: 'BTC',
+                  confirmations: conf,
+                  blockHeight: match.block_height || null
                 };
               }
             }
@@ -372,7 +472,9 @@ class CryptoPaymentService {
                   detectedTx = {
                     txHash: matchRef.tx_hash,
                     amount: session.orbsAmount,
-                    network: 'BTC'
+                    network: 'BTC',
+                    confirmations: matchRef.confirmations || 0,
+                    blockHeight: matchRef.block_height || null
                   };
                 }
               }
@@ -384,12 +486,82 @@ class CryptoPaymentService {
       }
 
       if (detectedTx) {
-        if (trackerText) {
-          trackerText.textContent = isEn
-            ? `✅ Transaction confirmed: ${detectedTx.txHash.slice(0, 8)}...`
-            : `✅ Транзакция подтверждена: ${detectedTx.txHash.slice(0, 8)}...`;
+        const conf = Math.max(0, detectedTx.confirmations || 0);
+        const req = session.requiredConfirmations || 3;
+        session.confirmations = conf;
+        session.txHash = detectedTx.txHash;
+
+        // Если сессия была в режиме pending (до истечения 30 мин), переводим в awaiting_confirmations и останавливаем таймер
+        if (session.status === 'pending') {
+          session.status = 'awaiting_confirmations';
+          this.stopCountdownTimer();
         }
-        await this.confirmRealPayment(detectedTx.txHash, detectedTx.network);
+
+        // 1. Уведомление на экран о фиксации поступления перевода в сети (0/3 или первое обнаружение)
+        if (!session.notifiedDetected) {
+          session.notifiedDetected = true;
+          if (window.app) {
+            window.app.showToast(
+              isEn
+                ? `📡 Payment detected in network! Awaiting confirmations (${Math.min(conf, req)}/${req})...`
+                : `📡 Перевод зафиксирован в сети! Ожидание подтверждений (${Math.min(conf, req)}/${req})...`,
+              'info'
+            );
+          }
+        }
+
+        // 2. Уведомления о промежуточных подтверждениях (1/3, 2/3) с количеством оставшихся
+        if (!session.notifiedConfs) session.notifiedConfs = {};
+        if (conf > 0 && conf < req && !session.notifiedConfs[conf]) {
+          session.notifiedConfs[conf] = true;
+          const remaining = req - conf;
+          if (window.app) {
+            window.app.showToast(
+              isEn
+                ? `⛓️ Confirmation ${conf} of ${req} received (${remaining} remaining)...`
+                : `⛓️ Получено ${conf}-е подтверждение из ${req} (осталось ${remaining})...`,
+              'info'
+            );
+          }
+        }
+
+        // Сохраняем прогресс в хранилище
+        this.store.saveCryptoSession(session);
+
+        // Обновляем специальный визуальный счётчик прогресса на экране
+        if (window.app && window.app.updateConfirmationsUI) {
+          window.app.updateConfirmationsUI(conf, req, detectedTx.txHash);
+        }
+
+        // 3. Завершение сделки при получении 3 подтверждений
+        if (conf >= req) {
+          if (trackerText) {
+            trackerText.textContent = isEn
+              ? `✅ Transaction confirmed (${conf}/${req}): ${detectedTx.txHash.slice(0, 8)}...`
+              : `✅ Транзакция подтверждена (${conf}/${req}): ${detectedTx.txHash.slice(0, 8)}...`;
+          }
+
+          if (!session.notifiedConfs[req]) {
+            session.notifiedConfs[req] = true;
+            if (window.app) {
+              window.app.showToast(
+                isEn
+                  ? `🎉 ${req} of ${req} confirmations received! Deal completed, Orbs credited!`
+                  : `🎉 Получено ${req} подтверждения из ${req}! Сделка завершена, Орбы зачислены!`,
+                'success'
+              );
+            }
+          }
+
+          await this.confirmRealPayment(detectedTx.txHash, detectedTx.network);
+        } else {
+          if (trackerText) {
+            const remaining = req - conf;
+            trackerText.textContent = isEn
+              ? `⛓️ Confirmations: ${conf}/${req} (${remaining} remaining, scanning...)`
+              : `⛓️ Подтверждения: ${conf}/${req} (осталось ${remaining}, ожидание блоков...)`;
+          }
+        }
       } else {
         if (trackerText) {
           trackerText.textContent = isEn
@@ -397,9 +569,10 @@ class CryptoPaymentService {
             : `📡 Ожидание перевода... (${nowStr})`;
         }
         if (isManual && window.app) {
-          window.app.showToast(isEn
-            ? 'Transaction not yet confirmed on blockchain. If you just sent it, please allow 1–2 minutes for network confirmation.'
-            : 'Транзакция пока не найдена в сети. Если вы уже отправили перевод, подождите 1–2 минуты для подтверждения сетью.',
+          window.app.showToast(
+            isEn
+              ? 'Transaction not yet confirmed on blockchain. If you just sent it, please allow 1–2 minutes for network confirmation.'
+              : 'Транзакция пока не найдена в сети. Если вы уже отправили перевод, подождите 1–2 минуты для подтверждения сетью.',
             'info'
           );
         }
@@ -413,7 +586,7 @@ class CryptoPaymentService {
   }
 
   /**
-   * Ручная мгновенная верификация по TxID (хэшу транзакции)
+   * Ручная мгновенная верификация по TxID (хэшу транзакции) с учётом 3 подтверждений
    */
   async verifyTxId(txHashInput) {
     const rawTxHash = (txHashInput || '').trim();
@@ -424,11 +597,13 @@ class CryptoPaymentService {
       return { success: false, message: isEn ? 'Invalid transaction hash' : 'Некорректный хэш транзакции' };
     }
 
-    // 1. Проверяем, не использовался ли уже этот TxID
+    // 1. Проверяем, не использовался ли уже этот TxID среди завершенных заказов
     const completedOrders = await this.store.getDepositHistory();
     const isUsed = completedOrders.some(o => 
-      (o.txHash || '').toLowerCase() === txHash.toLowerCase() || 
-      (o.txHash || '').toLowerCase() === rawTxHash.toLowerCase()
+      o.status === 'completed' && (
+        (o.txHash || '').toLowerCase() === txHash.toLowerCase() || 
+        (o.txHash || '').toLowerCase() === rawTxHash.toLowerCase()
+      )
     );
     if (isUsed) {
       return {
@@ -441,6 +616,7 @@ class CryptoPaymentService {
     let targetAddress = this.activeSession ? this.activeSession.address : '1B3EhhUPqvfDa1S4rGjtKun5A8bRJiudPe';
     let detectedAmount = this.activeSession ? this.activeSession.orbsAmount : 3;
     let verified = false;
+    let confirmations = 0;
 
     // 2. Проверка Bitcoin (BTC) через blockchain.info (CORS-enabled) и blockcypher
     if (!verified && (!this.activeSession || network.includes('BTC') || network.includes('Bitcoin'))) {
@@ -463,6 +639,13 @@ class CryptoPaymentService {
             } else if (tx.hash) {
               verified = true;
               network = 'BTC';
+            }
+
+            if (tx.block_height && tx.block_height > 0) {
+              const latestHeight = await this.getBitcoinLatestBlockHeight();
+              confirmations = latestHeight ? Math.max(1, latestHeight - tx.block_height + 1) : 1;
+            } else {
+              confirmations = 0;
             }
           }
         }
@@ -488,6 +671,12 @@ class CryptoPaymentService {
                   const btcRate = await this.fetchLiveBtcRate();
                   detectedAmount = Math.max(1, Math.round(btcVal * btcRate));
                 }
+                if (matchedTx.block_height && matchedTx.block_height > 0) {
+                  const latestHeight = await this.getBitcoinLatestBlockHeight();
+                  confirmations = latestHeight ? Math.max(1, latestHeight - matchedTx.block_height + 1) : 1;
+                } else {
+                  confirmations = 0;
+                }
               }
             }
           }
@@ -506,6 +695,7 @@ class CryptoPaymentService {
               verified = true;
               network = 'BTC';
               targetAddress = btcAddr;
+              confirmations = tx.confirmations || 0;
             }
           }
         } catch (e) {
@@ -526,6 +716,7 @@ class CryptoPaymentService {
             const ret = tx.ret && tx.ret[0];
             if (ret && ret.contractRet === 'SUCCESS') {
               verified = true;
+              confirmations = 3;
             }
           }
         }
@@ -552,6 +743,7 @@ class CryptoPaymentService {
           const json = await res.json();
           if (json.result && json.result.status === '0x1') {
             verified = true;
+            confirmations = 3;
           }
         }
       } catch (e) {
@@ -560,7 +752,7 @@ class CryptoPaymentService {
     }
 
     if (verified) {
-      if (!this.activeSession || this.activeSession.status !== 'pending') {
+      if (!this.activeSession || (this.activeSession.status !== 'pending' && this.activeSession.status !== 'awaiting_confirmations')) {
         const orderIndex = this.store.getNextOrderIndex();
         this.activeSession = {
           orderId: `ORD-${orderIndex}`,
@@ -571,14 +763,47 @@ class CryptoPaymentService {
           network,
           address: targetAddress,
           derivationPath: 'Direct Transfer',
-          status: 'pending'
+          status: confirmations >= 3 ? 'completed' : 'awaiting_confirmations',
+          confirmations,
+          requiredConfirmations: 3,
+          txHash
         };
-      } else if (detectedAmount) {
-        this.activeSession.orbsAmount = detectedAmount;
+      } else {
+        if (detectedAmount) this.activeSession.orbsAmount = detectedAmount;
+        this.activeSession.confirmations = confirmations;
+        this.activeSession.txHash = txHash;
       }
 
-      await this.confirmRealPayment(txHash, network);
-      return { success: true, amount: this.activeSession.orbsAmount, orderId: this.activeSession.orderId };
+      this.stopCountdownTimer();
+      this.store.saveCryptoSession(this.activeSession);
+
+      if (window.app && window.app.updateConfirmationsUI) {
+        window.app.updateConfirmationsUI(confirmations, 3, txHash);
+      }
+
+      if (confirmations >= 3) {
+        await this.confirmRealPayment(txHash, network);
+        return {
+          success: true,
+          completed: true,
+          confirmations,
+          amount: this.activeSession.orbsAmount,
+          orderId: this.activeSession.orderId
+        };
+      } else {
+        this.activeSession.status = 'awaiting_confirmations';
+        this.store.saveCryptoSession(this.activeSession);
+        this.startBlockchainWatcher();
+        return {
+          success: true,
+          completed: false,
+          pendingConfirmations: true,
+          confirmations,
+          required: 3,
+          amount: this.activeSession.orbsAmount,
+          orderId: this.activeSession.orderId
+        };
+      }
     } else {
       return {
         success: false,
@@ -591,9 +816,14 @@ class CryptoPaymentService {
    * Подтверждение реальной транзакции и начисление баланса
    */
   async confirmRealPayment(txHash, network) {
-    if (!this.activeSession || this.activeSession.status !== 'pending') return;
+    if (!this.activeSession || (this.activeSession.status !== 'pending' && this.activeSession.status !== 'awaiting_confirmations')) return;
 
     this.activeSession.status = 'completed';
+    this.activeSession.completedAt = new Date().toISOString();
+    this.activeSession.txHash = txHash;
+    this.activeSession.confirmations = 3;
+    this.store.saveCryptoSession(this.activeSession);
+
     this.stopCountdownTimer();
     this.stopBlockchainWatcher();
 
@@ -700,13 +930,15 @@ class CryptoPaymentService {
    * Симуляция успешного подтверждения транзакции в сети блокчейн
    */
   confirmPaymentSimulation() {
-    if (!this.activeSession || this.activeSession.status !== 'pending') {
+    if (!this.activeSession || (this.activeSession.status !== 'pending' && this.activeSession.status !== 'awaiting_confirmations')) {
       return { success: false, message: 'Нет активной ожидающей сессии оплаты' };
     }
 
     this.stopCountdownTimer();
     this.stopBlockchainWatcher();
     this.activeSession.status = 'completed';
+    this.activeSession.completedAt = new Date().toISOString();
+    this.store.saveCryptoSession(this.activeSession);
     const amount = this.activeSession.orbsAmount;
 
     // Начисляем Орбы в хранилище
@@ -726,11 +958,21 @@ class CryptoPaymentService {
     };
   }
 
-  cancelSession() {
+  /**
+   * Отмена сделки: вызывается ТОЛЬКО при нажатии на кнопку отмены или по истечению 30 мин без "Оплачено".
+   * В истории сохраняется отдельной записью со статусом 'cancelled', но без подробностей транзакции.
+   */
+  cancelSession(reason = 'user_cancelled') {
     this.stopCountdownTimer();
     this.stopBlockchainWatcher();
-    if (this.activeSession && this.activeSession.status === 'pending') {
+    if (this.activeSession) {
       this.activeSession.status = 'cancelled';
+      this.activeSession.cancelledAt = Date.now();
+      this.activeSession.cancelReason = reason;
+      // В отличии от завершенных сделок, в отмененных не сохраняются подробности
+      delete this.activeSession.txHash;
+      delete this.activeSession.explorerUrl;
+      this.store.saveCryptoSession(this.activeSession);
     }
     this.activeSession = null;
   }

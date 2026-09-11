@@ -156,6 +156,7 @@
                   <th style="padding: 0.85rem 1rem;" data-i18n="deposits_th_orbs">Orbs Credited</th>
                   <th style="padding: 0.85rem 1rem;" data-i18n="deposits_th_tx">Blockchain Transaction</th>
                   <th style="padding: 0.85rem 1rem;" data-i18n="deposits_th_status">Status</th>
+                  <th style="padding: 0.85rem 1rem; text-align: center;" data-i18n="deposits_th_action">Action</th>
                 </tr>
               </thead>
               <tbody id="deposits-history-table-body">
@@ -630,6 +631,44 @@
           </div>
 
           <div style="margin-top: 1.25rem; display: flex; flex-direction: column; gap: 8px;">
+            <!-- Live Confirmations Progress Tracker (3 Confirmations Required) -->
+            <div id="invoice-confirmations-box" class="confirmations-tracker-box" style="display: none;">
+              <div class="confirmations-header">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <span class="confirmations-pulse-dot"></span>
+                  <strong style="font-size: 0.88rem; color: #fff;" data-i18n="modal_topup_confirmations_title">⛓️ Подтверждения в сети блокчейн:</strong>
+                </div>
+                <span class="confirmations-counter-badge" id="confirmations-counter-badge">0 / 3</span>
+              </div>
+              <!-- Visual Progress Bar -->
+              <div class="confirmations-bar-track">
+                <div class="confirmations-bar-fill" id="confirmations-bar-fill" style="width: 0%;"></div>
+              </div>
+              <!-- 3 Steps -->
+              <div class="confirmations-steps-row">
+                <div class="conf-step-item" id="conf-step-1">
+                  <span class="conf-step-num">1</span>
+                  <span class="conf-step-text" data-i18n="modal_conf_step_1">1-е подтв.</span>
+                </div>
+                <div class="conf-step-item" id="conf-step-2">
+                  <span class="conf-step-num">2</span>
+                  <span class="conf-step-text" data-i18n="modal_conf_step_2">2-е подтв.</span>
+                </div>
+                <div class="conf-step-item" id="conf-step-3">
+                  <span class="conf-step-num">3</span>
+                  <span class="conf-step-text" data-i18n="modal_conf_step_3">3-е подтв. (Зачисление)</span>
+                </div>
+              </div>
+              <p class="confirmations-status-note" id="confirmations-status-note" data-i18n="modal_conf_status_awaiting">
+                📡 Ожидание первого подтверждения в сети блокчейн...
+              </p>
+            </div>
+
+            <!-- Button: "✅ Я оплатил" / "✅ I Have Paid" -->
+            <button type="button" class="btn btn-paid" id="invoice-mark-paid-btn" onclick="window.app.handleMarkAsPaid()" data-i18n="modal_topup_btn_paid">
+              ✅ Я оплатил
+            </button>
+
             <!-- Status Banner for Live Blockchain Tracking -->
             <div id="blockchain-live-tracker" style="display: flex; align-items: center; justify-content: center; gap: 8px; padding: 0.6rem 0.8rem; background: rgba(59, 130, 246, 0.12); border: 1px solid rgba(59, 130, 246, 0.35); border-radius: var(--radius-sm); font-size: 0.8rem; color: #93c5fd;">
               <span style="width: 8px; height: 8px; border-radius: 50%; background: #38bdf8; display: inline-block; box-shadow: 0 0 8px #38bdf8;"></span>
@@ -659,6 +698,45 @@
               ✕ Отменить заказ и вернуться
             </button>
           </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================================
+       MODAL 2.5: Dedicated Deposit History Modal
+       ======================================================================== -->
+  <div class="modal-backdrop" id="deposits-history-modal">
+    <div class="modal-card" style="max-width: 860px; width: 95%;">
+      <div class="modal-header" style="justify-content: space-between;">
+        <h3 class="modal-title" data-i18n="deposits_table_title">🪙 Crypto Deposit History (USDT / BTC)</h3>
+        <button class="modal-close-btn">&times;</button>
+      </div>
+      <div class="modal-body" style="padding: 1.25rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 8px;">
+          <span style="font-size: 0.82rem; color: var(--text-muted);" data-i18n="deposits_modal_sub">
+            Активные сделки можно открыть повторно до истечения времени. Отменённые сделки не содержат подробностей.
+          </span>
+          <button class="btn btn-secondary btn-small" onclick="window.app.renderDepositHistory()" data-i18n="deposits_refresh_btn">🔄 Refresh History</button>
+        </div>
+        <div style="overflow-x: auto; border: 1px solid var(--border-color); border-radius: var(--radius-sm);">
+          <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 0.83rem;">
+            <thead>
+              <tr style="border-bottom: 1px solid var(--border-color); background: rgba(255, 255, 255, 0.03); color: var(--text-muted);">
+                <th style="padding: 0.8rem 0.9rem;" data-i18n="deposits_th_date">Date</th>
+                <th style="padding: 0.8rem 0.9rem;" data-i18n="deposits_th_order">Order ID</th>
+                <th style="padding: 0.8rem 0.9rem;" data-i18n="deposits_th_network">Network</th>
+                <th style="padding: 0.8rem 0.9rem;" data-i18n="deposits_th_amount">Amount</th>
+                <th style="padding: 0.8rem 0.9rem;" data-i18n="deposits_th_orbs">Orbs</th>
+                <th style="padding: 0.8rem 0.9rem;" data-i18n="deposits_th_tx">Blockchain Tx</th>
+                <th style="padding: 0.8rem 0.9rem;" data-i18n="deposits_th_status">Status</th>
+                <th style="padding: 0.8rem 0.9rem; text-align: center;" data-i18n="deposits_th_action">Action</th>
+              </tr>
+            </thead>
+            <tbody id="modal-deposits-history-table-body">
+              <!-- Rendered dynamically -->
+            </tbody>
+          </table>
         </div>
       </div>
     </div>

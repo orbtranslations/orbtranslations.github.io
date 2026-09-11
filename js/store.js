@@ -649,7 +649,58 @@ The fate of the kingdom is now in your hands.
   }
 
   /**
-   * Получение истории пополнений баланса Орбов (локальные + Supabase)
+   * Сохранение сессии крипто-заказа (pending, awaiting_confirmations, completed, cancelled)
+   */
+  saveCryptoSession(session) {
+    if (!session || !session.orderId) return;
+    if (!this.data.cryptoSessions) {
+      this.data.cryptoSessions = [];
+    }
+    const idx = this.data.cryptoSessions.findIndex(s => s.orderId === session.orderId);
+    if (idx >= 0) {
+      this.data.cryptoSessions[idx] = { ...this.data.cryptoSessions[idx], ...session };
+    } else {
+      this.data.cryptoSessions.push({ ...session });
+    }
+    this.saveToStorage();
+
+    // Синхронизация статуса с Supabase crypto_orders
+    if (window.supabaseClient) {
+      const user = this.getCurrentUser();
+      const userId = (user.id && !user.id.startsWith('usr_') && user.id !== 'guest') ? user.id : null;
+      window.supabaseClient
+        .from('crypto_orders')
+        .upsert({
+          id: session.orderId,
+          user_id: userId,
+          network: session.network,
+          deposit_address: session.address,
+          orbs_amount: session.orbsAmount,
+          expected_amount: session.expectedAmount,
+          status: session.status,
+          tx_hash: session.status === 'cancelled' ? null : (session.txHash || null),
+          created_at: session.createdAt ? new Date(session.createdAt).toISOString() : new Date().toISOString()
+        })
+        .then(() => {})
+        .catch(err => console.warn('Sync crypto_orders upsert:', err));
+    }
+  }
+
+  getCryptoSession(orderId) {
+    if (!this.data.cryptoSessions) return null;
+    return this.data.cryptoSessions.find(s => s.orderId === orderId) || null;
+  }
+
+  getActiveCryptoSession() {
+    if (!this.data.cryptoSessions) return null;
+    return this.data.cryptoSessions.find(s => 
+      s.status === 'awaiting_confirmations' || 
+      (s.status === 'pending' && s.expiresAt && s.expiresAt > Date.now())
+    ) || null;
+  }
+
+  /**
+   * Получение истории пополнений баланса Орбов (локальные + сессии + Supabase)
    */
   async getDepositHistory() {
     const list = [];
@@ -666,7 +717,7 @@ The fate of the kingdom is now in your hands.
           if (network.includes('Polygon') || network.includes('POL')) {
             explorerUrl = `https://polygonscan.com/tx/${txHash}`;
           } else if (network.includes('BTC') || network.includes('Bitcoin')) {
-            explorerUrl = `https://blockstream.info/tx/${txHash}`;
+            explorerUrl = `https://www.blockchain.com/explorer/transactions/btc/${txHash}`;
           } else {
             explorerUrl = `https://tronscan.org/#/transaction/${txHash}`;
           }
@@ -685,7 +736,47 @@ The fate of the kingdom is now in your hands.
 
     list.push(...localTopups);
 
-    // 2. Пополнения из таблицы crypto_orders в Supabase
+    // 2. Сессии из data.cryptoSessions (включая pending, awaiting_confirmations, cancelled)
+    if (this.data.cryptoSessions && Array.isArray(this.data.cryptoSessions)) {
+      this.data.cryptoSessions.forEach(s => {
+        const isBtc = (s.network || '').includes('BTC');
+        let explorerUrl = '';
+        if (s.txHash && s.status !== 'cancelled') {
+          if ((s.network || '').includes('Polygon') || (s.network || '').includes('POL')) {
+            explorerUrl = `https://polygonscan.com/tx/${s.txHash}`;
+          } else if (isBtc) {
+            explorerUrl = `https://www.blockchain.com/explorer/transactions/btc/${s.txHash}`;
+          } else {
+            explorerUrl = `https://tronscan.org/#/transaction/${s.txHash}`;
+          }
+        }
+
+        const canResume = (s.status === 'awaiting_confirmations' || (s.status === 'pending' && s.expiresAt > Date.now()));
+        const itemObj = {
+          id: s.orderId,
+          date: s.completedAt || s.paidAt || (s.createdAt ? new Date(s.createdAt).toISOString() : new Date().toISOString()),
+          amountUsdt: Number(s.expectedAmount || s.orbsAmount || 0),
+          orbs: Number(s.orbsAmount || 0),
+          network: s.network,
+          txHash: s.status === 'cancelled' ? '' : (s.txHash || ''),
+          explorerUrl: s.status === 'cancelled' ? '' : explorerUrl,
+          status: s.status || 'pending',
+          expiresAt: s.expiresAt || null,
+          confirmations: s.confirmations || 0,
+          requiredConfirmations: s.requiredConfirmations || 3,
+          canResume
+        };
+
+        const existingIndex = list.findIndex(item => item.id === s.orderId);
+        if (existingIndex === -1) {
+          list.push(itemObj);
+        } else {
+          list[existingIndex] = { ...list[existingIndex], ...itemObj };
+        }
+      });
+    }
+
+    // 3. Пополнения из таблицы crypto_orders в Supabase
     if (window.supabaseClient) {
       try {
         const currentUser = this.getCurrentUser();
@@ -702,14 +793,15 @@ The fate of the kingdom is now in your hands.
         const { data: dbOrders, error } = await query;
         if (!error && Array.isArray(dbOrders)) {
           dbOrders.forEach(ord => {
-            const txHash = ord.tx_hash || '';
+            const isCancelled = ord.status === 'cancelled';
+            const txHash = isCancelled ? '' : (ord.tx_hash || '');
             const network = ord.network || 'USDT (TRC-20)';
             let explorerUrl = '';
             if (txHash) {
               if (network.includes('Polygon') || network.includes('POL')) {
                 explorerUrl = `https://polygonscan.com/tx/${txHash}`;
               } else if (network.includes('BTC') || network.includes('Bitcoin')) {
-                explorerUrl = `https://blockstream.info/tx/${txHash}`;
+                explorerUrl = `https://www.blockchain.com/explorer/transactions/btc/${txHash}`;
               } else {
                 explorerUrl = `https://tronscan.org/#/transaction/${txHash}`;
               }
@@ -725,7 +817,8 @@ The fate of the kingdom is now in your hands.
                 network,
                 txHash,
                 explorerUrl,
-                status: ord.status || 'completed'
+                status: ord.status || 'pending',
+                canResume: ord.status === 'pending' || ord.status === 'awaiting_confirmations'
               });
             } else {
               if (txHash) list[existingIndex].txHash = txHash;
