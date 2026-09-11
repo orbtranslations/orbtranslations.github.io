@@ -693,10 +693,33 @@ The fate of the kingdom is now in your hands.
 
   getActiveCryptoSession() {
     if (!this.data.cryptoSessions) return null;
-    return this.data.cryptoSessions.find(s => 
-      s.status === 'awaiting_confirmations' || 
-      (s.status === 'pending' && s.expiresAt && s.expiresAt > Date.now())
-    ) || null;
+    const now = Date.now();
+    for (const s of this.data.cryptoSessions) {
+      if (s.status === 'awaiting_confirmations') {
+        // Если прошло более 3 часов без фиксации транзакции в сети — сделка аннулируется
+        if (!s.txHash && s.awaitingExpiresAt && s.awaitingExpiresAt <= now) {
+          s.status = 'cancelled';
+          s.cancelReason = 'unconfirmed_timeout';
+          delete s.txHash;
+          delete s.explorerUrl;
+          this.saveToStorage();
+          continue;
+        }
+        return s;
+      }
+      if (s.status === 'pending') {
+        if (s.expiresAt && s.expiresAt > now) {
+          return s;
+        } else if (s.expiresAt && s.expiresAt <= now) {
+          s.status = 'cancelled';
+          s.cancelReason = 'expired';
+          delete s.txHash;
+          delete s.explorerUrl;
+          this.saveToStorage();
+        }
+      }
+    }
+    return null;
   }
 
   /**
@@ -751,7 +774,20 @@ The fate of the kingdom is now in your hands.
           }
         }
 
-        const canResume = (s.status === 'awaiting_confirmations' || (s.status === 'pending' && s.expiresAt > Date.now()));
+        const isUnconfirmedExpired = (s.status === 'awaiting_confirmations' && !s.txHash && s.awaitingExpiresAt && s.awaitingExpiresAt <= Date.now());
+        const isPendingExpired = (s.status === 'pending' && s.expiresAt && s.expiresAt <= Date.now());
+        if (isUnconfirmedExpired || isPendingExpired) {
+          s.status = 'cancelled';
+          s.cancelReason = isUnconfirmedExpired ? 'unconfirmed_timeout' : 'expired';
+          delete s.txHash;
+          delete s.explorerUrl;
+        }
+
+        const canResume = (
+          (s.status === 'awaiting_confirmations' && (s.txHash || !s.awaitingExpiresAt || s.awaitingExpiresAt > Date.now())) ||
+          (s.status === 'pending' && s.expiresAt > Date.now())
+        );
+
         const itemObj = {
           id: s.orderId,
           date: s.completedAt || s.paidAt || (s.createdAt ? new Date(s.createdAt).toISOString() : new Date().toISOString()),

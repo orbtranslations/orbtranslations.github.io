@@ -148,6 +148,17 @@ class I18nManager {
         txid_already_used: 'Эта транзакция уже была зачислена ранее.',
         txid_invalid: 'Транзакция не найдена в сети или отправлена на другой адрес.',
 
+        // Active Deal Conflict Modal & Protection
+        deal_conflict_title: '⚠️ Обнаружена незавершённая сделка',
+        deal_conflict_desc: 'У вас уже есть открытая активная сделка. Для защиты от спама и путаницы в платежах разрешена только одна активная сделка одновременно.',
+        deal_conflict_current_label: 'Текущая сделка:',
+        deal_conflict_status_pending: '⏱️ Ожидает оплаты (окно 30 мин)',
+        deal_conflict_status_awaiting: '⛓️ Ожидает подтверждений в блокчейне (до 3 часов)',
+        deal_conflict_btn_resume: '👁️ Открыть текущую сделку',
+        deal_conflict_btn_replace: '✕ Отменить старую и создать новую',
+        deal_timeout_toast: '⚠️ Сделка отменена: платёж не был зафиксирован в блокчейне в течение 3 часов.',
+        deal_replaced_toast: 'Старая сделка отменена. Сформирован новый счёт.',
+
         // Insufficient Orbs Modal
         insufficient_orbs_title: 'Недостаточно Орбов',
         insufficient_orbs_msg: 'Для покупки перевода необходимо',
@@ -382,6 +393,17 @@ class I18nManager {
         modal_topup_txid_placeholder: 'Paste transaction hash (TxID)...',
         txid_already_used: 'This transaction has already been credited.',
         txid_invalid: 'Transaction not found or recipient address does not match.',
+
+        // Active Deal Conflict Modal & Protection
+        deal_conflict_title: '⚠️ Active Transaction Detected',
+        deal_conflict_desc: 'You already have an active pending transaction. To prevent spam and payment confusion, only one active transaction is allowed at a time.',
+        deal_conflict_current_label: 'Current transaction:',
+        deal_conflict_status_pending: '⏱️ Awaiting payment (30 min window)',
+        deal_conflict_status_awaiting: '⛓️ Awaiting blockchain confirmations (up to 3 hours)',
+        deal_conflict_btn_resume: '👁️ Open Active Deal',
+        deal_conflict_btn_replace: '✕ Cancel Old & Create New',
+        deal_timeout_toast: '⚠️ Deal cancelled: transfer was not detected on blockchain within 3 hours.',
+        deal_replaced_toast: 'Previous transaction cancelled. New invoice created.',
 
         // Insufficient Orbs Modal
         insufficient_orbs_title: 'Insufficient Orbs',

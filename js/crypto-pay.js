@@ -212,6 +212,10 @@ class CryptoPaymentService {
     this.stopCountdownTimer();
     this.activeSession.status = 'awaiting_confirmations';
     this.activeSession.paidAt = Date.now();
+    // Защита от злоупотреблений: окно в 3 часа на появление перевода в сети блокчейн.
+    // Если за 3 часа транзакция не появилась в мемпуле, сделка аннулируется.
+    // При обнаружении перевода в сети этот лимит сразу снимается.
+    this.activeSession.awaitingExpiresAt = Date.now() + 3 * 60 * 60 * 1000;
     if (typeof this.activeSession.confirmations !== 'number') this.activeSession.confirmations = 0;
     this.activeSession.requiredConfirmations = 3;
 
@@ -279,7 +283,19 @@ class CryptoPaymentService {
   }
 
   getActiveSession() {
-    if (this.activeSession) return this.activeSession;
+    if (this.activeSession) {
+      if (this.activeSession.status === 'pending' && this.activeSession.expiresAt && this.activeSession.expiresAt <= Date.now()) {
+        this.cancelSession('expired');
+        return null;
+      }
+      if (this.activeSession.status === 'awaiting_confirmations' && !this.activeSession.txHash && this.activeSession.awaitingExpiresAt && this.activeSession.awaitingExpiresAt <= Date.now()) {
+        this.cancelSession('unconfirmed_timeout');
+        return null;
+      }
+      if (this.activeSession.status === 'pending' || this.activeSession.status === 'awaiting_confirmations') {
+        return this.activeSession;
+      }
+    }
     return this.store.getActiveCryptoSession();
   }
 
@@ -303,6 +319,14 @@ class CryptoPaymentService {
     }
 
     if (session.status === 'awaiting_confirmations') {
+      if (!session.txHash && session.awaitingExpiresAt && session.awaitingExpiresAt <= Date.now()) {
+        session.status = 'cancelled';
+        session.cancelReason = 'unconfirmed_timeout';
+        delete session.txHash;
+        delete session.explorerUrl;
+        this.store.saveCryptoSession(session);
+        return null;
+      }
       this.activeSession = session;
       this.stopCountdownTimer();
       this.startBlockchainWatcher();
@@ -364,9 +388,31 @@ class CryptoPaymentService {
     if (!this.activeSession || (this.activeSession.status !== 'pending' && this.activeSession.status !== 'awaiting_confirmations')) return;
 
     const session = this.activeSession;
+    const isEn = window.i18n && window.i18n.getLang() === 'en';
+
+    // Защита от злоупотреблений: если прошло 3 часа с момента нажатия "Я оплатил", но перевод так и не найден в сети
+    if (
+      session.status === 'awaiting_confirmations' &&
+      !session.txHash &&
+      session.awaitingExpiresAt &&
+      Date.now() >= session.awaitingExpiresAt
+    ) {
+      this.cancelSession('unconfirmed_timeout');
+      if (window.app) {
+        window.app.showToast(
+          isEn
+            ? '⚠️ Deal cancelled: transfer was not detected on blockchain within 3 hours.'
+            : '⚠️ Сделка отменена: платёж не был зафиксирован в блокчейне в течение 3 часов.',
+          'warning'
+        );
+        window.app.renderDepositHistory();
+        window.app.closeAllModals();
+      }
+      return;
+    }
+
     const trackerText = document.getElementById('blockchain-tracker-text');
     const nowStr = new Date().toLocaleTimeString();
-    const isEn = window.i18n && window.i18n.getLang() === 'en';
 
     if (trackerText) {
       trackerText.textContent = isEn
@@ -486,6 +532,9 @@ class CryptoPaymentService {
       }
 
       if (detectedTx) {
+        // Транзакция зафиксирована в блокчейне! Снимаем 3-часовой лимит ожидания
+        delete session.awaitingExpiresAt;
+
         const conf = Math.max(0, detectedTx.confirmations || 0);
         const req = session.requiredConfirmations || 3;
         session.confirmations = conf;
@@ -962,17 +1011,52 @@ class CryptoPaymentService {
    * Отмена сделки: вызывается ТОЛЬКО при нажатии на кнопку отмены или по истечению 30 мин без "Оплачено".
    * В истории сохраняется отдельной записью со статусом 'cancelled', но без подробностей транзакции.
    */
-  cancelSession(reason = 'user_cancelled') {
+  cancelSession(reason = 'user_cancelled', orderId = null) {
     this.stopCountdownTimer();
     this.stopBlockchainWatcher();
-    if (this.activeSession) {
-      this.activeSession.status = 'cancelled';
-      this.activeSession.cancelledAt = Date.now();
-      this.activeSession.cancelReason = reason;
+
+    let session = this.activeSession;
+    if (!session && orderId) {
+      session = this.store.getCryptoSession(orderId);
+    } else if (!session) {
+      session = this.store.getActiveCryptoSession();
+    } else if (orderId && session.orderId !== orderId) {
+      const other = this.store.getCryptoSession(orderId);
+      if (other) {
+        other.status = 'cancelled';
+        other.cancelledAt = Date.now();
+        other.cancelReason = reason;
+        delete other.txHash;
+        delete other.explorerUrl;
+        this.store.saveCryptoSession(other);
+        if (window.supabaseClient) {
+          window.supabaseClient
+            .from('crypto_orders')
+            .update({ status: 'cancelled' })
+            .eq('id', other.orderId)
+            .then(() => {})
+            .catch(() => {});
+        }
+      }
+    }
+
+    if (session) {
+      session.status = 'cancelled';
+      session.cancelledAt = Date.now();
+      session.cancelReason = reason;
       // В отличии от завершенных сделок, в отмененных не сохраняются подробности
-      delete this.activeSession.txHash;
-      delete this.activeSession.explorerUrl;
-      this.store.saveCryptoSession(this.activeSession);
+      delete session.txHash;
+      delete session.explorerUrl;
+      this.store.saveCryptoSession(session);
+
+      if (window.supabaseClient) {
+        window.supabaseClient
+          .from('crypto_orders')
+          .update({ status: 'cancelled' })
+          .eq('id', session.orderId)
+          .then(() => {})
+          .catch(err => console.warn('Отмена заказа в Supabase:', err));
+      }
     }
     this.activeSession = null;
   }

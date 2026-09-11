@@ -704,13 +704,22 @@ class App {
   /**
    * Переход с Шага 1 на Шаг 2: создание заказа с фиксацией курса на 30 минут
    */
-  async goToTopupStep2() {
+  async goToTopupStep2(bypassConflict = false) {
     const amountInput = document.getElementById('topup-amount-input');
     const networkSelect = document.getElementById('topup-network-select');
     const proceedBtn = document.getElementById('topup-proceed-btn');
     const orbsAmount = Math.max(1, Number(amountInput ? amountInput.value : 5) || 5);
     const network = networkSelect ? networkSelect.value : 'USDT (TRC-20)';
     const isEn = window.i18n && window.i18n.getLang() === 'en';
+
+    // Защита от спама: если уже есть активная сделка (pending или awaiting_confirmations), требуем разрешения конфликта
+    if (!bypassConflict) {
+      const activeSession = window.cryptoPay ? window.cryptoPay.getActiveSession() : null;
+      if (activeSession && (activeSession.status === 'pending' || activeSession.status === 'awaiting_confirmations')) {
+        this.showActiveDealConflictModal(activeSession, orbsAmount, network);
+        return;
+      }
+    }
 
     if (proceedBtn) {
       proceedBtn.disabled = true;
@@ -731,6 +740,116 @@ class App {
         proceedBtn.textContent = isEn ? 'Proceed to Payment →' : 'Перейти к оплате →';
       }
     }
+  }
+
+  /**
+   * Модальное окно разрешения конфликта при попытке открыть вторую параллельную сделку
+   */
+  showActiveDealConflictModal(activeSession, newAmount, newNetwork) {
+    this.closeAllModals();
+    const modal = document.getElementById('generic-modal');
+    const modalTitle = document.getElementById('generic-modal-title');
+    const modalBody = document.getElementById('generic-modal-body');
+    if (!modal || !modalTitle || !modalBody) return;
+
+    this._pendingDealConflict = {
+      activeSession,
+      newAmount,
+      newNetwork
+    };
+
+    const isEn = window.i18n && window.i18n.getLang() === 'en';
+    const t = (k, fallback) => (window.i18n ? window.i18n.t(k) : fallback);
+
+    modalTitle.textContent = t('deal_conflict_title', isEn ? '⚠️ Active Transaction Detected' : '⚠️ Обнаружена незавершённая сделка');
+
+    const statusText = activeSession.status === 'awaiting_confirmations'
+      ? t('deal_conflict_status_awaiting', isEn ? '⛓️ Awaiting blockchain confirmations (up to 3 hours)' : '⛓️ Ожидает подтверждений в блокчейне (до 3 часов)')
+      : t('deal_conflict_status_pending', isEn ? '⏱️ Awaiting payment (30 min window)' : '⏱️ Ожидает оплаты (окно 30 мин)');
+
+    const currentFormatted = activeSession.formattedAmount || `${activeSession.expectedAmount || activeSession.orbsAmount} ${activeSession.networkBadge || activeSession.network}`;
+
+    modalBody.innerHTML = `
+      <p style="margin-bottom: 1rem; color: var(--text-secondary); line-height: 1.5; font-size: 0.9rem;">
+        ${t('deal_conflict_desc', isEn 
+          ? 'You already have an active pending transaction. To prevent spam and payment confusion, only one active transaction is allowed at a time.' 
+          : 'У вас уже есть открытая активная сделка. Для защиты от спама и путаницы в платежах разрешена только одна активная сделка одновременно.')}
+      </p>
+
+      <div style="background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: var(--radius-sm); padding: 12px 14px; margin-bottom: 1.25rem;">
+        <div style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 4px;">
+          ${t('deal_conflict_current_label', isEn ? 'Current transaction:' : 'Текущая сделка:')}
+        </div>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; flex-wrap: wrap; gap: 4px;">
+          <strong style="color: var(--accent-gold); font-family: monospace; font-size: 1rem;">${activeSession.orderId}</strong>
+          <span class="badge badge-gold" style="font-size: 0.8rem;">${currentFormatted}</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; font-size: 0.8rem; color: var(--text-muted);">
+          <span>${activeSession.networkBadge || activeSession.network} (+${activeSession.orbsAmount} ${isEn ? 'Orbs' : 'Орб'})</span>
+          <span style="color: #38bdf8;">${statusText}</span>
+        </div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 10px;">
+        <button type="button" class="btn btn-accent btn-large" style="justify-content: center; font-weight: 600;" onclick="window.app.resolveDealConflict('resume')">
+          ${t('deal_conflict_btn_resume', isEn ? '👁️ Open Active Deal' : '👁️ Открыть текущую сделку')} (${activeSession.orderId})
+        </button>
+        <button type="button" class="btn btn-secondary btn-large" style="justify-content: center; border-color: rgba(239, 68, 68, 0.4); color: #fca5a5;" onclick="window.app.resolveDealConflict('replace')">
+          ${t('deal_conflict_btn_replace', isEn ? '✕ Cancel Old & Create New' : '✕ Отменить старую и создать новую')}
+        </button>
+      </div>
+    `;
+
+    modal.classList.add('active');
+    document.body.classList.add('modal-open');
+  }
+
+  /**
+   * Разрешение конфликта сделок (открыть существующую или заменить)
+   */
+  resolveDealConflict(action) {
+    const conflict = this._pendingDealConflict;
+    this._pendingDealConflict = null;
+    this.closeAllModals();
+
+    if (!conflict || !conflict.activeSession) return;
+
+    if (action === 'resume') {
+      this.resumeTopupSession(conflict.activeSession.orderId);
+      return;
+    }
+
+    if (action === 'replace') {
+      this.confirmReplaceActiveDeal(conflict.activeSession.orderId, conflict.newAmount, conflict.newNetwork);
+    }
+  }
+
+  /**
+   * Замена старой незавершенной сделки на новую
+   */
+  confirmReplaceActiveDeal(oldOrderId, newAmount, newNetwork) {
+    if (window.cryptoPay) {
+      window.cryptoPay.cancelSession('user_replaced', oldOrderId);
+    }
+    this.closeAllModals();
+
+    const isEn = window.i18n && window.i18n.getLang() === 'en';
+    const t = (k, fallback) => (window.i18n ? window.i18n.t(k) : fallback);
+    this.showToast(t('deal_replaced_toast', isEn ? 'Previous transaction cancelled. New invoice created.' : 'Старая сделка отменена. Сформирован новый счёт.'), 'info');
+
+    const amountInput = document.getElementById('topup-amount-input');
+    const networkSelect = document.getElementById('topup-network-select');
+    if (amountInput) amountInput.value = newAmount;
+    if (networkSelect) networkSelect.value = newNetwork;
+
+    const modal = document.getElementById('topup-modal');
+    if (modal) {
+      modal.classList.add('active');
+      document.body.classList.add('modal-open');
+    }
+
+    // Создаем новый заказ в обход проверки конфликтов (старый уже отменен)
+    this.goToTopupStep2(true);
   }
 
   /**
