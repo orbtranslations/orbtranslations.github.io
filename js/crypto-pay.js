@@ -114,7 +114,6 @@ class CryptoPaymentService {
     const isEn = window.i18n && window.i18n.getLang() === 'en';
 
     // Уникальный микро-хвостик к сумме для 100% идентификации конкретного заказа
-    const tailUnits = (orderIndex % 900) + 100;
     let derivationPath = 'Direct Wallet Transfer';
     let formattedAmount = `${amount} USDT`;
     let networkBadge = 'TRC-20';
@@ -125,20 +124,22 @@ class CryptoPaymentService {
       derivationPath = isEn ? 'Bitcoin Mainnet • Direct Transfer' : 'Bitcoin Mainnet • Прямой перевод';
       btcRate = await this.fetchLiveBtcRate();
       const btcBase = amount / btcRate;
-      const btcTail = (tailUnits * 1e-7);
-      const btcVal = Number((btcBase + btcTail).toFixed(7));
+      // Хвостик в сатоши (1 сатоши = 1e-8 BTC = ~$0.0008). 1..50 сатоши = $0.001..$0.04 (менее 1-3 центов)
+      const satoshiTail = ((orderIndex % 50) + 1) * 1e-8;
+      const btcVal = Number((btcBase + satoshiTail).toFixed(8));
       expectedAmount = btcVal;
-      formattedAmount = `${btcVal.toFixed(7)} BTC (~$${amount})`;
+      const realUsd = (btcVal * btcRate).toFixed(2);
+      formattedAmount = `${btcVal.toFixed(8)} BTC (~$${realUsd})`;
       networkBadge = 'BTC';
     } else if (network.includes('Polygon') || network.includes('POL')) {
       derivationPath = isEn ? 'Polygon (POL) • Direct Transfer' : 'Polygon Network (POL) • Прямой перевод';
-      const usdtTail = tailUnits * 0.0001;
+      const usdtTail = ((orderIndex % 50) + 1) * 0.001; // 0.001 .. 0.050 USDT
       expectedAmount = Number((amount + usdtTail).toFixed(4));
       formattedAmount = `${expectedAmount.toFixed(4)} USDT`;
       networkBadge = 'POL';
     } else {
       derivationPath = isEn ? 'TRON Network (TRC-20) • Direct Transfer' : 'TRON Network (TRC-20) • Прямой перевод';
-      const usdtTail = tailUnits * 0.0001;
+      const usdtTail = ((orderIndex % 50) + 1) * 0.001; // 0.001 .. 0.050 USDT
       expectedAmount = Number((amount + usdtTail).toFixed(4));
       formattedAmount = `${expectedAmount.toFixed(4)} USDT`;
       networkBadge = 'TRC-20';

@@ -598,16 +598,16 @@ class App {
       if (previewRate) previewRate.textContent = isEn ? '⏳ Fetching live BTC rate...' : '⏳ Загрузка живого курса BTC...';
       try {
         const rate = await window.cryptoPay.fetchLiveBtcRate();
-        const estBtc = (orbsAmount / rate).toFixed(7);
+        const estBtc = (orbsAmount / rate).toFixed(8);
         if (previewRate) {
-          previewRate.textContent = `1 BTC ≈ $${rate.toLocaleString()} USD (${isEn ? 'Live' : 'Биржа'})`;
+          previewRate.textContent = `1 BTC ≈ $${Math.round(rate).toLocaleString()} USD (${isEn ? 'Live' : 'Биржа'})`;
         }
         if (previewPayable) {
-          previewPayable.textContent = `~${estBtc} BTC (~$${orbsAmount})`;
+          previewPayable.textContent = `~${estBtc} BTC (~$${orbsAmount.toFixed(2)})`;
         }
       } catch (e) {
         if (previewRate) previewRate.textContent = '1 BTC ≈ $65,000 USD (est.)';
-        if (previewPayable) previewPayable.textContent = `~${(orbsAmount / 65000).toFixed(7)} BTC`;
+        if (previewPayable) previewPayable.textContent = `~${(orbsAmount / 65000).toFixed(8)} BTC`;
       }
     } else {
       if (previewRate) {
