@@ -50,9 +50,6 @@
           <button class="lang-btn" id="lang-btn-en">🇬🇧 EN</button>
         </div>
 
-        <!-- Role Switcher for Prototype Testing -->
-        <div id="role-switcher-container"></div>
-
         <!-- User Balance of Orbs -->
         <div class="currency-pill" id="header-balance-pill" title="Баланс Орбов (1 Орб = 1 USDT)">
           <span class="currency-icon">🪙</span>
@@ -115,16 +112,58 @@
       </div>
     </section>
 
-    <!-- Section 2: Purchases (Мои покупки) -->
+    <!-- Section 2: Purchases & History (Мои покупки и история пополнений) -->
     <section class="app-section" id="section-purchases" style="display: none;">
       <div class="section-header-row">
         <div>
-          <h2 class="section-title" data-i18n="section_purchases_title">📚 Мои приобретенные переводы</h2>
-          <p class="section-subtitle" data-i18n="section_purchases_sub">Все купленные скрипты с неограниченным доступом к чтению</p>
+          <h2 class="section-title" data-i18n="section_purchases_title">📚 Мои переводы и финансы</h2>
+          <p class="section-subtitle" data-i18n="section_purchases_sub">Купленные скрипты новелл и история криптовалютных пополнений баланса</p>
         </div>
       </div>
-      <div class="works-grid" id="purchases-grid">
-        <!-- Rendered dynamically via JS -->
+
+      <!-- Sub-tabs: Purchased Works vs Deposit History -->
+      <div style="display: flex; gap: 10px; margin-bottom: 1.5rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.75rem;">
+        <button class="btn btn-secondary btn-small purchases-subtab active" id="subtab-btn-works" onclick="window.app.switchPurchasesSubtab('works')">
+          📚 Приобретённые переводы (<span id="purchases-count-badge">0</span>)
+        </button>
+        <button class="btn btn-secondary btn-small purchases-subtab" id="subtab-btn-deposits" onclick="window.app.switchPurchasesSubtab('deposits')">
+          🪙 История пополнений счёта (<span id="deposits-count-badge">0</span>)
+        </button>
+      </div>
+
+      <!-- View 1: Works Grid -->
+      <div id="purchases-works-view">
+        <div class="works-grid" id="purchases-grid">
+          <!-- Rendered dynamically via JS -->
+        </div>
+      </div>
+
+      <!-- View 2: Deposits History Table -->
+      <div id="purchases-deposits-view" style="display: none;">
+        <div class="modal-card" style="max-width: 100%; box-shadow: var(--shadow-sm);">
+          <div class="modal-header" style="justify-content: space-between;">
+            <h3 class="modal-title">🪙 История крипто-пополнений (USDT / BTC)</h3>
+            <button class="btn btn-secondary btn-small" onclick="window.app.renderDepositHistory()">🔄 Обновить историю</button>
+          </div>
+          <div class="modal-body" style="padding: 0; overflow-x: auto;">
+            <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 0.85rem;">
+              <thead>
+                <tr style="border-bottom: 1px solid var(--border-color); background: rgba(255, 255, 255, 0.03); color: var(--text-muted);">
+                  <th style="padding: 0.85rem 1rem;">Дата</th>
+                  <th style="padding: 0.85rem 1rem;">ID Заказа</th>
+                  <th style="padding: 0.85rem 1rem;">Сеть / Валюта</th>
+                  <th style="padding: 0.85rem 1rem;">Сумма перевода</th>
+                  <th style="padding: 0.85rem 1rem;">Зачислено Орбов</th>
+                  <th style="padding: 0.85rem 1rem;">Транзакция в блокчейне</th>
+                  <th style="padding: 0.85rem 1rem;">Статус</th>
+                </tr>
+              </thead>
+              <tbody id="deposits-history-table-body">
+                <!-- Rendered dynamically -->
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -296,27 +335,43 @@
         </div>
       </div>
 
-      <!-- xPub Wallet Configuration Card -->
+      <!-- xPub & Wallet Configuration Card -->
       <div class="modal-card" style="max-width: 100%; box-shadow: var(--shadow-sm);">
         <div class="modal-header">
-          <h3 class="modal-title" data-i18n="admin_xpub_title">🔐 Настройки HD-кошелька (Master Public Key — xPub)</h3>
+          <h3 class="modal-title" data-i18n="admin_xpub_title">🔐 Настройки кошельков для приёма платежей (USDT TRC-20 / POL / BTC)</h3>
         </div>
         <div class="modal-body">
           <form id="admin-xpub-form">
             <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1rem;">
-              xPub позволяет платформе детерминированно генерировать отдельный уникальный адрес для каждого заказа клиента, не раскрывая приватные ключи.
+              Укажите адреса кошельков для приёма оплаты. Система автоматически подставляет нужный адрес и генерирует валидный QR-код при выборе валюты покупателем.
             </p>
-            <div style="margin-bottom: 1rem;">
-              <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;">Master Public Key (xPub / yPub / zPub)</label>
-              <input type="text" id="admin-xpub-key" class="input-styled" required style="font-family: monospace;">
+            <div style="display: grid; gap: 0.85rem; margin-bottom: 1rem;">
+              <div>
+                <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;">
+                  🔴 <strong>USDT (TRC-20 / Tron TRX)</strong>
+                </label>
+                <input type="text" id="admin-wallet-trc20" class="input-styled" required style="font-family: monospace;" value="TA1qqbnwAaGaZuJRyjxvwrLp6Wxy6aEFnW">
+              </div>
+              <div>
+                <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;">
+                  🟣 <strong>USDT (POL / Polygon Network)</strong>
+                </label>
+                <input type="text" id="admin-wallet-polygon" class="input-styled" required style="font-family: monospace;" value="0x3b890765042948355e0a2b0769119d65fdba99ab">
+              </div>
+              <div>
+                <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;">
+                  🟠 <strong>Bitcoin (BTC / Mainnet)</strong>
+                </label>
+                <input type="text" id="admin-wallet-btc" class="input-styled" required style="font-family: monospace;" value="1B3EhhUPqvfDa1S4rGjtKun5A8bRJiudPe">
+              </div>
             </div>
             <div class="form-grid-2" style="margin-bottom: 1rem;">
               <div>
-                <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;">Основная сеть</label>
+                <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;">Основная сеть по умолчанию</label>
                 <select id="admin-xpub-network" class="select-styled">
-                  <option value="USDT (TRC-20)">USDT (TRC-20) — Tron</option>
-                  <option value="USDT (BEP-20)">USDT (BEP-20) — BNB Smart Chain</option>
-                  <option value="USDT (Polygon)">USDT (Polygon)</option>
+                  <option value="USDT (TRC-20)" selected>USDT (TRC-20) — Tron (TRX)</option>
+                  <option value="USDT (Polygon)">USDT (POL) — Polygon</option>
+                  <option value="BTC">Bitcoin (BTC)</option>
                 </select>
               </div>
               <div>
@@ -326,7 +381,7 @@
                 </div>
               </div>
             </div>
-            <button type="submit" class="btn btn-secondary">💾 Сохранить настройки кошелька</button>
+            <button type="submit" class="btn btn-secondary">💾 Сохранить адреса кошельков</button>
           </form>
         </div>
       </div>
@@ -425,11 +480,11 @@
             <input type="number" id="topup-amount-input" class="input-styled" min="1" max="500" value="5" onchange="window.app.renderTopupInvoice()">
           </div>
           <div>
-            <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;" data-i18n="modal_topup_network">Сеть перевода USDT</label>
+            <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;" data-i18n="modal_topup_network">Способ оплаты / Валюта</label>
             <select id="topup-network-select" class="select-styled" onchange="window.app.renderTopupInvoice()">
-              <option value="USDT (TRC-20)">USDT (TRC-20) — Tron</option>
-              <option value="USDT (BEP-20)">USDT (BEP-20) — BSC</option>
-              <option value="USDT (Polygon)">USDT (Polygon)</option>
+              <option value="USDT (TRC-20)" selected>USDT (TRC-20) — Tron (TRX)</option>
+              <option value="USDT (Polygon)">USDT (POL) — Polygon</option>
+              <option value="BTC">Bitcoin (BTC)</option>
             </select>
           </div>
         </div>
@@ -447,8 +502,9 @@
           </div>
 
           <!-- QR Code Canvas -->
-          <div class="invoice-qr-wrap">
-            <canvas id="invoice-qr-canvas" class="invoice-qr-canvas"></canvas>
+          <div class="invoice-qr-wrap" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;">
+            <canvas id="invoice-qr-canvas" class="invoice-qr-canvas" style="cursor: pointer; border-radius: 8px;" title="Нажмите, чтобы скопировать адрес" onclick="window.app.copyInvoiceAddress()"></canvas>
+            <span style="font-size: 0.72rem; color: var(--text-muted);">📷 Отсканируйте в кошельке (TronLink / Trust Wallet / Binance)</span>
           </div>
 
           <div>
@@ -456,25 +512,33 @@
               <span data-i18n="modal_topup_address">Адрес для перевода</span> (<span id="invoice-network">TRC-20</span>):
             </label>
             <div class="copy-input-row">
-              <input type="text" id="invoice-address" class="copy-input" readonly value="T...">
+              <input type="text" id="invoice-address" class="copy-input" readonly value="TA1qqbnwAaGaZuJRyjxvwrLp6Wxy6aEFnW">
               <button class="btn btn-secondary btn-small" onclick="window.app.copyInvoiceAddress()" title="Скопировать адрес" data-i18n="modal_topup_copy">📋 Копия</button>
             </div>
           </div>
 
           <div style="margin-top: 0.75rem; font-size: 0.75rem; color: var(--text-muted); display: flex; justify-content: space-between;">
-            <span><span data-i18n="modal_topup_derivation">Деривация:</span> <code id="invoice-derivation-path" style="color: var(--accent-secondary);">m/44'/195'/0'/0/142</code></span>
+            <span><span data-i18n="modal_topup_derivation">Сеть / Метод:</span> <code id="invoice-derivation-path" style="color: var(--accent-secondary);">TRC-20 (Tron Network)</code></span>
             <span><span data-i18n="modal_topup_time">⏱️ Время на оплату:</span> <strong>30:00</strong></span>
           </div>
         </div>
 
         <div style="margin-top: 1.25rem; display: flex; flex-direction: column; gap: 8px;">
-          <!-- Simulation button for quick prototype verification -->
-          <button class="btn btn-accent btn-large" style="width: 100%;" onclick="window.app.confirmPaymentTest()">
-            <span data-i18n="modal_topup_sim_btn">⚡ Симуляция: Подтвердить получение средств</span> (+<span id="invoice-amount-orbs">5 Орб</span>)
+          <!-- Status Banner for Live Blockchain Tracking -->
+          <div id="blockchain-live-tracker" style="display: flex; align-items: center; justify-content: center; gap: 8px; padding: 0.6rem 0.8rem; background: rgba(59, 130, 246, 0.12); border: 1px solid rgba(59, 130, 246, 0.35); border-radius: var(--radius-sm); font-size: 0.8rem; color: #93c5fd;">
+            <span style="width: 8px; height: 8px; border-radius: 50%; background: #38bdf8; display: inline-block; box-shadow: 0 0 8px #38bdf8;"></span>
+            <span id="blockchain-tracker-text">📡 Сканирование блокчейна каждые 12 сек...</span>
+          </div>
+
+          <!-- Real Blockchain Check Button -->
+          <button type="button" class="btn btn-accent btn-large" style="width: 100%;" id="check-blockchain-tx-btn" onclick="window.app.checkPaymentInBlockchain()">
+            🔄 Проверить поступление в блокчейне
           </button>
-          <p style="text-align: center; font-size: 0.75rem; color: var(--text-muted);" data-i18n="modal_topup_sim_hint">
-            💡 <em>В прототипе кнопка выше эмулирует проверку блокчейна и моментально зачисляет средства на баланс.</em>
-          </p>
+
+          <!-- Quick link to history -->
+          <button type="button" class="btn btn-secondary" style="width: 100%; margin-top: 4px;" onclick="window.app.closeAllModals(); window.app.showDepositHistoryModal()">
+            📜 Посмотреть историю моих пополнений
+          </button>
         </div>
       </div>
     </div>
@@ -542,6 +606,8 @@
   <!-- ========================================================================
        Application JavaScript Modules
        ======================================================================== -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/supabase-client.js"></script>
   <script src="js/store.js"></script>
   <script src="js/i18n.js"></script>
   <script src="js/script-parser.js"></script>

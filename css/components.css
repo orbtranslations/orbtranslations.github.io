@@ -97,6 +97,13 @@
   font-size: 1rem;
 }
 
+.purchases-subtab.active {
+  background: var(--accent-gradient);
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 2px 10px rgba(124, 58, 237, 0.4);
+}
+
 /* ==========================================================================
    Badges & Pills
    ========================================================================== */
@@ -472,6 +479,16 @@
 @keyframes modal-pop {
   0% { transform: scale(0.92); opacity: 0; }
   100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes modal-shake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-6px); }
+  40%, 80% { transform: translateX(6px); }
+}
+
+.modal-card.modal-shake {
+  animation: modal-shake 0.3s ease-in-out;
 }
 
 .modal-header {

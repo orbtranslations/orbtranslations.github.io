@@ -18,3 +18,8 @@ ehthumbs_vista.db
 .vscode/
 .idea/
 .agents/
+
+# Secrets and credentials
+Password.txt
+*.key
+*.pem

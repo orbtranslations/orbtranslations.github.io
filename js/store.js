@@ -76,10 +76,62 @@ class Store {
     if (!this.data || !this.data.works || this.data.works.length === 0) {
       this.data = this.getDefaultInitialData();
       this.saveToStorage();
+    } else {
+      this.migrateXpubSettings();
     }
 
     // 2. Асинхронная подгрузка из IndexedDB (восстанавливает полные тяжелые скрипты и изменения)
     this.initAsyncStorage();
+  }
+
+  migrateXpubSettings() {
+    if (!this.data) return;
+    if (!this.data.xpubSettings) {
+      this.data.xpubSettings = {
+        masterPublicKey: 'TA1qqbnwAaGaZuJRyjxvwrLp6Wxy6aEFnW',
+        walletAddress: 'TA1qqbnwAaGaZuJRyjxvwrLp6Wxy6aEFnW',
+        defaultNetwork: 'USDT (TRC-20)',
+        nextOrderIndex: 142,
+        wallets: {
+          'USDT (TRC-20)': 'TA1qqbnwAaGaZuJRyjxvwrLp6Wxy6aEFnW',
+          'USDT (Polygon)': '0x3b890765042948355e0a2b0769119d65fdba99ab',
+          'BTC': '1B3EhhUPqvfDa1S4rGjtKun5A8bRJiudPe'
+        }
+      };
+      this.saveToStorage();
+    } else {
+      if (!this.data.xpubSettings.wallets) {
+        this.data.xpubSettings.wallets = {};
+      }
+      this.data.xpubSettings.wallets['USDT (TRC-20)'] = this.data.xpubSettings.wallets['USDT (TRC-20)'] || 'TA1qqbnwAaGaZuJRyjxvwrLp6Wxy6aEFnW';
+      this.data.xpubSettings.wallets['USDT (Polygon)'] = '0x3b890765042948355e0a2b0769119d65fdba99ab';
+      this.data.xpubSettings.wallets['BTC'] = '1B3EhhUPqvfDa1S4rGjtKun5A8bRJiudPe';
+      delete this.data.xpubSettings.wallets['USDT (BEP-20)'];
+
+      if (this.data.xpubSettings.defaultNetwork === 'USDT (BEP-20)') {
+        this.data.xpubSettings.defaultNetwork = 'USDT (TRC-20)';
+      }
+
+      const key = this.data.xpubSettings.masterPublicKey || '';
+      if (key.startsWith('xpub6CUGRUon') || !key || key === 'xpub6...') {
+        this.data.xpubSettings.masterPublicKey = 'TA1qqbnwAaGaZuJRyjxvwrLp6Wxy6aEFnW';
+        this.data.xpubSettings.walletAddress = 'TA1qqbnwAaGaZuJRyjxvwrLp6Wxy6aEFnW';
+      }
+
+      // Сброс старого мок-пользователя usr_77 на гостя
+      if (this.data.currentUser && (this.data.currentUser.id === 'usr_77' || !this.data.currentUser.id)) {
+        this.data.currentUser = {
+          id: 'guest',
+          name: 'Гость',
+          email: '',
+          orbs: 0.0,
+          purchasedWorks: []
+        };
+        this.data.currentRole = 'guest';
+      }
+
+      this.saveToStorage();
+    }
   }
 
   async initAsyncStorage() {
@@ -104,13 +156,94 @@ class Store {
           this.data = idbData;
         }
 
+        this.migrateXpubSettings();
+
+        // 3. Синхронизация с облачной базой данных Supabase
+        await this.syncWithSupabase();
+
         if (window.app) {
           window.app.renderStorefront();
           if (window.admin) window.admin.renderWorksTable();
         }
+      } else {
+        await this.syncWithSupabase();
       }
     } catch (e) {
-      console.warn('Ошибка при инициализации IndexedDB:', e);
+      console.warn('Ошибка при инициализации IndexedDB / Supabase:', e);
+    }
+  }
+
+  async syncWithSupabase() {
+    if (!window.supabaseClient) return;
+
+    try {
+      // 1. Загрузка каталога работ из Supabase public.works
+      const { data: dbWorks, error: worksErr } = await window.supabaseClient
+        .from('works')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (!worksErr && dbWorks && dbWorks.length > 0) {
+        const mappedWorks = dbWorks.map(w => ({
+          id: w.id,
+          title: {
+            ru: w.title_ru,
+            en: w.title_en || w.title_ru
+          },
+          description: {
+            ru: w.description_ru,
+            en: w.description_en || w.description_ru
+          },
+          author: w.author,
+          price: Number(w.price),
+          totalPages: w.total_pages,
+          previewPagesCount: w.preview_pages_count,
+          tags: w.tags || [],
+          coverUrl: w.cover_url,
+          availableLanguages: w.available_languages || ['Русский', 'English'],
+          scriptFileName: w.script_file_name || 'script.txt',
+          sampleScriptText: w.sample_script_text || '',
+          createdAt: w.created_at ? w.created_at.split('T')[0] : '2026-09-01'
+        }));
+
+        this.data.works = mappedWorks;
+        this.saveToStorage();
+        if (window.app) window.app.renderStorefront();
+      }
+
+      // 2. Загрузка настроек кошельков из Supabase
+      const { data: ws, error: wsErr } = await window.supabaseClient
+        .from('wallet_settings')
+        .select('*')
+        .eq('id', 1)
+        .single();
+
+      if (!wsErr && ws) {
+        if (!this.data.xpubSettings.wallets) this.data.xpubSettings.wallets = {};
+        if (ws.trc20_address) this.data.xpubSettings.wallets['USDT (TRC-20)'] = ws.trc20_address;
+        if (ws.polygon_address) this.data.xpubSettings.wallets['USDT (Polygon)'] = ws.polygon_address;
+        if (ws.btc_address) this.data.xpubSettings.wallets['BTC'] = ws.btc_address;
+        if (ws.default_network) this.data.xpubSettings.defaultNetwork = ws.default_network;
+        this.saveToStorage();
+      }
+
+      // 3. Загрузка покупок текущего пользователя
+      const currentUserId = this.data.currentUser.id;
+      if (currentUserId && !currentUserId.startsWith('usr_')) {
+        const { data: userPurchases } = await window.supabaseClient
+          .from('purchases')
+          .select('work_id')
+          .eq('user_id', currentUserId);
+
+        if (userPurchases) {
+          const ids = userPurchases.map(p => p.work_id);
+          this.data.currentUser.purchasedWorks = Array.from(new Set([...this.data.currentUser.purchasedWorks, ...ids]));
+          this.saveToStorage();
+          if (window.app) window.app.renderStorefront();
+        }
+      }
+    } catch (err) {
+      console.warn('Синхронизация с Supabase ожидает настройки таблиц:', err);
     }
   }
 
@@ -118,17 +251,23 @@ class Store {
     return {
       siteLang: 'ru', // 'ru' | 'en'
       currentUser: {
-        id: 'usr_77',
-        name: 'Иван Переводчик',
-        email: 'reader@studio.com',
-        orbs: 2.0, // Стартовый баланс для тестирования покупки
+        id: 'guest',
+        name: 'Гость',
+        email: '',
+        orbs: 0.0,
         purchasedWorks: []
       },
-      currentRole: 'user', // 'guest' | 'user' | 'admin'
+      currentRole: 'guest', // 'guest' | 'user' | 'admin'
       xpubSettings: {
-        masterPublicKey: 'xpub6CUGRUonZSQ4TWtTMmzXdrXDtypWKiKrhko4egpiMZbpiaY79FsjjPr32RVoU4YNzcYTLwn7G6b6xLj7b2avgKA4cG6b29SBkg6SnBRU4oU',
+        masterPublicKey: 'TA1qqbnwAaGaZuJRyjxvwrLp6Wxy6aEFnW',
+        walletAddress: 'TA1qqbnwAaGaZuJRyjxvwrLp6Wxy6aEFnW',
         defaultNetwork: 'USDT (TRC-20)',
-        nextOrderIndex: 142
+        nextOrderIndex: 142,
+        wallets: {
+          'USDT (TRC-20)': 'TA1qqbnwAaGaZuJRyjxvwrLp6Wxy6aEFnW',
+          'USDT (Polygon)': '0x3b890765042948355e0a2b0769119d65fdba99ab',
+          'BTC': '1B3EhhUPqvfDa1S4rGjtKun5A8bRJiudPe'
+        }
       },
       orders: [],
       works: [
@@ -309,6 +448,17 @@ The fate of the kingdom is now in your hands.
       txInfo
     });
     this.saveToStorage();
+
+    // Синхронизация баланса с профилем в Supabase
+    if (window.supabaseClient && this.data.currentUser.id && !this.data.currentUser.id.startsWith('usr_')) {
+      window.supabaseClient
+        .from('profiles')
+        .update({ orbs: this.data.currentUser.orbs, updated_at: new Date().toISOString() })
+        .eq('id', this.data.currentUser.id)
+        .then(() => {})
+        .catch(err => console.warn('Ошибка обновления баланса в Supabase:', err));
+    }
+
     return this.data.currentUser.orbs;
   }
 
@@ -339,6 +489,25 @@ The fate of the kingdom is now in your hands.
       type: 'purchase'
     });
     this.saveToStorage();
+
+    // Синхронизация покупки и баланса с Supabase
+    if (window.supabaseClient && this.data.currentUser.id && !this.data.currentUser.id.startsWith('usr_')) {
+      window.supabaseClient
+        .from('purchases')
+        .insert({
+          user_id: this.data.currentUser.id,
+          work_id: workId,
+          price_paid: work.price
+        })
+        .then(() => {
+          return window.supabaseClient
+            .from('profiles')
+            .update({ orbs: this.data.currentUser.orbs, updated_at: new Date().toISOString() })
+            .eq('id', this.data.currentUser.id);
+        })
+        .catch(err => console.warn('Ошибка сохранения покупки в Supabase:', err));
+    }
+
     return { success: true, newBalance: this.data.currentUser.orbs };
   }
 
@@ -426,13 +595,37 @@ The fate of the kingdom is now in your hands.
     this.saveToStorage();
   }
 
-  // Настройки xPub
+  // Настройки кошельков и приёма платежей
   getXpubSettings() {
+    if (!this.data.xpubSettings) {
+      this.migrateXpubSettings();
+    }
     return this.data.xpubSettings;
+  }
+
+  getWalletAddress(network = 'USDT (TRC-20)') {
+    const settings = this.getXpubSettings();
+    const wallets = settings.wallets || {};
+    if (network.includes('Polygon') || network.includes('POL')) {
+      return wallets['USDT (Polygon)'] || '0x3b890765042948355e0a2b0769119d65fdba99ab';
+    }
+    if (network.includes('BTC') || network.includes('Bitcoin')) {
+      return wallets['BTC'] || '1B3EhhUPqvfDa1S4rGjtKun5A8bRJiudPe';
+    }
+    if (network.includes('TRC-20') || network.includes('Tron') || network.includes('TRX')) {
+      return wallets['USDT (TRC-20)'] || settings.walletAddress || settings.masterPublicKey || 'TA1qqbnwAaGaZuJRyjxvwrLp6Wxy6aEFnW';
+    }
+    return wallets[network] || settings.walletAddress || settings.masterPublicKey || 'TA1qqbnwAaGaZuJRyjxvwrLp6Wxy6aEFnW';
   }
 
   updateXpubSettings(newSettings) {
     this.data.xpubSettings = { ...this.data.xpubSettings, ...newSettings };
+    if (newSettings.wallets) {
+      this.data.xpubSettings.wallets = { ...(this.data.xpubSettings.wallets || {}), ...newSettings.wallets };
+    }
+    if (newSettings.masterPublicKey) {
+      this.data.xpubSettings.walletAddress = newSettings.masterPublicKey;
+    }
     this.saveToStorage();
   }
 
@@ -441,6 +634,101 @@ The fate of the kingdom is now in your hands.
     this.data.xpubSettings.nextOrderIndex = idx + 1;
     this.saveToStorage();
     return idx;
+  }
+
+  /**
+   * Получение истории пополнений баланса Орбов (локальные + Supabase)
+   */
+  async getDepositHistory() {
+    const list = [];
+
+    // 1. Пополнения из локального хранилища store.orders
+    const localTopups = (this.data.orders || [])
+      .filter(o => o.type === 'topup')
+      .map(o => {
+        const txInfo = o.txInfo || {};
+        const network = txInfo.network || 'USDT (TRC-20)';
+        const txHash = txInfo.txHash || '';
+        let explorerUrl = '';
+        if (txHash) {
+          if (network.includes('Polygon') || network.includes('POL')) {
+            explorerUrl = `https://polygonscan.com/tx/${txHash}`;
+          } else if (network.includes('BTC') || network.includes('Bitcoin')) {
+            explorerUrl = `https://blockstream.info/tx/${txHash}`;
+          } else {
+            explorerUrl = `https://tronscan.org/#/transaction/${txHash}`;
+          }
+        }
+        return {
+          id: txInfo.orderId || o.id,
+          date: o.date,
+          amountUsdt: Number(txInfo.usdt || o.amount),
+          orbs: Number(o.amount),
+          network,
+          txHash,
+          explorerUrl,
+          status: 'completed'
+        };
+      });
+
+    list.push(...localTopups);
+
+    // 2. Пополнения из таблицы crypto_orders в Supabase
+    if (window.supabaseClient) {
+      try {
+        const currentUser = this.getCurrentUser();
+        let query = window.supabaseClient
+          .from('crypto_orders')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        // Если не админ, фильтруем по текущему пользователю
+        if (this.getRole() !== 'admin' && currentUser && currentUser.id && !currentUser.id.startsWith('usr_') && currentUser.id !== 'guest') {
+          query = query.eq('user_id', currentUser.id);
+        }
+
+        const { data: dbOrders, error } = await query;
+        if (!error && Array.isArray(dbOrders)) {
+          dbOrders.forEach(ord => {
+            const txHash = ord.tx_hash || '';
+            const network = ord.network || 'USDT (TRC-20)';
+            let explorerUrl = '';
+            if (txHash) {
+              if (network.includes('Polygon') || network.includes('POL')) {
+                explorerUrl = `https://polygonscan.com/tx/${txHash}`;
+              } else if (network.includes('BTC') || network.includes('Bitcoin')) {
+                explorerUrl = `https://blockstream.info/tx/${txHash}`;
+              } else {
+                explorerUrl = `https://tronscan.org/#/transaction/${txHash}`;
+              }
+            }
+
+            const existingIndex = list.findIndex(item => item.id === ord.id || (txHash && item.txHash === txHash));
+            if (existingIndex === -1) {
+              list.push({
+                id: ord.id,
+                date: ord.completed_at || ord.created_at,
+                amountUsdt: Number(ord.expected_amount || ord.orbs_amount),
+                orbs: Number(ord.orbs_amount),
+                network,
+                txHash,
+                explorerUrl,
+                status: ord.status || 'completed'
+              });
+            } else {
+              if (txHash) list[existingIndex].txHash = txHash;
+              if (explorerUrl) list[existingIndex].explorerUrl = explorerUrl;
+              if (ord.status) list[existingIndex].status = ord.status;
+            }
+          });
+        }
+      } catch (e) {
+        console.warn('Загрузка crypto_orders из Supabase:', e);
+      }
+    }
+
+    list.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+    return list;
   }
 }
 

@@ -450,31 +450,65 @@ class AdminService {
 
   loadXpubSettings() {
     const settings = this.store.getXpubSettings();
-    const xpubInput = document.getElementById('admin-xpub-key');
+    const wallets = settings.wallets || {};
+
+    const trc20Input = document.getElementById('admin-wallet-trc20');
+    const polInput = document.getElementById('admin-wallet-polygon');
+    const btcInput = document.getElementById('admin-wallet-btc');
+    const legacyKeyInput = document.getElementById('admin-xpub-key');
     const networkSelect = document.getElementById('admin-xpub-network');
     const orderIndexEl = document.getElementById('admin-xpub-order-idx');
 
-    if (xpubInput) xpubInput.value = settings.masterPublicKey || '';
-    if (networkSelect) networkSelect.value = settings.defaultNetwork || 'USDT (TRC-20)';
+    const trc20Val = wallets['USDT (TRC-20)'] || settings.walletAddress || settings.masterPublicKey || 'TA1qqbnwAaGaZuJRyjxvwrLp6Wxy6aEFnW';
+    const polVal = wallets['USDT (Polygon)'] || '0x3b890765042948355e0a2b0769119d65fdba99ab';
+    const btcVal = wallets['BTC'] || '1B3EhhUPqvfDa1S4rGjtKun5A8bRJiudPe';
+
+    if (trc20Input) trc20Input.value = trc20Val;
+    if (polInput) polInput.value = polVal;
+    if (btcInput) btcInput.value = btcVal;
+    if (legacyKeyInput) legacyKeyInput.value = trc20Val;
+
+    if (networkSelect) {
+      let defNet = settings.defaultNetwork || 'USDT (TRC-20)';
+      if (defNet === 'USDT (BEP-20)') defNet = 'USDT (TRC-20)';
+      networkSelect.value = defNet;
+    }
     if (orderIndexEl) orderIndexEl.textContent = settings.nextOrderIndex || 100;
   }
 
   handleXpubSave(e) {
     e.preventDefault();
-    const xpub = document.getElementById('admin-xpub-key').value.trim();
-    const network = document.getElementById('admin-xpub-network').value;
-
-    if (!xpub) {
-      window.app.showToast('Введите Master Public Key (xPub)', 'error');
-      return;
-    }
+    const trc20 = (document.getElementById('admin-wallet-trc20')?.value || document.getElementById('admin-xpub-key')?.value || '').trim() || 'TA1qqbnwAaGaZuJRyjxvwrLp6Wxy6aEFnW';
+    const pol = (document.getElementById('admin-wallet-polygon')?.value || '').trim() || '0x3b890765042948355e0a2b0769119d65fdba99ab';
+    const btc = (document.getElementById('admin-wallet-btc')?.value || '').trim() || '1B3EhhUPqvfDa1S4rGjtKun5A8bRJiudPe';
+    const network = document.getElementById('admin-xpub-network')?.value || 'USDT (TRC-20)';
 
     this.store.updateXpubSettings({
-      masterPublicKey: xpub,
-      defaultNetwork: network
+      masterPublicKey: trc20,
+      walletAddress: trc20,
+      defaultNetwork: network,
+      wallets: {
+        'USDT (TRC-20)': trc20,
+        'USDT (Polygon)': pol,
+        'BTC': btc
+      }
     });
 
-    window.app.showToast('Настройки xPub кошелька сохранены', 'success');
+    if (window.supabaseClient) {
+      window.supabaseClient
+        .from('wallet_settings')
+        .upsert({
+          id: 1,
+          trc20_address: trc20,
+          polygon_address: pol,
+          btc_address: btc,
+          default_network: network
+        })
+        .then(() => {})
+        .catch(err => console.warn('Сохранение настроек кошельков в Supabase:', err));
+    }
+
+    window.app.showToast('Настройки адресов кошельков успешно сохранены!', 'success');
   }
 }
 
