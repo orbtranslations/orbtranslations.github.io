@@ -118,6 +118,12 @@ class I18nManager {
         modal_topup_check_btn: '🔄 Проверить поступление в блокчейне',
         modal_topup_history_btn: '📜 Посмотреть историю моих пополнений',
         modal_topup_copy_success: 'Адрес кошелька скопирован в буфер обмена',
+        modal_topup_exact_hint: '⚠️ Переведите точную сумму с копейками выше — это позволяет системе автоматически определить ваш платёж среди других.',
+        modal_topup_txid_label: 'Уже отправили перевод? Проверьте по хэшу транзакции (TxID):',
+        modal_topup_txid_btn: '⚡ Проверить TxID',
+        modal_topup_txid_placeholder: 'Вставьте хэш транзакции (TxID)...',
+        txid_already_used: 'Эта транзакция уже была зачислена ранее.',
+        txid_invalid: 'Транзакция не найдена в сети или отправлена на другой адрес.',
 
         // Insufficient Orbs Modal
         insufficient_orbs_title: 'Недостаточно Орбов',
@@ -324,6 +330,12 @@ class I18nManager {
         modal_topup_check_btn: '🔄 Check Blockchain for Payment',
         modal_topup_history_btn: '📜 View Deposit History',
         modal_topup_copy_success: 'Wallet address copied to clipboard',
+        modal_topup_exact_hint: '⚠️ Please transfer the exact amount shown above so our system automatically identifies your order.',
+        modal_topup_txid_label: 'Already sent transfer? Verify instantly by Transaction Hash (TxID):',
+        modal_topup_txid_btn: '⚡ Check TxID',
+        modal_topup_txid_placeholder: 'Paste transaction hash (TxID)...',
+        txid_already_used: 'This transaction has already been credited.',
+        txid_invalid: 'Transaction not found or recipient address does not match.',
 
         // Insufficient Orbs Modal
         insufficient_orbs_title: 'Insufficient Orbs',

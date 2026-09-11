@@ -503,8 +503,13 @@
 
           <!-- QR Code Canvas -->
           <div class="invoice-qr-wrap" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;">
-            <canvas id="invoice-qr-canvas" class="invoice-qr-canvas" style="cursor: pointer; border-radius: 8px;" title="Click to copy address" onclick="window.app.copyInvoiceAddress()"></canvas>
+            <div style="background: #ffffff; padding: 12px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);">
+              <canvas id="invoice-qr-canvas" class="invoice-qr-canvas" style="cursor: pointer; display: block; border-radius: 0; padding: 0; background: #fff;" title="Click to copy address" onclick="window.app.copyInvoiceAddress()"></canvas>
+            </div>
             <span style="font-size: 0.72rem; color: var(--text-muted);" data-i18n="modal_topup_qr_hint">📷 Scan in wallet (TronLink / Trust Wallet / Binance)</span>
+            <div id="invoice-exact-amount-hint" style="font-size: 0.74rem; color: #fbbf24; background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.35); border-radius: var(--radius-sm); padding: 6px 10px; width: 100%; text-align: center; line-height: 1.4;" data-i18n="modal_topup_exact_hint">
+              ⚠️ Please transfer the exact amount shown above so our system automatically identifies your order.
+            </div>
           </div>
 
           <div>
@@ -534,6 +539,19 @@
           <button type="button" class="btn btn-accent btn-large" style="width: 100%;" id="check-blockchain-tx-btn" onclick="window.app.checkPaymentInBlockchain()" data-i18n="modal_topup_check_btn">
             🔄 Check Blockchain for Payment
           </button>
+
+          <!-- Optional manual TxID verification -->
+          <div style="background: rgba(0, 0, 0, 0.3); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 8px 10px; margin-top: 2px;">
+            <label style="font-size: 0.73rem; color: var(--text-muted); display: block; margin-bottom: 4px;" data-i18n="modal_topup_txid_label">
+              Already sent transfer? Verify instantly by Transaction Hash (TxID):
+            </label>
+            <div style="display: flex; gap: 6px;">
+              <input type="text" id="invoice-txid-input" class="copy-input" placeholder="Paste transaction hash / TxID..." style="font-size: 0.75rem; padding: 0.45rem 0.65rem;" data-i18n-placeholder="modal_topup_txid_placeholder">
+              <button type="button" class="btn btn-secondary btn-small" id="verify-txid-btn" onclick="window.app.verifyManualTxId()" style="white-space: nowrap;" data-i18n="modal_topup_txid_btn">
+                ⚡ Check TxID
+              </button>
+            </div>
+          </div>
 
           <!-- Quick link to history -->
           <button type="button" class="btn btn-secondary" style="width: 100%; margin-top: 4px;" onclick="window.app.closeAllModals(); window.app.showDepositHistoryModal()" data-i18n="modal_topup_history_btn">
@@ -612,6 +630,7 @@
   <script src="js/i18n.js"></script>
   <script src="js/script-parser.js"></script>
   <script src="js/auth.js"></script>
+  <script src="js/qrcode.min.js"></script>
   <script src="js/crypto-pay.js"></script>
   <script src="js/reader.js"></script>
   <script src="js/admin.js"></script>

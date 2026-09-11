@@ -586,6 +586,42 @@ class App {
     }
   }
 
+  async verifyManualTxId() {
+    const input = document.getElementById('invoice-txid-input');
+    const btn = document.getElementById('verify-txid-btn');
+    const txHash = (input ? input.value : '').trim();
+    const isEn = window.i18n && window.i18n.getLang() === 'en';
+
+    if (!txHash) {
+      this.showToast(isEn ? 'Please enter a valid Transaction Hash (TxID)' : 'Введите хэш транзакции (TxID)', 'warning');
+      return;
+    }
+
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = '⏳ ...';
+    }
+
+    try {
+      const result = await window.cryptoPay.verifyTxId(txHash);
+      if (result.success) {
+        this.showToast(isEn ? `🎉 Payment confirmed! +${result.amount} Orbs credited.` : `🎉 Платёж подтверждён! Зачислено +${result.amount} Орбов.`, 'success');
+        this.closeAllModals();
+        this.renderUserHeader();
+        this.renderPurchases();
+      } else {
+        this.showToast(result.message, 'error');
+      }
+    } catch (e) {
+      this.showToast(e.message || (isEn ? 'Verification error' : 'Ошибка верификации'), 'error');
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = isEn ? '⚡ Check TxID' : '⚡ Проверить TxID';
+      }
+    }
+  }
+
   /**
    * Модальное окно загрузки архива (.zip) или папки с графикой
    * Поддерживает режимы: preview (бесплатный предпросмотр N страниц) и full (полное чтение)
