@@ -167,28 +167,40 @@ class App {
     const isAdmin = window.auth.isAdmin();
 
     if (balancePill) {
-      if (isGuest) {
+      const userOrbs = (user && typeof user.orbs === 'number') ? user.orbs : 0;
+      if (isGuest && userOrbs <= 0) {
         balancePill.style.display = 'none';
       } else {
         balancePill.style.display = 'flex';
+        balancePill.style.cursor = 'pointer';
+        balancePill.onclick = (e) => {
+          if (e.target && e.target.id === 'header-topup-btn') return;
+          this.showDepositHistoryModal();
+        };
         const orbVal = document.getElementById('header-orbs-count');
         if (orbVal) {
-          orbVal.textContent = (user.orbs || 0).toFixed(2);
+          orbVal.textContent = userOrbs.toFixed(2);
         }
       }
     }
 
     if (userAuthBlock) {
       const isEn = window.i18n && window.i18n.getLang() === 'en';
+      const historyText = window.i18n ? window.i18n.t('header_history_btn') : (isEn ? '📜 History' : '📜 История');
+      const historyTitle = window.i18n ? window.i18n.t('header_history_title') : (isEn ? 'Deposit and transaction history' : 'История пополнений баланса');
+
       if (isGuest) {
         const loginText = window.i18n ? window.i18n.t('btn_login') : (isEn ? '🔑 Sign In' : '🔑 Войти');
         userAuthBlock.innerHTML = `
-          <button class="btn btn-secondary btn-small" onclick="window.app.showAuthModal('login')">${loginText}</button>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <button class="btn btn-secondary btn-small" onclick="window.app.showDepositHistoryModal()" title="${historyTitle}">
+              ${historyText}
+            </button>
+            <button class="btn btn-primary btn-small" onclick="window.app.showAuthModal('login')">${loginText}</button>
+          </div>
         `;
       } else {
         const displayName = isAdmin ? 'GraveAdmin' : (user.name || user.email.split('@')[0]);
-        const historyText = window.i18n ? window.i18n.t('header_history_btn') : (isEn ? '📜 History' : '📜 История');
-        const historyTitle = window.i18n ? window.i18n.t('header_history_title') : (isEn ? 'Deposit and transaction history' : 'История пополнений баланса');
         const logoutText = window.i18n ? window.i18n.t('header_logout_btn') : (isEn ? '🚪 Sign Out' : '🚪 Выйти');
         const logoutTitle = window.i18n ? window.i18n.t('header_logout_title') : (isEn ? 'Sign out of your account' : 'Выйти из аккаунта');
         const userTitle = user.email || (isEn ? 'User' : 'Пользователь');
@@ -295,6 +307,9 @@ class App {
     const worksBadge = document.getElementById('purchases-count-badge');
     if (!container) return;
 
+    // Всегда загружаем и обновляем историю транзакций
+    this.renderDepositHistory();
+
     const isEn = window.i18n && window.i18n.getLang() === 'en';
     const isGuest = window.auth.isGuest();
     if (isGuest) {
@@ -302,7 +317,7 @@ class App {
         <div class="empty-state" style="grid-column: 1 / -1; padding: 4rem 1rem; text-align: center;">
           <div style="font-size: 3rem; margin-bottom: 1rem;">🔒</div>
           <h3>${isEn ? 'Sign In to Your Account' : 'Войдите в аккаунт'}</h3>
-          <p style="color: var(--text-muted); margin-bottom: 1.25rem;">${isEn ? 'Please sign in to view your unlocked translations and deposit history.' : 'Чтобы просматривать купленные работы и историю пополнений, выполните вход.'}</p>
+          <p style="color: var(--text-muted); margin-bottom: 1.25rem;">${isEn ? 'Please sign in to view your unlocked translations.' : 'Чтобы просматривать купленные работы, выполните вход.'}</p>
           <button class="btn btn-accent btn-large" onclick="window.app.showAuthModal('login')">${isEn ? '🔑 Sign In / Register' : '🔑 Войти / Зарегистрироваться'}</button>
         </div>
       `;

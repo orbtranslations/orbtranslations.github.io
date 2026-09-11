@@ -183,6 +183,7 @@ DROP POLICY IF EXISTS "Read own purchases" ON public.purchases;
 DROP POLICY IF EXISTS "Insert own purchases" ON public.purchases;
 DROP POLICY IF EXISTS "Read own orders" ON public.crypto_orders;
 DROP POLICY IF EXISTS "Insert orders" ON public.crypto_orders;
+DROP POLICY IF EXISTS "Update orders" ON public.crypto_orders;
 
 -- Чтение каталога и настроек доступно всем
 CREATE POLICY "Public read works" ON public.works FOR SELECT USING (true);
@@ -196,6 +197,7 @@ CREATE POLICY "Update own profile" ON public.profiles FOR UPDATE USING (auth.uid
 CREATE POLICY "Read own purchases" ON public.purchases FOR SELECT USING (auth.uid() = user_id);
 CREATE POLICY "Insert own purchases" ON public.purchases FOR INSERT WITH CHECK (auth.uid() = user_id);
 
--- Заказы: пользователи могут создавать и просматривать заказы
+-- Заказы: пользователи могут создавать, просматривать и обновлять заказы
 CREATE POLICY "Read own orders" ON public.crypto_orders FOR SELECT USING (auth.uid() = user_id OR user_id IS NULL);
 CREATE POLICY "Insert orders" ON public.crypto_orders FOR INSERT WITH CHECK (true);
+CREATE POLICY "Update orders" ON public.crypto_orders FOR UPDATE USING (true) WITH CHECK (true);

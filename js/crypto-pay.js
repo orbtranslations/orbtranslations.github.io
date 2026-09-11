@@ -193,8 +193,9 @@ class CryptoPaymentService {
     // Запуск таймера обратного отсчета 30 минут
     this.startCountdownTimer();
 
-    // Запуск фонового сканера блокчейна
-    this.startBlockchainWatcher();
+    // Фоновый сканер запускается только после подтверждения пользователем ("Я оплатил")
+    // или при ручной проверке, чтобы предотвратить ложные автоподтверждения
+    this.stopBlockchainWatcher();
 
     return this.activeSession;
   }
@@ -314,7 +315,8 @@ class CryptoPaymentService {
       }
       this.activeSession = session;
       this.startCountdownTimer();
-      this.startBlockchainWatcher();
+      // Для pending сессий работает только 30-минутный таймер фиксации курса
+      this.stopBlockchainWatcher();
       return this.activeSession;
     }
 
@@ -337,15 +339,20 @@ class CryptoPaymentService {
   }
 
   /**
-   * Запуск периодического фонового опроса блокчейна
+   * Запуск периодического фонового опроса блокчейна (только после клика "Я оплатил")
    */
   startBlockchainWatcher() {
     this.stopBlockchainWatcher();
+    if (!this.activeSession || this.activeSession.status !== 'awaiting_confirmations') {
+      return;
+    }
     // Опрос через 3 секунды, затем каждые 12 секунд
     this.watcherTimeout = setTimeout(() => {
-      this.checkBlockchainPayment(false);
+      if (this.activeSession && this.activeSession.status === 'awaiting_confirmations') {
+        this.checkBlockchainPayment(false);
+      }
       this.watcherInterval = setInterval(() => {
-        if (this.activeSession && (this.activeSession.status === 'pending' || this.activeSession.status === 'awaiting_confirmations')) {
+        if (this.activeSession && this.activeSession.status === 'awaiting_confirmations') {
           this.checkBlockchainPayment(false);
         } else {
           this.stopBlockchainWatcher();
@@ -422,8 +429,12 @@ class CryptoPaymentService {
 
     try {
       let detectedTx = null;
+      // Защита от повторного использования любых завершенных или ранее зафиксированных хэшей
+      const usedHashes = this.store.getUsedTxHashes();
       const completedOrders = await this.store.getDepositHistory();
-      const usedHashes = new Set(completedOrders.filter(o => o.status === 'completed').map(o => (o.txHash || '').toLowerCase()).filter(Boolean));
+      completedOrders
+        .filter(o => o.status === 'completed' && o.txHash)
+        .forEach(o => usedHashes.add(o.txHash.toLowerCase()));
 
       // 1. Проверка USDT TRC-20 через публичный TronGrid API
       if (session.network.includes('TRC-20') || session.network.includes('Tron') || session.network.includes('TRX')) {
@@ -432,7 +443,8 @@ class CryptoPaymentService {
         if (res.ok) {
           const json = await res.json();
           if (json.data && Array.isArray(json.data)) {
-            const minTimestamp = session.createdAt - 10 * 60 * 1000;
+            // Транзакция должна быть отправлена ПОСЛЕ создания сделки (максимум 1 минута погрешности часов)
+            const minTimestamp = session.createdAt - 60 * 1000;
             const match = json.data.find(tx => {
               const txId = (tx.transaction_id || '').toLowerCase();
               if (usedHashes.has(txId)) return false;
@@ -441,8 +453,8 @@ class CryptoPaymentService {
               const val = Number(tx.value) / 1e6; // 6 decimals for USDT
               const txTime = Number(tx.block_timestamp);
 
-              // Точное соответствие суммы с учетом микро-хвостика заказа или достаточной суммы
-              const amountMatches = Math.abs(val - session.expectedAmount) <= 0.0001 || (val >= session.orbsAmount && val <= session.expectedAmount + 0.02);
+              // Строгое соответствие суммы с учетом микро-хвостика заказа
+              const amountMatches = Math.abs(val - session.expectedAmount) <= 0.0002;
               return toAddr === session.address && amountMatches && txTime >= minTimestamp;
             });
             if (match) {
@@ -460,6 +472,8 @@ class CryptoPaymentService {
       // 2. Проверка Bitcoin (BTC) через публичный blockchain.info API (с резервом на blockcypher)
       else if (session.network.includes('BTC') || session.network.includes('Bitcoin')) {
         let latestHeight = null;
+        // Строго: транзакция не могла произойти раньше создания сделки
+        const minTimestamp = session.createdAt - 60 * 1000;
 
         // Первичный источник: blockchain.info (CORS enabled, быстрый)
         try {
@@ -476,8 +490,9 @@ class CryptoPaymentService {
 
                 const btcVal = out.value / 1e8; // сатоши в BTC
                 const txTime = (tx.time ? tx.time * 1000 : Date.now());
-                const amountMatches = Math.abs(btcVal - session.expectedAmount) <= 0.000005 || btcVal >= (session.expectedAmount * 0.95);
-                return amountMatches && txTime >= (session.createdAt - 60 * 60 * 1000);
+                // Строгое соответствие суммы по микро-хвостику в сатоши (никаких >= !)
+                const amountMatches = Math.abs(btcVal - session.expectedAmount) <= 0.000002;
+                return amountMatches && txTime >= minTimestamp;
               });
 
               if (match) {
@@ -511,8 +526,10 @@ class CryptoPaymentService {
                   const txId = (tx.tx_hash || '').toLowerCase();
                   if (usedHashes.has(txId)) return false;
                   const btcVal = tx.value / 1e8;
-                  const amountMatches = Math.abs(btcVal - session.expectedAmount) <= 0.000005 || btcVal >= (session.expectedAmount * 0.95);
-                  return amountMatches;
+                  // Строгое соответствие суммы
+                  const amountMatches = Math.abs(btcVal - session.expectedAmount) <= 0.000002;
+                  const txTime = tx.confirmed ? new Date(tx.confirmed).getTime() : (tx.received ? new Date(tx.received).getTime() : Date.now());
+                  return amountMatches && txTime >= minTimestamp;
                 });
                 if (matchRef) {
                   detectedTx = {
@@ -646,14 +663,14 @@ class CryptoPaymentService {
       return { success: false, message: isEn ? 'Invalid transaction hash' : 'Некорректный хэш транзакции' };
     }
 
-    // 1. Проверяем, не использовался ли уже этот TxID среди завершенных заказов
+    // 1. Проверяем, не использовался ли уже этот TxID среди завершенных заказов или базы использованных
+    const usedHashes = this.store.getUsedTxHashes();
     const completedOrders = await this.store.getDepositHistory();
-    const isUsed = completedOrders.some(o => 
-      o.status === 'completed' && (
-        (o.txHash || '').toLowerCase() === txHash.toLowerCase() || 
-        (o.txHash || '').toLowerCase() === rawTxHash.toLowerCase()
-      )
-    );
+    completedOrders
+      .filter(o => o.status === 'completed' && o.txHash)
+      .forEach(o => usedHashes.add(o.txHash.toLowerCase()));
+
+    const isUsed = usedHashes.has(txHash.toLowerCase()) || usedHashes.has(rawTxHash.toLowerCase());
     if (isUsed) {
       return {
         success: false,
@@ -872,6 +889,7 @@ class CryptoPaymentService {
     this.activeSession.txHash = txHash;
     this.activeSession.confirmations = 3;
     this.store.saveCryptoSession(this.activeSession);
+    this.store.markTxHashUsed(txHash);
 
     this.stopCountdownTimer();
     this.stopBlockchainWatcher();
@@ -907,6 +925,8 @@ class CryptoPaymentService {
       txHash
     });
 
+    this.activeSession = null;
+
     if (window.app) {
       const isEn = window.i18n && window.i18n.getLang() === 'en';
       window.app.showToast(isEn ? `🎉 Payment confirmed on blockchain! +${amount} Orbs credited!` : `🎉 Платеж подтверждён сетью блокчейн! Зачислено +${amount} Орб!`, 'success');
@@ -914,6 +934,10 @@ class CryptoPaymentService {
       window.app.renderUserHeader();
       window.app.renderStorefront();
       window.app.renderPurchases();
+      // Показываем пользователю модальное окно истории со свежей завершенной сделкой
+      setTimeout(() => {
+        window.app.showDepositHistoryModal();
+      }, 400);
     }
 
     return {
@@ -1023,6 +1047,7 @@ class CryptoPaymentService {
     } else if (orderId && session.orderId !== orderId) {
       const other = this.store.getCryptoSession(orderId);
       if (other) {
+        if (other.status === 'completed') return; // Ни в коем случае не отменяем завершенные сделки
         other.status = 'cancelled';
         other.cancelledAt = Date.now();
         other.cancelReason = reason;
@@ -1041,6 +1066,10 @@ class CryptoPaymentService {
     }
 
     if (session) {
+      if (session.status === 'completed') {
+        this.activeSession = null;
+        return;
+      }
       session.status = 'cancelled';
       session.cancelledAt = Date.now();
       session.cancelReason = reason;

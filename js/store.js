@@ -691,6 +691,33 @@ The fate of the kingdom is now in your hands.
     return this.data.cryptoSessions.find(s => s.orderId === orderId) || null;
   }
 
+  /**
+   * Список уже использованных хэшей транзакций (защита от повторного зачисления)
+   */
+  getUsedTxHashes() {
+    if (!this.data.usedTxHashes) {
+      this.data.usedTxHashes = [
+        '5f65aecdec663d6dff130a930525d625cfe85b12904461ee3d2d1e824bc4270f'
+      ];
+      this.saveToStorage();
+    }
+    return new Set(this.data.usedTxHashes.map(h => (h || '').toLowerCase()));
+  }
+
+  markTxHashUsed(txHash) {
+    if (!txHash) return;
+    const lower = txHash.toLowerCase();
+    if (!this.data.usedTxHashes) {
+      this.data.usedTxHashes = [
+        '5f65aecdec663d6dff130a930525d625cfe85b12904461ee3d2d1e824bc4270f'
+      ];
+    }
+    if (!this.data.usedTxHashes.includes(lower)) {
+      this.data.usedTxHashes.push(lower);
+      this.saveToStorage();
+    }
+  }
+
   getActiveCryptoSession() {
     if (!this.data.cryptoSessions) return null;
     const now = Date.now();
@@ -859,7 +886,9 @@ The fate of the kingdom is now in your hands.
             } else {
               if (txHash) list[existingIndex].txHash = txHash;
               if (explorerUrl) list[existingIndex].explorerUrl = explorerUrl;
-              if (ord.status) list[existingIndex].status = ord.status;
+              if (ord.status && list[existingIndex].status !== 'completed') {
+                list[existingIndex].status = ord.status;
+              }
             }
           });
         }
