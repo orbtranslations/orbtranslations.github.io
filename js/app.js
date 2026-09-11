@@ -241,7 +241,8 @@ class App {
       return `
         <article class="work-card">
           <div class="work-card-media">
-            <img src="${work.coverUrl || 'assets/demo/cover-1.svg'}" alt="${title}" class="work-cover-img" onerror="this.src='assets/demo/cover-1.svg'">
+            <div class="work-cover-backdrop" style="background-image: url('${work.coverUrl || 'assets/demo/cover-1.svg'}');"></div>
+            <img src="${work.coverUrl || 'assets/demo/cover-1.svg'}" alt="${title}" class="work-cover-img" onerror="this.src='assets/demo/cover-1.svg'; if(this.previousElementSibling) this.previousElementSibling.style.backgroundImage='url(assets/demo/cover-1.svg)';">
             <div class="work-badge-overlay">
               <span class="badge badge-accent">💎 ${work.price} Орб ($${work.price})</span>
               <span class="badge badge-glass">👁️ ${freePagesTxt}</span>
@@ -315,7 +316,8 @@ class App {
       return `
         <article class="work-card">
           <div class="work-card-media">
-            <img src="${work.coverUrl || 'assets/demo/cover-1.svg'}" alt="${title}" class="work-cover-img" onerror="this.src='assets/demo/cover-1.svg'">
+            <div class="work-cover-backdrop" style="background-image: url('${work.coverUrl || 'assets/demo/cover-1.svg'}');"></div>
+            <img src="${work.coverUrl || 'assets/demo/cover-1.svg'}" alt="${title}" class="work-cover-img" onerror="this.src='assets/demo/cover-1.svg'; if(this.previousElementSibling) this.previousElementSibling.style.backgroundImage='url(assets/demo/cover-1.svg)';">
             <div class="work-badge-overlay">
               <span class="badge badge-success">${accessTxt}</span>
             </div>

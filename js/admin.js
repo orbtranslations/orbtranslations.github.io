@@ -106,6 +106,7 @@ class AdminService {
    */
   updateCoverPreview(url) {
     const previewImg = document.getElementById('admin-cover-preview-img');
+    const previewBg = document.getElementById('admin-cover-preview-bg');
     const statusBadge = document.getElementById('admin-cover-status-badge');
     const hintText = document.getElementById('admin-cover-hint-text');
     const clearBtn = document.getElementById('admin-cover-clear-btn');
@@ -114,8 +115,10 @@ class AdminService {
 
     if (url) {
       previewImg.src = url;
+      if (previewBg) previewBg.style.backgroundImage = `url("${url}")`;
       previewImg.onerror = () => {
         previewImg.src = 'assets/demo/cover-1.svg';
+        if (previewBg) previewBg.style.backgroundImage = 'url("assets/demo/cover-1.svg")';
         if (statusBadge) {
           statusBadge.className = 'badge badge-danger';
           statusBadge.textContent = 'Ошибка загрузки';
@@ -126,10 +129,11 @@ class AdminService {
         statusBadge.className = 'badge badge-accent';
         statusBadge.textContent = url.startsWith('data:') ? 'Локальный файл' : 'Ссылка активна';
       }
-      if (hintText) hintText.textContent = 'Эта иллюстрация будет отображаться на карточке работы.';
+      if (hintText) hintText.textContent = 'Изображение масштабировано целиком (object-fit: contain) с атмосферным фоном.';
       if (clearBtn) clearBtn.style.display = 'inline-flex';
     } else {
       previewImg.src = 'assets/demo/cover-1.svg';
+      if (previewBg) previewBg.style.backgroundImage = 'url("assets/demo/cover-1.svg")';
       previewImg.onerror = null;
       if (statusBadge) {
         statusBadge.className = 'badge badge-glass';
@@ -395,7 +399,10 @@ class AdminService {
         <td style="padding: 0.85rem 1rem;"><strong>#${index + 1}</strong></td>
         <td style="padding: 0.85rem 1rem;">
           <div style="display: flex; align-items: center; gap: 12px;">
-            <img src="${w.coverUrl || 'assets/demo/cover-1.svg'}" onerror="this.src='assets/demo/cover-1.svg'" alt="Cover" style="width: 44px; height: 44px; border-radius: 6px; object-fit: cover; border: 1px solid var(--border-color); flex-shrink: 0; background: #000;">
+            <div style="width: 48px; height: 48px; border-radius: 6px; overflow: hidden; background: #070a13; border: 1px solid var(--border-color); flex-shrink: 0; display: flex; align-items: center; justify-content: center; position: relative;">
+              <div style="position: absolute; inset: -4px; background-size: cover; background-position: center; filter: blur(6px) brightness(0.4); background-image: url('${w.coverUrl || 'assets/demo/cover-1.svg'}');"></div>
+              <img src="${w.coverUrl || 'assets/demo/cover-1.svg'}" onerror="this.src='assets/demo/cover-1.svg'" alt="Cover" style="position: relative; z-index: 1; max-width: 100%; max-height: 100%; width: auto; height: 100%; object-fit: contain;">
+            </div>
             <div>
               <div style="font-weight: 600; color: var(--text-primary);">${titleRu}</div>
               ${titleEn ? `<div style="font-size: 0.75rem; color: var(--accent-secondary); font-style: italic;">${titleEn}</div>` : ''}
