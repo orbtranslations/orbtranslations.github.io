@@ -200,6 +200,40 @@
               <input type="text" id="admin-work-tags" class="input-styled" placeholder="Фэнтези, Драма, Манга, Visual Novel">
             </div>
 
+            <!-- Cover Image (Ссылка на обложку работы / превью на витрине) -->
+            <div style="margin-bottom: 1.25rem;">
+              <label style="font-size: 0.85rem; color: var(--text-secondary); display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                <span>🖼️ Ссылка на обложку работы (URL картинки для превью на витрине)</span>
+                <span style="font-size: 0.75rem; color: var(--text-muted);">Прямая ссылка или выбор файла</span>
+              </label>
+              <div style="display: flex; gap: 10px; align-items: center;">
+                <input type="text" id="admin-work-cover-url" class="input-styled" style="flex: 1;" placeholder="Вставьте ссылку на картинку (https://...) или выберите файл">
+                <input type="file" id="admin-work-cover-file" accept="image/*" style="display: none;">
+                <button type="button" class="btn btn-secondary btn-small" onclick="document.getElementById('admin-work-cover-file').click()" title="Загрузить изображение с диска">
+                  📁 Выбрать файл
+                </button>
+              </div>
+
+              <!-- Интерактивный предпросмотр обложки прямо в форме -->
+              <div id="admin-cover-preview-wrapper" style="margin-top: 8px; display: flex; align-items: center; gap: 14px; padding: 10px 14px; background: rgba(0, 0, 0, 0.25); border: 1px dashed var(--border-color); border-radius: var(--radius-sm);">
+                <div style="width: 60px; height: 60px; border-radius: var(--radius-sm); overflow: hidden; background: #000; flex-shrink: 0; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border-color);">
+                  <img id="admin-cover-preview-img" src="assets/demo/cover-1.svg" alt="Preview" style="width: 100%; height: 100%; object-fit: cover;">
+                </div>
+                <div style="flex: 1; font-size: 0.82rem; color: var(--text-secondary);">
+                  <div style="display: flex; align-items: center; gap: 8px;">
+                    <strong>Предпросмотр обложки:</strong>
+                    <span id="admin-cover-status-badge" class="badge badge-glass" style="font-size: 0.75rem;">По умолчанию</span>
+                  </div>
+                  <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 3px;" id="admin-cover-hint-text">
+                    Эта иллюстрация отображается на карточке работы в каталоге и в списке покупок.
+                  </div>
+                </div>
+                <button type="button" class="btn btn-secondary btn-small" id="admin-cover-clear-btn" style="display: none; padding: 3px 8px; font-size: 0.75rem;" title="Сбросить на обложку по умолчанию">
+                  ✕ Сбросить
+                </button>
+              </div>
+            </div>
+
             <!-- Multilingual Descriptions (RU / EN) -->
             <div class="form-grid-2" style="margin-bottom: 1rem;">
               <div>

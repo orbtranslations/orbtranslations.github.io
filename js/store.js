@@ -412,6 +412,7 @@ The fate of the kingdom is now in your hands.
       totalPages: updatedData.totalPages !== undefined ? Number(updatedData.totalPages) : current.totalPages,
       previewPagesCount: updatedData.previewPagesCount !== undefined ? Number(updatedData.previewPagesCount) : current.previewPagesCount,
       tags: updatedData.tags !== undefined ? updatedData.tags : current.tags,
+      coverUrl: updatedData.coverUrl !== undefined ? updatedData.coverUrl : (current.coverUrl || 'assets/demo/cover-1.svg'),
       sampleScriptText: updatedData.sampleScriptText !== undefined ? updatedData.sampleScriptText : current.sampleScriptText,
       updatedAt: new Date().toISOString().split('T')[0]
     };

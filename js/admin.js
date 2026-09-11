@@ -63,6 +63,81 @@ class AdminService {
         this.updatePagesFromScript(scriptTextarea.value);
       });
     }
+
+    // Слушатели поля обложки (ввод URL, загрузка локального файла, сброс)
+    const coverUrlInput = document.getElementById('admin-work-cover-url');
+    const coverFileInput = document.getElementById('admin-work-cover-file');
+    const coverClearBtn = document.getElementById('admin-cover-clear-btn');
+
+    if (coverUrlInput) {
+      coverUrlInput.addEventListener('input', () => {
+        this.updateCoverPreview(coverUrlInput.value.trim());
+      });
+    }
+
+    if (coverFileInput) {
+      coverFileInput.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          const dataUrl = event.target.result;
+          if (coverUrlInput) {
+            coverUrlInput.value = dataUrl;
+          }
+          this.updateCoverPreview(dataUrl);
+          window.app.showToast(`Файл обложки "${file.name}" загружен!`, 'success');
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+
+    if (coverClearBtn) {
+      coverClearBtn.addEventListener('click', () => {
+        if (coverUrlInput) coverUrlInput.value = '';
+        if (coverFileInput) coverFileInput.value = '';
+        this.updateCoverPreview('');
+      });
+    }
+  }
+
+  /**
+   * Обновляет интерактивный предпросмотр обложки в форме администратора
+   */
+  updateCoverPreview(url) {
+    const previewImg = document.getElementById('admin-cover-preview-img');
+    const statusBadge = document.getElementById('admin-cover-status-badge');
+    const hintText = document.getElementById('admin-cover-hint-text');
+    const clearBtn = document.getElementById('admin-cover-clear-btn');
+
+    if (!previewImg) return;
+
+    if (url) {
+      previewImg.src = url;
+      previewImg.onerror = () => {
+        previewImg.src = 'assets/demo/cover-1.svg';
+        if (statusBadge) {
+          statusBadge.className = 'badge badge-danger';
+          statusBadge.textContent = 'Ошибка загрузки';
+        }
+        if (hintText) hintText.textContent = 'Не удалось загрузить изображение по указанной ссылке. Проверьте правильность URL.';
+      };
+      if (statusBadge) {
+        statusBadge.className = 'badge badge-accent';
+        statusBadge.textContent = url.startsWith('data:') ? 'Локальный файл' : 'Ссылка активна';
+      }
+      if (hintText) hintText.textContent = 'Эта иллюстрация будет отображаться на карточке работы.';
+      if (clearBtn) clearBtn.style.display = 'inline-flex';
+    } else {
+      previewImg.src = 'assets/demo/cover-1.svg';
+      previewImg.onerror = null;
+      if (statusBadge) {
+        statusBadge.className = 'badge badge-glass';
+        statusBadge.textContent = 'По умолчанию';
+      }
+      if (hintText) hintText.textContent = 'Эта иллюстрация отображается на карточке работы в каталоге и в списке покупок.';
+      if (clearBtn) clearBtn.style.display = 'none';
+    }
   }
 
   /**
@@ -166,6 +241,9 @@ class AdminService {
     document.getElementById('admin-work-tags').value = (work.tags || []).join(', ');
     document.getElementById('admin-work-desc-ru').value = descRu;
     document.getElementById('admin-work-desc-en').value = descEn;
+    const coverUrlInput = document.getElementById('admin-work-cover-url');
+    if (coverUrlInput) coverUrlInput.value = work.coverUrl || '';
+    this.updateCoverPreview(work.coverUrl || '');
     document.getElementById('admin-script-text').value = work.sampleScriptText || '';
 
     // Автоматический пересчет страниц
@@ -207,6 +285,12 @@ class AdminService {
     const form = document.getElementById('admin-add-work-form');
     if (form) form.reset();
 
+    const coverUrlInput = document.getElementById('admin-work-cover-url');
+    const coverFileInput = document.getElementById('admin-work-cover-file');
+    if (coverUrlInput) coverUrlInput.value = '';
+    if (coverFileInput) coverFileInput.value = '';
+    this.updateCoverPreview('');
+
     const displayEl = document.getElementById('admin-total-pages-display');
     const hiddenInput = document.getElementById('admin-work-total-pages');
     if (displayEl) displayEl.textContent = '4';
@@ -241,6 +325,8 @@ class AdminService {
     const descRu = document.getElementById('admin-work-desc-ru').value.trim();
     const descEn = document.getElementById('admin-work-desc-en').value.trim();
     const tagsRaw = document.getElementById('admin-work-tags').value.trim();
+    const coverUrlInput = document.getElementById('admin-work-cover-url');
+    const coverUrl = coverUrlInput ? coverUrlInput.value.trim() : '';
     const sampleScriptText = document.getElementById('admin-script-text').value.trim();
 
     if (!titleRu && !titleEn) {
@@ -267,6 +353,7 @@ class AdminService {
       totalPages: Math.max(1, totalPages),
       previewPagesCount: Math.min(totalPages, Math.max(1, previewPagesCount)),
       tags,
+      coverUrl: coverUrl || 'assets/demo/cover-1.svg',
       sampleScriptText
     };
 
@@ -307,9 +394,14 @@ class AdminService {
       tr.innerHTML = `
         <td style="padding: 0.85rem 1rem;"><strong>#${index + 1}</strong></td>
         <td style="padding: 0.85rem 1rem;">
-          <div style="font-weight: 600; color: var(--text-primary);">${titleRu}</div>
-          ${titleEn ? `<div style="font-size: 0.75rem; color: var(--accent-secondary); font-style: italic;">${titleEn}</div>` : ''}
-          <div style="font-size: 0.75rem; color: var(--text-muted);">✍️ ${w.author}</div>
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <img src="${w.coverUrl || 'assets/demo/cover-1.svg'}" onerror="this.src='assets/demo/cover-1.svg'" alt="Cover" style="width: 44px; height: 44px; border-radius: 6px; object-fit: cover; border: 1px solid var(--border-color); flex-shrink: 0; background: #000;">
+            <div>
+              <div style="font-weight: 600; color: var(--text-primary);">${titleRu}</div>
+              ${titleEn ? `<div style="font-size: 0.75rem; color: var(--accent-secondary); font-style: italic;">${titleEn}</div>` : ''}
+              <div style="font-size: 0.75rem; color: var(--text-muted);">✍️ ${w.author}</div>
+            </div>
+          </div>
         </td>
         <td style="padding: 0.85rem 1rem;">
           <span class="badge badge-accent">${w.price} Орб (${w.price} USDT)</span>
