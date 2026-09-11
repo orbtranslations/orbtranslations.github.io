@@ -45,16 +45,16 @@
 
       <div class="header-right">
         <!-- Site Language Switcher (RU / EN) -->
-        <div class="lang-switch-group" title="Выбор языка интерфейса / Select site language">
-          <button class="lang-btn active" id="lang-btn-ru">🇷🇺 RU</button>
-          <button class="lang-btn" id="lang-btn-en">🇬🇧 EN</button>
+        <div class="lang-switch-group" title="Select site language / Выбор языка интерфейса" data-i18n-title="header_lang_switch_title">
+          <button class="lang-btn" id="lang-btn-ru">🇷🇺 RU</button>
+          <button class="lang-btn active" id="lang-btn-en">🇬🇧 EN</button>
         </div>
 
         <!-- User Balance of Orbs -->
-        <div class="currency-pill" id="header-balance-pill" title="Баланс Орбов (1 Орб = 1 USDT)">
+        <div class="currency-pill" id="header-balance-pill" title="Orbs Balance (1 Orb = 1 USDT)" data-i18n-title="header_balance_title">
           <span class="currency-icon">🪙</span>
           <span class="currency-amount" id="header-orbs-count">0.00</span>
-          <button class="currency-add-btn" id="header-topup-btn" title="Пополнить Орбы через USDT">+</button>
+          <button class="currency-add-btn" id="header-topup-btn" title="Deposit Orbs via USDT / BTC" data-i18n-title="header_topup_title">+</button>
         </div>
 
         <!-- User Profile / Login -->
@@ -124,10 +124,10 @@
       <!-- Sub-tabs: Purchased Works vs Deposit History -->
       <div style="display: flex; gap: 10px; margin-bottom: 1.5rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.75rem;">
         <button class="btn btn-secondary btn-small purchases-subtab active" id="subtab-btn-works" onclick="window.app.switchPurchasesSubtab('works')">
-          📚 Приобретённые переводы (<span id="purchases-count-badge">0</span>)
+          <span data-i18n="purchases_subtab_works">📚 Purchased Translations</span> (<span id="purchases-count-badge">0</span>)
         </button>
         <button class="btn btn-secondary btn-small purchases-subtab" id="subtab-btn-deposits" onclick="window.app.switchPurchasesSubtab('deposits')">
-          🪙 История пополнений счёта (<span id="deposits-count-badge">0</span>)
+          <span data-i18n="purchases_subtab_deposits">🪙 Deposit History</span> (<span id="deposits-count-badge">0</span>)
         </button>
       </div>
 
@@ -142,20 +142,20 @@
       <div id="purchases-deposits-view" style="display: none;">
         <div class="modal-card" style="max-width: 100%; box-shadow: var(--shadow-sm);">
           <div class="modal-header" style="justify-content: space-between;">
-            <h3 class="modal-title">🪙 История крипто-пополнений (USDT / BTC)</h3>
-            <button class="btn btn-secondary btn-small" onclick="window.app.renderDepositHistory()">🔄 Обновить историю</button>
+            <h3 class="modal-title" data-i18n="deposits_table_title">🪙 Crypto Deposit History (USDT / BTC)</h3>
+            <button class="btn btn-secondary btn-small" onclick="window.app.renderDepositHistory()" data-i18n="deposits_refresh_btn">🔄 Refresh History</button>
           </div>
           <div class="modal-body" style="padding: 0; overflow-x: auto;">
             <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 0.85rem;">
               <thead>
                 <tr style="border-bottom: 1px solid var(--border-color); background: rgba(255, 255, 255, 0.03); color: var(--text-muted);">
-                  <th style="padding: 0.85rem 1rem;">Дата</th>
-                  <th style="padding: 0.85rem 1rem;">ID Заказа</th>
-                  <th style="padding: 0.85rem 1rem;">Сеть / Валюта</th>
-                  <th style="padding: 0.85rem 1rem;">Сумма перевода</th>
-                  <th style="padding: 0.85rem 1rem;">Зачислено Орбов</th>
-                  <th style="padding: 0.85rem 1rem;">Транзакция в блокчейне</th>
-                  <th style="padding: 0.85rem 1rem;">Статус</th>
+                  <th style="padding: 0.85rem 1rem;" data-i18n="deposits_th_date">Date</th>
+                  <th style="padding: 0.85rem 1rem;" data-i18n="deposits_th_order">Order ID</th>
+                  <th style="padding: 0.85rem 1rem;" data-i18n="deposits_th_network">Network / Currency</th>
+                  <th style="padding: 0.85rem 1rem;" data-i18n="deposits_th_amount">Amount</th>
+                  <th style="padding: 0.85rem 1rem;" data-i18n="deposits_th_orbs">Orbs Credited</th>
+                  <th style="padding: 0.85rem 1rem;" data-i18n="deposits_th_tx">Blockchain Transaction</th>
+                  <th style="padding: 0.85rem 1rem;" data-i18n="deposits_th_status">Status</th>
                 </tr>
               </thead>
               <tbody id="deposits-history-table-body">
@@ -198,11 +198,11 @@
             <!-- Author & Price -->
             <div class="form-grid-2" style="margin-bottom: 1rem;">
               <div>
-                <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;">Автор перевода / Команда</label>
+                <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;" data-i18n="admin_author">Translator / Team</label>
                 <input type="text" id="admin-work-author" class="input-styled" placeholder="Glaive Team">
               </div>
               <div>
-                <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;">Стоимость покупки в Орбах (1 Орб = 1 USDT) *</label>
+                <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;" data-i18n="admin_price">Price in Orbs (1 Orb = 1 USDT) *</label>
                 <input type="number" id="admin-work-price" class="input-styled" min="1" step="0.5" value="1" required>
               </div>
             </div>
@@ -211,21 +211,21 @@
             <div class="form-grid-2" style="margin-bottom: 1rem;">
               <div>
                 <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;">
-                  📄 Всего страниц в работе <span style="color: var(--text-muted); font-size: 0.75rem;">(вычисляется из скрипта)</span>
+                  <span data-i18n="admin_total_pages">📄 Total Pages in Release</span> <span style="color: var(--text-muted); font-size: 0.75rem;" data-i18n="admin_pages_calc">(calculated from script)</span>
                 </label>
                 <div style="padding: 0.65rem 0.9rem; background: rgba(0, 0, 0, 0.35); border: 1px solid var(--border-color); border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: space-between;">
                   <div style="display: flex; align-items: center; gap: 8px;">
                     <span style="font-size: 1.1rem;">📄</span>
                     <strong id="admin-total-pages-display" style="font-size: 1.15rem; color: var(--accent-secondary);">4</strong>
-                    <span style="font-size: 0.8rem; color: var(--text-muted);">страниц определено</span>
+                    <span style="font-size: 0.8rem; color: var(--text-muted);" data-i18n="admin_pages_detected">pages detected</span>
                   </div>
-                  <span class="badge badge-glass" style="font-size: 0.75rem;">Авто</span>
+                  <span class="badge badge-glass" style="font-size: 0.75rem;" data-i18n="admin_badge_auto">Auto</span>
                 </div>
                 <input type="hidden" id="admin-work-total-pages" value="4">
               </div>
               <div>
                 <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;">
-                  Страниц в бесплатном превью: <strong id="admin-preview-val" style="color: var(--accent-secondary);">3</strong>
+                  <span data-i18n="admin_preview_pages">Free Preview Pages:</span> <strong id="admin-preview-val" style="color: var(--accent-secondary);">3</strong>
                 </label>
                 <div style="display: flex; gap: 8px; align-items: center;">
                   <input type="range" id="admin-preview-pages-slider" min="1" max="4" value="3" style="flex: 1; accent-color: var(--accent-secondary);">
@@ -235,21 +235,21 @@
             </div>
 
             <div style="margin-bottom: 1rem;">
-              <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;">Теги / Жанры (через запятую)</label>
-              <input type="text" id="admin-work-tags" class="input-styled" placeholder="Фэнтези, Драма, Манга, Visual Novel">
+              <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;" data-i18n="admin_tags">Tags / Genres (comma-separated)</label>
+              <input type="text" id="admin-work-tags" class="input-styled" placeholder="Fantasy, Drama, Manga, Visual Novel">
             </div>
 
             <!-- Cover Image (Ссылка на обложку работы / превью на витрине) -->
             <div style="margin-bottom: 1.25rem;">
               <label style="font-size: 0.85rem; color: var(--text-secondary); display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                <span>🖼️ Ссылка на обложку работы (URL картинки для превью на витрине)</span>
-                <span style="font-size: 0.75rem; color: var(--text-muted);">Прямая ссылка или выбор файла</span>
+                <span data-i18n="admin_cover_label">🖼️ Cover Image Link (preview URL)</span>
+                <span style="font-size: 0.75rem; color: var(--text-muted);" data-i18n="admin_cover_hint">Direct URL or select file</span>
               </label>
               <div style="display: flex; gap: 10px; align-items: center;">
-                <input type="text" id="admin-work-cover-url" class="input-styled" style="flex: 1;" placeholder="Вставьте ссылку на картинку (https://...) или выберите файл">
+                <input type="text" id="admin-work-cover-url" class="input-styled" style="flex: 1;" placeholder="https://... or select file">
                 <input type="file" id="admin-work-cover-file" accept="image/*" style="display: none;">
-                <button type="button" class="btn btn-secondary btn-small" onclick="document.getElementById('admin-work-cover-file').click()" title="Загрузить изображение с диска">
-                  📁 Выбрать файл
+                <button type="button" class="btn btn-secondary btn-small" onclick="document.getElementById('admin-work-cover-file').click()" title="Select file" data-i18n="admin_cover_pick_btn">
+                  📁 Select File
                 </button>
               </div>
 
@@ -261,15 +261,15 @@
                 </div>
                 <div style="flex: 1; font-size: 0.82rem; color: var(--text-secondary);">
                   <div style="display: flex; align-items: center; gap: 8px;">
-                    <strong>Предпросмотр обложки:</strong>
-                    <span id="admin-cover-status-badge" class="badge badge-glass" style="font-size: 0.75rem;">По умолчанию</span>
+                    <strong data-i18n="admin_cover_preview_title">Cover Preview:</strong>
+                    <span id="admin-cover-status-badge" class="badge badge-glass" style="font-size: 0.75rem;" data-i18n="admin_status_default">Default</span>
                   </div>
-                  <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 3px;" id="admin-cover-hint-text">
-                    Эта иллюстрация отображается на карточке работы в каталоге и в списке покупок.
+                  <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 3px;" id="admin-cover-hint-text" data-i18n="admin_cover_desc_hint">
+                    This image is displayed on the work card in the catalog and purchases list.
                   </div>
                 </div>
-                <button type="button" class="btn btn-secondary btn-small" id="admin-cover-clear-btn" style="display: none; padding: 3px 8px; font-size: 0.75rem;" title="Сбросить на обложку по умолчанию">
-                  ✕ Сбросить
+                <button type="button" class="btn btn-secondary btn-small" id="admin-cover-clear-btn" style="display: none; padding: 3px 8px; font-size: 0.75rem;" title="Reset cover" data-i18n="admin_cover_reset_btn">
+                  ✕ Reset
                 </button>
               </div>
             </div>
@@ -277,34 +277,34 @@
             <!-- Multilingual Descriptions (RU / EN) -->
             <div class="form-grid-2" style="margin-bottom: 1rem;">
               <div>
-                <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;">🇷🇺 Описание работы (русское)</label>
+                <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;" data-i18n="admin_desc_ru">🇷🇺 Description (Russian)</label>
                 <textarea id="admin-work-desc-ru" class="textarea-styled" rows="3" placeholder="Краткое описание сюжета и перевода на русском..."></textarea>
               </div>
               <div>
-                <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;">🇬🇧 Description (English)</label>
+                <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;" data-i18n="admin_desc_en">🇬🇧 Description (English)</label>
                 <textarea id="admin-work-desc-en" class="textarea-styled" rows="3" placeholder="Plot description and translation features in English..."></textarea>
               </div>
             </div>
 
             <!-- Translation Script Upload -->
             <div style="margin-bottom: 1.5rem; background: rgba(0, 0, 0, 0.25); padding: 1rem; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
-              <label style="font-size: 0.9rem; font-weight: 600; display: block; margin-bottom: 6px;">📄 Скрипт перевода (.txt)</label>
+              <label style="font-size: 0.9rem; font-weight: 600; display: block; margin-bottom: 6px;" data-i18n="admin_script_label">📄 Translation Script (.txt)</label>
               <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 8px;">
                 <input type="file" id="admin-script-file" accept=".txt" style="display: none;">
-                <button type="button" class="btn btn-secondary btn-small" onclick="document.getElementById('admin-script-file').click()">
-                  📁 Выбрать .txt файл скрипта
+                <button type="button" class="btn btn-secondary btn-small" onclick="document.getElementById('admin-script-file').click()" data-i18n="admin_script_pick">
+                  📁 Select .txt Script File
                 </button>
-                <span style="font-size: 0.8rem; color: var(--text-muted);">Формат с разметкой 【LANG】 и 【OVERLAY_DATA】</span>
+                <span style="font-size: 0.8rem; color: var(--text-muted);" data-i18n="admin_script_hint">Format with 【LANG】 and 【OVERLAY_DATA】 markers</span>
               </div>
-              <textarea id="admin-script-text" class="textarea-styled" rows="4" placeholder="Или вставьте текст скрипта перевода напрямую сюда..."></textarea>
+              <textarea id="admin-script-text" class="textarea-styled" rows="4" data-i18n-placeholder="admin_script_placeholder" placeholder="Or paste translation script text directly here..."></textarea>
             </div>
 
             <div style="display: flex; justify-content: flex-end; gap: 10px;">
-              <button type="button" class="btn btn-secondary" id="admin-cancel-edit-btn" style="display: none;">
-                ✕ Отмена редактирования
+              <button type="button" class="btn btn-secondary" id="admin-cancel-edit-btn" style="display: none;" data-i18n="admin_btn_cancel">
+                ✕ Cancel Editing
               </button>
-              <button type="submit" class="btn btn-accent btn-large" id="admin-submit-work-btn">
-                ✨ Зарегистрировать работу на сайте
+              <button type="submit" class="btn btn-accent btn-large" id="admin-submit-work-btn" data-i18n="admin_btn_save">
+                ✨ Register Work on Site
               </button>
             </div>
           </form>
@@ -320,12 +320,12 @@
           <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 0.9rem;">
             <thead>
               <tr style="border-bottom: 1px solid var(--border-color); background: rgba(255, 255, 255, 0.03); color: var(--text-muted);">
-                <th style="padding: 0.85rem 1rem;">ID</th>
-                <th style="padding: 0.85rem 1rem;">Название (RU / EN)</th>
-                <th style="padding: 0.85rem 1rem;">Цена</th>
-                <th style="padding: 0.85rem 1rem;">Превью</th>
-                <th style="padding: 0.85rem 1rem;">Статус</th>
-                <th style="padding: 0.85rem 1rem;">Действия</th>
+                <th style="padding: 0.85rem 1rem;" data-i18n="admin_th_id">ID</th>
+                <th style="padding: 0.85rem 1rem;" data-i18n="admin_th_title">Title (RU / EN)</th>
+                <th style="padding: 0.85rem 1rem;" data-i18n="admin_th_price">Price</th>
+                <th style="padding: 0.85rem 1rem;" data-i18n="admin_th_preview">Preview</th>
+                <th style="padding: 0.85rem 1rem;" data-i18n="admin_th_status">Status</th>
+                <th style="padding: 0.85rem 1rem;" data-i18n="admin_th_actions">Actions</th>
               </tr>
             </thead>
             <tbody id="admin-works-table-body">
@@ -342,8 +342,8 @@
         </div>
         <div class="modal-body">
           <form id="admin-xpub-form">
-            <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1rem;">
-              Укажите адреса кошельков для приёма оплаты. Система автоматически подставляет нужный адрес и генерирует валидный QR-код при выборе валюты покупателем.
+            <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1rem;" data-i18n="admin_wallets_desc">
+              Specify wallet addresses for receiving payments. The system automatically selects the address and generates a valid QR code based on user selection.
             </p>
             <div style="display: grid; gap: 0.85rem; margin-bottom: 1rem;">
               <div>
@@ -367,7 +367,7 @@
             </div>
             <div class="form-grid-2" style="margin-bottom: 1rem;">
               <div>
-                <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;">Основная сеть по умолчанию</label>
+                <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;" data-i18n="admin_default_network">Default Network</label>
                 <select id="admin-xpub-network" class="select-styled">
                   <option value="USDT (TRC-20)" selected>USDT (TRC-20) — Tron (TRX)</option>
                   <option value="USDT (Polygon)">USDT (POL) — Polygon</option>
@@ -375,13 +375,13 @@
                 </select>
               </div>
               <div>
-                <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;">Текущий счётчик заказов</label>
+                <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;" data-i18n="admin_order_counter">Current Order Counter</label>
                 <div style="padding: 0.65rem 0.9rem; background: rgba(0, 0, 0, 0.4); border: 1px solid var(--border-color); border-radius: var(--radius-sm); font-weight: 700; color: var(--accent-gold);">
                   #<span id="admin-xpub-order-idx">142</span>
                 </div>
               </div>
             </div>
-            <button type="submit" class="btn btn-secondary">💾 Сохранить адреса кошельков</button>
+            <button type="submit" class="btn btn-secondary" data-i18n="admin_wallets_save_btn">💾 Save Wallet Addresses</button>
           </form>
         </div>
       </div>
@@ -503,23 +503,23 @@
 
           <!-- QR Code Canvas -->
           <div class="invoice-qr-wrap" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;">
-            <canvas id="invoice-qr-canvas" class="invoice-qr-canvas" style="cursor: pointer; border-radius: 8px;" title="Нажмите, чтобы скопировать адрес" onclick="window.app.copyInvoiceAddress()"></canvas>
-            <span style="font-size: 0.72rem; color: var(--text-muted);">📷 Отсканируйте в кошельке (TronLink / Trust Wallet / Binance)</span>
+            <canvas id="invoice-qr-canvas" class="invoice-qr-canvas" style="cursor: pointer; border-radius: 8px;" title="Click to copy address" onclick="window.app.copyInvoiceAddress()"></canvas>
+            <span style="font-size: 0.72rem; color: var(--text-muted);" data-i18n="modal_topup_qr_hint">📷 Scan in wallet (TronLink / Trust Wallet / Binance)</span>
           </div>
 
           <div>
             <label style="font-size: 0.75rem; color: var(--text-muted); display: block;">
-              <span data-i18n="modal_topup_address">Адрес для перевода</span> (<span id="invoice-network">TRC-20</span>):
+              <span data-i18n="modal_topup_address">Deposit Address</span> (<span id="invoice-network">TRC-20</span>):
             </label>
             <div class="copy-input-row">
               <input type="text" id="invoice-address" class="copy-input" readonly value="TA1qqbnwAaGaZuJRyjxvwrLp6Wxy6aEFnW">
-              <button class="btn btn-secondary btn-small" onclick="window.app.copyInvoiceAddress()" title="Скопировать адрес" data-i18n="modal_topup_copy">📋 Копия</button>
+              <button class="btn btn-secondary btn-small" onclick="window.app.copyInvoiceAddress()" title="Copy address" data-i18n="modal_topup_copy">📋 Copy</button>
             </div>
           </div>
 
           <div style="margin-top: 0.75rem; font-size: 0.75rem; color: var(--text-muted); display: flex; justify-content: space-between;">
-            <span><span data-i18n="modal_topup_derivation">Сеть / Метод:</span> <code id="invoice-derivation-path" style="color: var(--accent-secondary);">TRC-20 (Tron Network)</code></span>
-            <span><span data-i18n="modal_topup_time">⏱️ Время на оплату:</span> <strong>30:00</strong></span>
+            <span><span data-i18n="modal_topup_derivation">Network / Method:</span> <code id="invoice-derivation-path" style="color: var(--accent-secondary);">TRC-20 (Tron Network)</code></span>
+            <span><span data-i18n="modal_topup_time">⏱️ Payment Window:</span> <strong>30:00</strong></span>
           </div>
         </div>
 
@@ -527,17 +527,17 @@
           <!-- Status Banner for Live Blockchain Tracking -->
           <div id="blockchain-live-tracker" style="display: flex; align-items: center; justify-content: center; gap: 8px; padding: 0.6rem 0.8rem; background: rgba(59, 130, 246, 0.12); border: 1px solid rgba(59, 130, 246, 0.35); border-radius: var(--radius-sm); font-size: 0.8rem; color: #93c5fd;">
             <span style="width: 8px; height: 8px; border-radius: 50%; background: #38bdf8; display: inline-block; box-shadow: 0 0 8px #38bdf8;"></span>
-            <span id="blockchain-tracker-text">📡 Сканирование блокчейна каждые 12 сек...</span>
+            <span id="blockchain-tracker-text" data-i18n="modal_topup_tracking_text">📡 Scanning blockchain every 12s...</span>
           </div>
 
           <!-- Real Blockchain Check Button -->
-          <button type="button" class="btn btn-accent btn-large" style="width: 100%;" id="check-blockchain-tx-btn" onclick="window.app.checkPaymentInBlockchain()">
-            🔄 Проверить поступление в блокчейне
+          <button type="button" class="btn btn-accent btn-large" style="width: 100%;" id="check-blockchain-tx-btn" onclick="window.app.checkPaymentInBlockchain()" data-i18n="modal_topup_check_btn">
+            🔄 Check Blockchain for Payment
           </button>
 
           <!-- Quick link to history -->
-          <button type="button" class="btn btn-secondary" style="width: 100%; margin-top: 4px;" onclick="window.app.closeAllModals(); window.app.showDepositHistoryModal()">
-            📜 Посмотреть историю моих пополнений
+          <button type="button" class="btn btn-secondary" style="width: 100%; margin-top: 4px;" onclick="window.app.closeAllModals(); window.app.showDepositHistoryModal()" data-i18n="modal_topup_history_btn">
+            📜 View Deposit History
           </button>
         </div>
       </div>
@@ -561,16 +561,16 @@
         <!-- Dropzone -->
         <div class="dropzone" id="archive-dropzone">
           <div class="dropzone-icon">📦</div>
-          <h4 style="margin-bottom: 0.5rem; font-size: 1.1rem;">Перетащите сюда ZIP-архив или папку с графикой</h4>
-          <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 1rem;">
-            Поддерживаются архивы (.zip, .cbz) или папки с оригинальными файлами изображений
+          <h4 style="margin-bottom: 0.5rem; font-size: 1.1rem;" data-i18n="modal_archive_drop">Drop your ZIP archive or graphics folder here</h4>
+          <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 1rem;" data-i18n="modal_archive_sub">
+            Supported archives (.zip, .cbz) or folders with original image files
           </p>
           <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
-            <button type="button" class="btn btn-secondary btn-small" onclick="document.getElementById('archive-file-input').click()">
-              📦 Выбрать ZIP-архив (.zip)
+            <button type="button" class="btn btn-secondary btn-small" onclick="document.getElementById('archive-file-input').click()" data-i18n="modal_archive_pick_zip">
+              📦 Select ZIP Archive (.zip)
             </button>
-            <button type="button" class="btn btn-secondary btn-small" onclick="document.getElementById('archive-folder-input').click()">
-              📂 Выбрать папку с графикой
+            <button type="button" class="btn btn-secondary btn-small" onclick="document.getElementById('archive-folder-input').click()" data-i18n="modal_archive_pick_folder">
+              📂 Select Graphics Folder
             </button>
           </div>
           <input type="file" id="archive-file-input" accept=".zip,.cbz" style="display: none;">

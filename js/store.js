@@ -122,12 +122,17 @@ class Store {
       if (this.data.currentUser && (this.data.currentUser.id === 'usr_77' || !this.data.currentUser.id)) {
         this.data.currentUser = {
           id: 'guest',
-          name: 'Гость',
+          name: 'Guest',
           email: '',
           orbs: 0.0,
           purchasedWorks: []
         };
         this.data.currentRole = 'guest';
+      }
+
+      // По умолчанию для гостей и при отсутствии явного выбора — английский язык
+      if (!localStorage.getItem('orb_preferred_lang') && (!this.data.currentUser || this.data.currentUser.id === 'guest')) {
+        this.data.siteLang = 'en';
       }
 
       this.saveToStorage();
@@ -249,10 +254,10 @@ class Store {
 
   getDefaultInitialData() {
     return {
-      siteLang: 'ru', // 'ru' | 'en'
+      siteLang: 'en', // 'en' | 'ru'
       currentUser: {
         id: 'guest',
-        name: 'Гость',
+        name: 'Guest',
         email: '',
         orbs: 0.0,
         purchasedWorks: []
@@ -435,6 +440,13 @@ The fate of the kingdom is now in your hands.
 
   // Пользователь и Баланс
   getCurrentUser() {
+    if (!this.data.currentUser) {
+      this.data.currentUser = { id: 'guest', name: 'Guest', email: '', orbs: 0.0, purchasedWorks: [] };
+    }
+    if (this.data.currentUser.id === 'guest') {
+      const isEn = (window.i18n ? window.i18n.getLang() : (this.data.siteLang || 'en')) === 'en';
+      this.data.currentUser.name = isEn ? 'Guest' : 'Гость';
+    }
     return this.data.currentUser;
   }
 
@@ -660,10 +672,10 @@ The fate of the kingdom is now in your hands.
           }
         }
         return {
-          id: txInfo.orderId || o.id,
+          id: txInfo.orderId || o.id || 'ORD-LOCAL',
           date: o.date,
-          amountUsdt: Number(txInfo.usdt || o.amount),
-          orbs: Number(o.amount),
+          amountUsdt: Number(txInfo.usdt || o.amount || 0),
+          orbs: Number(o.amount || 0),
           network,
           txHash,
           explorerUrl,
@@ -708,8 +720,8 @@ The fate of the kingdom is now in your hands.
               list.push({
                 id: ord.id,
                 date: ord.completed_at || ord.created_at,
-                amountUsdt: Number(ord.expected_amount || ord.orbs_amount),
-                orbs: Number(ord.orbs_amount),
+                amountUsdt: Number(ord.expected_amount || ord.orbs_amount || 0),
+                orbs: Number(ord.orbs_amount || 0),
                 network,
                 txHash,
                 explorerUrl,

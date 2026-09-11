@@ -110,6 +110,7 @@ class AdminService {
     const statusBadge = document.getElementById('admin-cover-status-badge');
     const hintText = document.getElementById('admin-cover-hint-text');
     const clearBtn = document.getElementById('admin-cover-clear-btn');
+    const isEn = window.i18n && window.i18n.getLang() === 'en';
 
     if (!previewImg) return;
 
@@ -121,15 +122,15 @@ class AdminService {
         if (previewBg) previewBg.style.backgroundImage = 'url("assets/demo/cover-1.svg")';
         if (statusBadge) {
           statusBadge.className = 'badge badge-danger';
-          statusBadge.textContent = 'Ошибка загрузки';
+          statusBadge.textContent = isEn ? 'Load error' : 'Ошибка загрузки';
         }
-        if (hintText) hintText.textContent = 'Не удалось загрузить изображение по указанной ссылке. Проверьте правильность URL.';
+        if (hintText) hintText.textContent = isEn ? 'Failed to load image from URL. Please check the link.' : 'Не удалось загрузить изображение по указанной ссылке. Проверьте правильность URL.';
       };
       if (statusBadge) {
         statusBadge.className = 'badge badge-accent';
-        statusBadge.textContent = url.startsWith('data:') ? 'Локальный файл' : 'Ссылка активна';
+        statusBadge.textContent = url.startsWith('data:') ? (isEn ? 'Local file' : 'Локальный файл') : (isEn ? 'Link active' : 'Ссылка активна');
       }
-      if (hintText) hintText.textContent = 'Изображение масштабировано целиком (object-fit: contain) с атмосферным фоном.';
+      if (hintText) hintText.textContent = isEn ? 'Image scaled completely (object-fit: contain) with ambient backdrop.' : 'Изображение масштабировано целиком (object-fit: contain) с атмосферным фоном.';
       if (clearBtn) clearBtn.style.display = 'inline-flex';
     } else {
       previewImg.src = 'assets/demo/cover-1.svg';
@@ -137,9 +138,9 @@ class AdminService {
       previewImg.onerror = null;
       if (statusBadge) {
         statusBadge.className = 'badge badge-glass';
-        statusBadge.textContent = 'По умолчанию';
+        statusBadge.textContent = isEn ? 'Default' : 'По умолчанию';
       }
-      if (hintText) hintText.textContent = 'Эта иллюстрация отображается на карточке работы в каталоге и в списке покупок.';
+      if (hintText) hintText.textContent = isEn ? 'This image is displayed on the work card in the catalog and purchases.' : 'Эта иллюстрация отображается на карточке работы в каталоге и в списке покупок.';
       if (clearBtn) clearBtn.style.display = 'none';
     }
   }
@@ -213,7 +214,8 @@ class AdminService {
       }
       this.updatePagesFromScript(text);
       const pages = this.calculateTotalPagesFromScript(text);
-      window.app.showToast(`Скрипт "${file.name}" загружен! Определено страниц: ${pages}`, 'success');
+      const isEn = window.i18n && window.i18n.getLang() === 'en';
+      window.app.showToast(isEn ? `Script "${file.name}" uploaded! Pages detected: ${pages}` : `Скрипт "${file.name}" загружен! Определено страниц: ${pages}`, 'success');
     };
     reader.readAsText(file);
   }
@@ -272,15 +274,19 @@ class AdminService {
     if (valBadge && slider) valBadge.textContent = slider.value;
 
     // Переключение визуального состояния формы
-    if (formTitle) formTitle.textContent = `✏️ Редактирование работы: ${titleRu || titleEn}`;
-    if (submitBtn) submitBtn.textContent = '💾 Сохранить изменения работы';
-    if (cancelBtn) cancelBtn.style.display = 'inline-flex';
+    const isEn = window.i18n && window.i18n.getLang() === 'en';
+    if (formTitle) formTitle.textContent = isEn ? `✏️ Edit work: ${titleRu || titleEn}` : `✏️ Редактирование работы: ${titleRu || titleEn}`;
+    if (submitBtn) submitBtn.textContent = isEn ? '💾 Save work changes' : '💾 Сохранить изменения работы';
+    if (cancelBtn) {
+      cancelBtn.style.display = 'inline-flex';
+      cancelBtn.textContent = isEn ? '✕ Cancel editing' : '✕ Отмена редактирования';
+    }
     if (formCard) {
       formCard.style.borderColor = 'var(--accent-secondary)';
       formCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
 
-    window.app.showToast(`Редактирование: "${titleRu || titleEn}"`, 'info');
+    window.app.showToast(isEn ? `Editing: "${titleRu || titleEn}"` : `Редактирование: "${titleRu || titleEn}"`, 'info');
   }
 
   cancelEdit() {
@@ -309,12 +315,13 @@ class AdminService {
     if (valBadge) valBadge.textContent = 3;
 
     const formCard = document.getElementById('admin-work-form-card');
+    const isEn = window.i18n && window.i18n.getLang() === 'en';
     const formTitle = document.getElementById('admin-form-card-title');
     const submitBtn = document.getElementById('admin-submit-work-btn');
     const cancelBtn = document.getElementById('admin-cancel-edit-btn');
 
-    if (formTitle) formTitle.textContent = '➕ Регистрация новой работы';
-    if (submitBtn) submitBtn.textContent = '✨ Зарегистрировать работу на сайте';
+    if (formTitle) formTitle.textContent = isEn ? '➕ Register New Translation' : '➕ Регистрация новой работы';
+    if (submitBtn) submitBtn.textContent = isEn ? '✨ Register Work on Site' : '✨ Зарегистрировать работу на сайте';
     if (cancelBtn) cancelBtn.style.display = 'none';
     if (formCard) formCard.style.borderColor = 'var(--border-color)';
   }
@@ -332,16 +339,17 @@ class AdminService {
     const coverUrlInput = document.getElementById('admin-work-cover-url');
     const coverUrl = coverUrlInput ? coverUrlInput.value.trim() : '';
     const sampleScriptText = document.getElementById('admin-script-text').value.trim();
+    const isEn = window.i18n && window.i18n.getLang() === 'en';
 
     if (!titleRu && !titleEn) {
-      window.app.showToast('Введите название работы хотя бы на одном языке', 'error');
+      window.app.showToast(isEn ? 'Enter work title in at least one language' : 'Введите название работы хотя бы на одном языке', 'error');
       return;
     }
 
     // Вычисляем число страниц непосредственно из скрипта
     const totalPages = this.calculateTotalPagesFromScript(sampleScriptText);
     const previewPagesCount = Number(document.getElementById('admin-preview-pages-num').value) || 3;
-    const tags = tagsRaw ? tagsRaw.split(',').map(t => t.trim()).filter(Boolean) : ['Перевод'];
+    const tags = tagsRaw ? tagsRaw.split(',').map(t => t.trim()).filter(Boolean) : [isEn ? 'Translation' : 'Перевод'];
 
     const payload = {
       title: {
@@ -352,7 +360,7 @@ class AdminService {
         ru: descRu || descEn,
         en: descEn || descRu
       },
-      author: author || 'Администратор',
+      author: author || (isEn ? 'Administrator' : 'Администратор'),
       price: Math.max(1, price),
       totalPages: Math.max(1, totalPages),
       previewPagesCount: Math.min(totalPages, Math.max(1, previewPagesCount)),
@@ -364,12 +372,12 @@ class AdminService {
     if (this.editingWorkId) {
       // Обновление существующей работы
       const updated = this.store.updateWork(this.editingWorkId, payload);
-      window.app.showToast(`Изменения в работе "${payload.title.ru}" надежно сохранены!`, 'success');
+      window.app.showToast(isEn ? `Changes in work "${payload.title.ru}" successfully saved!` : `Изменения в работе "${payload.title.ru}" надежно сохранены!`, 'success');
       this.cancelEdit();
     } else {
       // Добавление новой работы
       const newWork = this.store.addWork(payload);
-      window.app.showToast(`Работа "${newWork.title.ru}" успешно зарегистрирована! (страниц: ${totalPages})`, 'success');
+      window.app.showToast(isEn ? `Work "${newWork.title.ru}" successfully registered! (pages: ${totalPages})` : `Работа "${newWork.title.ru}" успешно зарегистрирована! (страниц: ${totalPages})`, 'success');
       this.cancelEdit();
     }
 
@@ -384,8 +392,10 @@ class AdminService {
     const works = this.store.getWorks();
     tableBody.innerHTML = '';
 
+    const isEn = window.i18n && window.i18n.getLang() === 'en';
+
     if (works.length === 0) {
-      tableBody.innerHTML = `<tr><td colspan="6" class="text-center" style="padding: 2rem; color: var(--text-muted);">Работ пока нет. Зарегистрируйте первую работу в форме выше.</td></tr>`;
+      tableBody.innerHTML = `<tr><td colspan="6" class="text-center" style="padding: 2rem; color: var(--text-muted);">${isEn ? 'No works yet. Register the first work in the form above.' : 'Работ пока нет. Зарегистрируйте первую работу в форме выше.'}</td></tr>`;
       return;
     }
 
@@ -395,8 +405,10 @@ class AdminService {
 
       const tr = document.createElement('tr');
       tr.style.borderBottom = '1px solid var(--border-color)';
+      tr.style.transition = 'background 0.2s ease';
+
       tr.innerHTML = `
-        <td style="padding: 0.85rem 1rem;"><strong>#${index + 1}</strong></td>
+        <td style="padding: 0.85rem 1rem; font-weight: 600; font-family: monospace; color: var(--accent-secondary);">${w.id}</td>
         <td style="padding: 0.85rem 1rem;">
           <div style="display: flex; align-items: center; gap: 12px;">
             <div style="width: 48px; height: 48px; border-radius: 6px; overflow: hidden; background: #070a13; border: 1px solid var(--border-color); flex-shrink: 0; display: flex; align-items: center; justify-content: center; position: relative;">
@@ -411,19 +423,19 @@ class AdminService {
           </div>
         </td>
         <td style="padding: 0.85rem 1rem;">
-          <span class="badge badge-accent">${w.price} Орб (${w.price} USDT)</span>
+          <span class="badge badge-accent">${w.price} ${isEn ? 'Orbs' : 'Орб'} (${w.price} USDT)</span>
         </td>
         <td style="padding: 0.85rem 1rem;">
-          <span class="badge badge-info">${w.previewPagesCount} из ${w.totalPages} стр.</span>
+          <span class="badge badge-info">${isEn ? `${w.previewPagesCount} of ${w.totalPages} pages` : `${w.previewPagesCount} из ${w.totalPages} стр.`}</span>
         </td>
         <td style="padding: 0.85rem 1rem;">
-          <span style="font-size: 0.8rem; color: var(--text-secondary);">${w.updatedAt ? `Обн. ${w.updatedAt}` : (w.createdAt || 'Недавно')}</span>
+          <span style="font-size: 0.8rem; color: var(--text-secondary);">${w.updatedAt ? `${isEn ? 'Upd.' : 'Обн.'} ${w.updatedAt}` : (w.createdAt || (isEn ? 'Recently' : 'Недавно'))}</span>
         </td>
         <td style="padding: 0.85rem 1rem;">
           <div style="display: flex; gap: 6px; align-items: center;">
-            <button class="btn btn-small btn-secondary" onclick="window.admin.editWork('${w.id}')" title="Редактировать работу">✏️ Правка</button>
-            <button class="btn btn-small btn-secondary" onclick="window.reader.openPreview('${w.id}')" title="Проверить превью">👁️ Превью</button>
-            <button class="btn btn-small btn-danger" onclick="window.admin.handleDeleteWork('${w.id}')" title="Удалить">🗑️</button>
+            <button class="btn btn-small btn-secondary" onclick="window.admin.editWork('${w.id}')" title="${isEn ? 'Edit release' : 'Редактировать работу'}">${isEn ? '✏️ Edit' : '✏️ Правка'}</button>
+            <button class="btn btn-small btn-secondary" onclick="window.reader.openPreview('${w.id}')" title="${isEn ? 'Preview' : 'Проверить превью'}">${isEn ? '👁️ Preview' : '👁️ Превью'}</button>
+            <button class="btn btn-small btn-danger" onclick="window.admin.handleDeleteWork('${w.id}')" title="${isEn ? 'Delete' : 'Удалить'}">🗑️</button>
           </div>
         </td>
       `;

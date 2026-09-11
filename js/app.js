@@ -94,7 +94,8 @@ class App {
     if (['storefront', 'purchases', 'admin'].includes(hash)) {
       if (hash === 'admin' && !window.auth.isAdmin()) {
         this.switchTab('storefront');
-        this.showToast(window.i18n ? window.i18n.t('section_admin_sub') : 'Доступно только в роли Администратора', 'warning');
+        const isEn = window.i18n && window.i18n.getLang() === 'en';
+        this.showToast(isEn ? 'Admin panel is available for Administrators only' : 'Панель администратора доступна только Администраторам', 'warning');
       } else {
         this.switchTab(hash);
       }
@@ -103,7 +104,8 @@ class App {
 
   switchTab(tabName) {
     if (tabName === 'admin' && !window.auth.isAdmin()) {
-      this.showToast('Панель администратора доступна только Администраторам', 'error');
+      const isEn = window.i18n && window.i18n.getLang() === 'en';
+      this.showToast(isEn ? 'Admin panel is available for Administrators only' : 'Панель администратора доступна только Администраторам', 'error');
       return;
     }
 
@@ -147,7 +149,8 @@ class App {
 
   async handleLogout() {
     await window.auth.logout();
-    this.showToast('Вы вышли из системы', 'info');
+    const isEn = window.i18n && window.i18n.getLang() === 'en';
+    this.showToast(isEn ? 'Signed out successfully' : 'Вы вышли из системы', 'info');
     this.switchTab('storefront');
     this.renderUserHeader();
     this.renderStorefront();
@@ -176,27 +179,34 @@ class App {
     }
 
     if (userAuthBlock) {
+      const isEn = window.i18n && window.i18n.getLang() === 'en';
       if (isGuest) {
-        const loginText = window.i18n ? window.i18n.t('btn_login') : '🔑 Войти';
+        const loginText = window.i18n ? window.i18n.t('btn_login') : (isEn ? '🔑 Sign In' : '🔑 Войти');
         userAuthBlock.innerHTML = `
           <button class="btn btn-secondary btn-small" onclick="window.app.showAuthModal('login')">${loginText}</button>
         `;
       } else {
         const displayName = isAdmin ? 'GraveAdmin' : (user.name || user.email.split('@')[0]);
+        const historyText = window.i18n ? window.i18n.t('header_history_btn') : (isEn ? '📜 History' : '📜 История');
+        const historyTitle = window.i18n ? window.i18n.t('header_history_title') : (isEn ? 'Deposit and transaction history' : 'История пополнений баланса');
+        const logoutText = window.i18n ? window.i18n.t('header_logout_btn') : (isEn ? '🚪 Sign Out' : '🚪 Выйти');
+        const logoutTitle = window.i18n ? window.i18n.t('header_logout_title') : (isEn ? 'Sign out of your account' : 'Выйти из аккаунта');
+        const userTitle = user.email || (isEn ? 'User' : 'Пользователь');
+
         userAuthBlock.innerHTML = `
           <div style="display: flex; align-items: center; gap: 8px;">
-            <div class="user-badge" title="${user.email || 'Пользователь'}">
+            <div class="user-badge" title="${userTitle}">
               <div class="user-avatar" style="${isAdmin ? 'background: var(--gold-gradient); color: #000; font-size: 0.9rem;' : ''}">
                 ${isAdmin ? '👑' : (displayName || 'U')[0].toUpperCase()}
               </div>
               <span class="user-name">${displayName.split(' ')[0]}</span>
               ${isAdmin ? '<span class="badge badge-gold" style="font-size: 0.65rem; padding: 2px 6px;">Admin</span>' : ''}
             </div>
-            <button class="btn btn-secondary btn-small" onclick="window.app.showDepositHistoryModal()" title="История пополнений баланса">
-              📜 История
+            <button class="btn btn-secondary btn-small" onclick="window.app.showDepositHistoryModal()" title="${historyTitle}">
+              ${historyText}
             </button>
-            <button class="btn btn-secondary btn-small" onclick="window.app.handleLogout()" title="Выйти из аккаунта">
-              🚪 Выйти
+            <button class="btn btn-secondary btn-small" onclick="window.app.handleLogout()" title="${logoutTitle}">
+              ${logoutText}
             </button>
           </div>
         `;
@@ -213,9 +223,10 @@ class App {
 
     const works = window.store.getWorks();
     const isGuest = window.auth.isGuest();
+    const isEn = window.i18n && window.i18n.getLang() === 'en';
 
     if (works.length === 0) {
-      container.innerHTML = `<div class="empty-state"><h3>Каталог пуст</h3><p>Администратор еще не добавил ни одной работы.</p></div>`;
+      container.innerHTML = `<div class="empty-state"><h3>${isEn ? 'Catalog is empty' : 'Каталог пуст'}</h3><p>${isEn ? 'The administrator has not added any works yet.' : 'Администратор еще не добавил ни одной работы.'}</p></div>`;
       return;
     }
 
@@ -224,12 +235,13 @@ class App {
       const title = window.i18n ? window.i18n.getWorkTitle(work) : (work.title.ru || work.title);
       const desc = window.i18n ? window.i18n.getWorkDesc(work) : (work.description.ru || work.description);
 
-      const previewBtnTxt = window.i18n ? window.i18n.t('card_btn_preview') : '👁️ Превью';
-      const readBtnTxt = window.i18n ? window.i18n.t('card_btn_read') : '📖 Читать перевод';
-      const buyBtnTxt = window.i18n ? `${window.i18n.t('card_btn_buy')} ${work.price} Орб` : `⚡ Купить за ${work.price} Орб`;
-      const loginBuyTxt = window.i18n ? window.i18n.t('card_btn_login_to_buy') : '🔑 Войти для покупки';
-      const freePagesTxt = window.i18n ? `${work.previewPagesCount} ${window.i18n.t('card_preview_free')}` : `${work.previewPagesCount} стр. бесплатно`;
-      const totalTxt = window.i18n ? `${window.i18n.t('card_total_pages')} ${work.totalPages}` : `Всего: ${work.totalPages} стр.`;
+      const orbTxt = isEn ? 'Orbs' : 'Орб';
+      const previewBtnTxt = window.i18n ? window.i18n.t('card_btn_preview') : (isEn ? '👁️ Preview' : '👁️ Превью');
+      const readBtnTxt = window.i18n ? window.i18n.t('card_btn_read') : (isEn ? '📖 Read Translation' : '📖 Читать перевод');
+      const buyBtnTxt = window.i18n ? `${window.i18n.t('card_btn_buy')} ${work.price} ${orbTxt}` : `⚡ ${isEn ? 'Buy for' : 'Купить за'} ${work.price} ${orbTxt}`;
+      const loginBuyTxt = window.i18n ? window.i18n.t('card_btn_login_to_buy') : (isEn ? '🔑 Sign In to Buy' : '🔑 Войти для покупки');
+      const freePagesTxt = window.i18n ? `${work.previewPagesCount} ${window.i18n.t('card_preview_free')}` : `${work.previewPagesCount} ${isEn ? 'pages free' : 'стр. бесплатно'}`;
+      const totalTxt = window.i18n ? `${window.i18n.t('card_total_pages')} ${work.totalPages}` : `${isEn ? 'Total:' : 'Всего:'} ${work.totalPages} ${isEn ? 'pages' : 'стр.'}`;
 
       return `
         <article class="work-card">
@@ -237,7 +249,7 @@ class App {
             <div class="work-cover-backdrop" style="background-image: url('${work.coverUrl || 'assets/demo/cover-1.svg'}');"></div>
             <img src="${work.coverUrl || 'assets/demo/cover-1.svg'}" alt="${title}" class="work-cover-img" onerror="this.src='assets/demo/cover-1.svg'; if(this.previousElementSibling) this.previousElementSibling.style.backgroundImage='url(assets/demo/cover-1.svg)';">
             <div class="work-badge-overlay">
-              <span class="badge badge-accent">💎 ${work.price} Орб ($${work.price})</span>
+              <span class="badge badge-accent">💎 ${work.price} ${orbTxt} ($${work.price})</span>
               <span class="badge badge-glass">👁️ ${freePagesTxt}</span>
             </div>
           </div>
@@ -283,14 +295,15 @@ class App {
     const worksBadge = document.getElementById('purchases-count-badge');
     if (!container) return;
 
+    const isEn = window.i18n && window.i18n.getLang() === 'en';
     const isGuest = window.auth.isGuest();
     if (isGuest) {
       container.innerHTML = `
         <div class="empty-state" style="grid-column: 1 / -1; padding: 4rem 1rem; text-align: center;">
           <div style="font-size: 3rem; margin-bottom: 1rem;">🔒</div>
-          <h3>Войдите в аккаунт</h3>
-          <p style="color: var(--text-muted); margin-bottom: 1.25rem;">Чтобы просматривать купленные работы и историю пополнений, выполните вход.</p>
-          <button class="btn btn-accent btn-large" onclick="window.app.showAuthModal('login')">🔑 Войти / Зарегистрироваться</button>
+          <h3>${isEn ? 'Sign In to Your Account' : 'Войдите в аккаунт'}</h3>
+          <p style="color: var(--text-muted); margin-bottom: 1.25rem;">${isEn ? 'Please sign in to view your unlocked translations and deposit history.' : 'Чтобы просматривать купленные работы и историю пополнений, выполните вход.'}</p>
+          <button class="btn btn-accent btn-large" onclick="window.app.showAuthModal('login')">${isEn ? '🔑 Sign In / Register' : '🔑 Войти / Зарегистрироваться'}</button>
         </div>
       `;
       return;
@@ -350,10 +363,12 @@ class App {
     const badge = document.getElementById('deposits-count-badge');
     if (!tbody) return;
 
+    const isEn = window.i18n && window.i18n.getLang() === 'en';
+
     tbody.innerHTML = `
       <tr>
         <td colspan="7" style="padding: 2rem; text-align: center; color: var(--text-muted);">
-          ⏳ Загрузка истории транзакций...
+          ${isEn ? '⏳ Loading transaction history...' : '⏳ Загрузка истории транзакций...'}
         </td>
       </tr>
     `;
@@ -366,7 +381,7 @@ class App {
         tbody.innerHTML = `
           <tr>
             <td colspan="7" style="padding: 2.5rem 1rem; text-align: center; color: var(--text-muted);">
-              🪙 История пополнений пока пуста. Пополните баланс через кнопку «+» возле баланса.
+              ${isEn ? '🪙 Deposit history is currently empty. Top up your balance using the "+" button next to your balance.' : '🪙 История пополнений пока пуста. Пополните баланс через кнопку «+» возле баланса.'}
             </td>
           </tr>
         `;
@@ -374,15 +389,17 @@ class App {
       }
 
       tbody.innerHTML = history.map(item => {
-        const dateFormatted = item.date ? new Date(item.date).toLocaleString() : '—';
+        const locale = isEn ? 'en-US' : 'ru-RU';
+        const dateFormatted = item.date ? new Date(item.date).toLocaleString(locale) : '—';
         const isBtc = (item.network || '').includes('BTC');
         const networkBadgeClass = isBtc ? 'badge-gold' : (item.network || '').includes('Polygon') ? 'badge-accent' : 'badge-info';
 
         let txHashCell = '<span style="color: var(--text-muted);">—</span>';
         if (item.txHash) {
           const shortHash = item.txHash.length > 16 ? `${item.txHash.slice(0, 8)}...${item.txHash.slice(-6)}` : item.txHash;
+          const expTitle = isEn ? 'Open in blockchain explorer' : 'Открыть в блокчейн-эксплорере';
           if (item.explorerUrl) {
-            txHashCell = `<a href="${item.explorerUrl}" target="_blank" rel="noopener noreferrer" style="color: #60a5fa; text-decoration: none; font-family: monospace; display: inline-flex; align-items: center; gap: 4px;" title="Открыть в блокчейн-эксплорере">
+            txHashCell = `<a href="${item.explorerUrl}" target="_blank" rel="noopener noreferrer" style="color: #60a5fa; text-decoration: none; font-family: monospace; display: inline-flex; align-items: center; gap: 4px;" title="${expTitle}">
               ${shortHash} ↗
             </a>`;
           } else {
@@ -392,16 +409,19 @@ class App {
 
         const isCompleted = item.status === 'completed';
         const statusBadge = isCompleted
-          ? `<span class="badge badge-success">✅ Завершено</span>`
-          : `<span class="badge badge-warning">⏳ Ожидание</span>`;
+          ? `<span class="badge badge-success">${isEn ? '✅ Completed' : '✅ Завершено'}</span>`
+          : `<span class="badge badge-warning">${isEn ? '⏳ Pending' : '⏳ Ожидание'}</span>`;
+
+        const orbsVal = Number(item.orbs || 0);
+        const amountVal = Number(item.amountUsdt || 0);
 
         return `
           <tr style="border-bottom: 1px solid var(--border-color); transition: background 0.2s ease;">
             <td style="padding: 0.85rem 1rem; color: var(--text-secondary);">${dateFormatted}</td>
             <td style="padding: 0.85rem 1rem; font-weight: 600; font-family: monospace; color: #fff;">${item.id || '—'}</td>
             <td style="padding: 0.85rem 1rem;"><span class="badge ${networkBadgeClass}">${item.network || 'USDT'}</span></td>
-            <td style="padding: 0.85rem 1rem; font-weight: 600;">${item.amountUsdt} ${isBtc ? 'BTC' : 'USDT'}</td>
-            <td style="padding: 0.85rem 1rem; color: #fbbf24; font-weight: 700;">+${item.orbs.toFixed(2)} 🪙</td>
+            <td style="padding: 0.85rem 1rem; font-weight: 600;">${amountVal} ${isBtc ? 'BTC' : 'USDT'}</td>
+            <td style="padding: 0.85rem 1rem; color: #fbbf24; font-weight: 700;">+${orbsVal.toFixed(2)} 🪙</td>
             <td style="padding: 0.85rem 1rem;">${txHashCell}</td>
             <td style="padding: 0.85rem 1rem;">${statusBadge}</td>
           </tr>
@@ -412,7 +432,7 @@ class App {
       tbody.innerHTML = `
         <tr>
           <td colspan="7" style="padding: 1.5rem; text-align: center; color: var(--accent-danger);">
-            Не удалось загрузить историю транзакций
+            ${isEn ? 'Failed to load transaction history' : 'Не удалось загрузить историю транзакций'}
           </td>
         </tr>
       `;
@@ -460,7 +480,8 @@ class App {
     const title = window.i18n ? window.i18n.getWorkTitle(work) : work.title;
 
     if (result.success) {
-      this.showToast(`Успешно! Вы приобрели перевод "${title}"`, 'success');
+      const isEn = window.i18n && window.i18n.getLang() === 'en';
+      this.showToast(isEn ? `Success! You unlocked "${title}"` : `Успешно! Вы приобрели перевод "${title}"`, 'success');
       this.renderUserHeader();
       this.renderStorefront();
 
@@ -481,18 +502,19 @@ class App {
     const modalBody = document.getElementById('generic-modal-body');
     const title = window.i18n ? window.i18n.getWorkTitle(work) : work.title;
 
-    modalTitle.textContent = window.i18n && window.i18n.getLang() === 'en' ? 'Insufficient Orbs' : 'Недостаточно Орбов';
+    const isEn = window.i18n && window.i18n.getLang() === 'en';
+    modalTitle.textContent = isEn ? 'Insufficient Orbs' : 'Недостаточно Орбов';
     modalBody.innerHTML = `
       <div style="text-align: center; padding: 1rem 0;">
         <div style="font-size: 3rem; margin-bottom: 0.5rem;">🪙</div>
-        <p>${window.i18n && window.i18n.getLang() === 'en' ? `To purchase translation <strong>"${title}"</strong>, you need <strong>${work.price} Orb</strong>.` : `Для покупки перевода <strong>"${title}"</strong> необходимо <strong>${work.price} Орб</strong>.`}</p>
+        <p>${isEn ? `To purchase translation <strong>"${title}"</strong>, you need <strong>${work.price} Orbs</strong>.` : `Для покупки перевода <strong>"${title}"</strong> необходимо <strong>${work.price} Орб</strong>.`}</p>
         <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.5rem;">
-          ${window.i18n && window.i18n.getLang() === 'en' ? 'Missing balance:' : 'Вам не хватает:'} <span style="color: var(--accent-gold); font-weight: 700;">${needOrbs} Орб (${needOrbs} USDT)</span>
+          ${isEn ? 'Missing balance:' : 'Вам не хватает:'} <span style="color: var(--accent-gold); font-weight: 700;">${needOrbs} ${isEn ? 'Orbs' : 'Орб'} (${needOrbs} USDT)</span>
         </p>
         <div style="margin-top: 1.5rem; display: flex; gap: 8px; justify-content: center;">
-          <button class="btn btn-secondary" onclick="window.app.closeAllModals()">${window.i18n && window.i18n.getLang() === 'en' ? 'Cancel' : 'Отмена'}</button>
+          <button class="btn btn-secondary" onclick="window.app.closeAllModals()">${isEn ? 'Cancel' : 'Отмена'}</button>
           <button class="btn btn-accent" onclick="window.app.closeAllModals(); window.app.showTopupModal(${needOrbs})">
-            ${window.i18n && window.i18n.getLang() === 'en' ? '➕ Deposit Balance' : '➕ Пополнить баланс'}
+            ${isEn ? '➕ Deposit Balance' : '➕ Пополнить баланс'}
           </button>
         </div>
       </div>
@@ -603,11 +625,12 @@ class App {
     const modal = document.getElementById('generic-modal');
     const modalTitle = document.getElementById('generic-modal-title');
     const modalBody = document.getElementById('generic-modal-body');
+    const isEn = window.i18n && window.i18n.getLang() === 'en';
 
-    modalTitle.textContent = '🌐 Выберите язык перевода';
+    modalTitle.textContent = isEn ? '🌐 Select Translation Language' : '🌐 Выберите язык перевода';
     modalBody.innerHTML = `
       <p style="margin-bottom: 1rem; color: var(--text-secondary);">
-        В скрипте перевода обнаружено несколько доступных языковых локализаций. Выберите желаемый язык для чтения:
+        ${isEn ? 'Multiple translation languages found in this script. Choose your preferred language to read:' : 'В скрипте перевода обнаружено несколько доступных языковых локализаций. Выберите желаемый язык для чтения:'}
       </p>
       <div style="display: flex; flex-direction: column; gap: 8px;">
         ${languages.map(lang => `
@@ -637,25 +660,28 @@ class App {
     const modal = document.getElementById('generic-modal');
     const modalTitle = document.getElementById('generic-modal-title');
     const modalBody = document.getElementById('generic-modal-body');
-
-    modalTitle.textContent = tab === 'login' ? '🔑 Вход в аккаунт' : '✨ Регистрация аккаунта';
+    const isEn = window.i18n && window.i18n.getLang() === 'en';
 
     const isLogin = tab === 'login';
+    modalTitle.textContent = isLogin 
+      ? (isEn ? '🔑 Sign In to Account' : '🔑 Вход в аккаунт') 
+      : (isEn ? '✨ Create an Account' : '✨ Регистрация аккаунта');
+
     modalBody.innerHTML = `
       <div style="display: flex; gap: 8px; margin-bottom: 1.25rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.75rem;">
         <button type="button" class="btn ${isLogin ? 'btn-accent' : 'btn-secondary'} btn-small" style="flex: 1;" onclick="window.app.showAuthModal('login')">
-          🔑 Вход
+          ${isEn ? '🔑 Sign In' : '🔑 Вход'}
         </button>
         <button type="button" class="btn ${!isLogin ? 'btn-accent' : 'btn-secondary'} btn-small" style="flex: 1;" onclick="window.app.showAuthModal('register')">
-          ✨ Регистрация
+          ${isEn ? '✨ Register' : '✨ Регистрация'}
         </button>
       </div>
 
       <form onsubmit="event.preventDefault(); window.app.handleAuthSubmit(event, '${tab}')">
         ${!isLogin ? `
           <div class="form-group" style="margin-bottom: 0.85rem;">
-            <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;">Ваше имя / Никнейм</label>
-            <input type="text" id="auth-name-input" class="input-styled" required placeholder="Например: Иван">
+            <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;">${isEn ? 'Your Name / Nickname' : 'Ваше имя / Никнейм'}</label>
+            <input type="text" id="auth-name-input" class="input-styled" required placeholder="${isEn ? 'e.g. John' : 'Например: Иван'}">
           </div>
         ` : ''}
         <div class="form-group" style="margin-bottom: 0.85rem;">
@@ -663,22 +689,22 @@ class App {
           <input type="email" id="auth-email-input" class="input-styled" required placeholder="name@example.com" value="${isLogin ? 'ismayilovelchin1984@gmail.com' : ''}">
         </div>
         <div class="form-group" style="margin-bottom: 0.5rem;">
-          <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;">Пароль</label>
-          <input type="password" id="auth-password-input" class="input-styled" required minlength="6" placeholder="Минимум 6 символов" value="${isLogin ? 'ZlY263ws31Th5FMZ' : ''}">
+          <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;">${isEn ? 'Password' : 'Пароль'}</label>
+          <input type="password" id="auth-password-input" class="input-styled" required minlength="6" placeholder="${isEn ? 'At least 6 characters' : 'Минимум 6 символов'}" value="${isLogin ? 'ZlY263ws31Th5FMZ' : ''}">
         </div>
         ${isLogin ? `
           <div style="display: flex; justify-content: flex-end; margin-bottom: 1.25rem;">
             <a href="#" onclick="event.preventDefault(); window.app.showForgotPasswordModal()" style="font-size: 0.8rem; color: var(--accent-secondary); text-decoration: none; cursor: pointer;">
-              ❓ Забыли пароль?
+              ${isEn ? '❓ Forgot Password?' : '❓ Забыли пароль?'}
             </a>
           </div>
         ` : `<div style="margin-bottom: 1.25rem;"></div>`}
         <div style="display: flex; gap: 8px; flex-direction: column;">
           <button type="submit" class="btn btn-accent btn-large" style="width: 100%;" id="auth-submit-btn">
-            ${isLogin ? '⚡ Войти в аккаунт' : '✨ Зарегистрироваться'}
+            ${isLogin ? (isEn ? '⚡ Sign In' : '⚡ Войти в аккаунт') : (isEn ? '✨ Register Account' : '✨ Зарегистрироваться')}
           </button>
           <button type="button" class="btn btn-secondary" style="width: 100%; opacity: 0.8;" onclick="window.app.closeAllModals()">
-            ✕ Отмена
+            ${isEn ? '✕ Cancel' : '✕ Отмена'}
           </button>
         </div>
       </form>
@@ -689,6 +715,7 @@ class App {
   }
 
   async handleAuthSubmit(e, mode = 'login') {
+    const isEn = window.i18n && window.i18n.getLang() === 'en';
     const email = document.getElementById('auth-email-input')?.value.trim();
     const password = document.getElementById('auth-password-input')?.value;
     const nameInput = document.getElementById('auth-name-input');
@@ -696,13 +723,13 @@ class App {
     const submitBtn = document.getElementById('auth-submit-btn');
 
     if (!email || !password) {
-      this.showToast('Заполните все обязательные поля', 'warning');
+      this.showToast(isEn ? 'Please fill in all required fields' : 'Заполните все обязательные поля', 'warning');
       return;
     }
 
     if (submitBtn) {
       submitBtn.disabled = true;
-      submitBtn.textContent = '⏳ Авторизация в Supabase...';
+      submitBtn.textContent = isEn ? '⏳ Authenticating...' : '⏳ Авторизация в Supabase...';
     }
 
     try {
@@ -710,29 +737,29 @@ class App {
         await window.auth.signInSupabase(email, password);
         const isAdmin = window.auth.isAdmin();
         const user = window.auth.getUser();
-        this.showToast(`С возвращением, ${user.name || email}! ${isAdmin ? '👑 (Режим Администратора)' : ''}`, 'success');
+        this.showToast(isEn ? `Welcome back, ${user.name || email}! ${isAdmin ? '👑 (Administrator Mode)' : ''}` : `С возвращением, ${user.name || email}! ${isAdmin ? '👑 (Режим Администратора)' : ''}`, 'success');
       } else {
         await window.auth.signUpSupabase(email, password, name);
-        this.showToast(`Регистрация успешна! Добро пожаловать, ${name || email}!`, 'success');
+        this.showToast(isEn ? `Registration successful! Welcome, ${name || email}!` : `Регистрация успешна! Добро пожаловать, ${name || email}!`, 'success');
       }
       this.closeAllModals();
       this.renderUserHeader();
       this.renderStorefront();
       this.handleRoleVisibility(window.auth.getRole());
     } catch (err) {
-      console.warn('Ошибка авторизации:', err);
+      console.warn('Auth error:', err);
       if (submitBtn) {
         submitBtn.disabled = false;
-        submitBtn.textContent = mode === 'login' ? '⚡ Войти в аккаунт' : '✨ Зарегистрироваться';
+        submitBtn.textContent = mode === 'login' ? (isEn ? '⚡ Sign In' : '⚡ Войти в аккаунт') : (isEn ? '✨ Register Account' : '✨ Зарегистрироваться');
       }
       const msg = err.message || '';
       if (msg.includes('Invalid login credentials')) {
-        this.showToast('Неверный email или пароль', 'error');
+        this.showToast(isEn ? 'Invalid email or password' : 'Неверный email или пароль', 'error');
       } else if (msg.includes('User already registered')) {
-        this.showToast('Пользователь с таким email уже зарегистрирован. Переключитесь на вкладку «Вход».', 'warning');
+        this.showToast(isEn ? 'User already registered. Please sign in.' : 'Пользователь с таким email уже зарегистрирован. Переключитесь на вкладку «Вход».', 'warning');
         this.showAuthModal('login');
       } else {
-        this.showToast(msg || 'Ошибка авторизации', 'error');
+        this.showToast(msg || (isEn ? 'Authentication error' : 'Ошибка авторизации'), 'error');
       }
     }
   }
@@ -744,23 +771,24 @@ class App {
     const modal = document.getElementById('generic-modal');
     const modalTitle = document.getElementById('generic-modal-title');
     const modalBody = document.getElementById('generic-modal-body');
+    const isEn = window.i18n && window.i18n.getLang() === 'en';
 
-    modalTitle.textContent = '🔑 Восстановление пароля';
+    modalTitle.textContent = isEn ? '🔑 Password Recovery' : '🔑 Восстановление пароля';
     modalBody.innerHTML = `
       <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1.25rem; line-height: 1.5;">
-        Введите адрес электронной почты, указанный при регистрации. Мы отправим вам официальное письмо со ссылкой для сброса и установки нового пароля.
+        ${isEn ? 'Enter the email address registered with your account. We will send you an official link to reset and set a new password.' : 'Введите адрес электронной почты, указанный при регистрации. Мы отправим вам официальное письмо со ссылкой для сброса и установки нового пароля.'}
       </p>
       <form onsubmit="event.preventDefault(); window.app.handleForgotPasswordSubmit(event)">
         <div class="form-group" style="margin-bottom: 1.25rem;">
-          <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;">Ваш Email</label>
+          <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;">Email</label>
           <input type="email" id="forgot-email-input" class="input-styled" required placeholder="name@example.com">
         </div>
         <div style="display: flex; gap: 8px; flex-direction: column;">
           <button type="submit" class="btn btn-accent btn-large" style="width: 100%;" id="forgot-submit-btn">
-            📨 Отправить ссылку для сброса
+            ${isEn ? '📨 Send Reset Link' : '📨 Отправить ссылку для сброса'}
           </button>
           <button type="button" class="btn btn-secondary" style="width: 100%;" onclick="window.app.showAuthModal('login')">
-            ← Вернуться ко входу
+            ${isEn ? '← Back to Sign In' : '← Вернуться ко входу'}
           </button>
         </div>
       </form>
@@ -771,18 +799,19 @@ class App {
   }
 
   async handleForgotPasswordSubmit(e) {
+    const isEn = window.i18n && window.i18n.getLang() === 'en';
     const emailInput = document.getElementById('forgot-email-input');
     const email = emailInput ? emailInput.value.trim() : '';
     const submitBtn = document.getElementById('forgot-submit-btn');
 
     if (!email) {
-      this.showToast('Укажите ваш email', 'warning');
+      this.showToast(isEn ? 'Please enter your email' : 'Укажите ваш email', 'warning');
       return;
     }
 
     if (submitBtn) {
       submitBtn.disabled = true;
-      submitBtn.textContent = '⏳ Отправка запроса...';
+      submitBtn.textContent = isEn ? '⏳ Sending request...' : '⏳ Отправка запроса...';
     }
 
     try {
@@ -792,56 +821,56 @@ class App {
         modalBody.innerHTML = `
           <div style="text-align: center; padding: 1.5rem 0;">
             <div style="font-size: 3rem; margin-bottom: 1rem;">📬</div>
-            <h3 style="margin-bottom: 0.5rem; color: #fff;">Письмо успешно отправлено!</h3>
+            <h3 style="margin-bottom: 0.5rem; color: #fff;">${isEn ? 'Reset Link Sent!' : 'Письмо успешно отправлено!'}</h3>
             <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 1.5rem; line-height: 1.5;">
-              Мы отправили инструкцию по восстановлению на <strong>${email}</strong>.<br>
-              Проверьте входящие (и папку «Спам») и перейдите по ссылке из письма для ввода нового пароля.
+              ${isEn 
+                ? `We have sent recovery instructions to <strong>${email}</strong>.<br>Please check your inbox (and spam folder) and click the link to set a new password.`
+                : `Мы отправили инструкцию по восстановлению на <strong>${email}</strong>.<br>Проверьте входящие (и папку «Спам») и перейдите по ссылке из письма для ввода нового пароля.`
+              }
             </p>
             <button type="button" class="btn btn-secondary" style="width: 100%;" onclick="window.app.closeAllModals()">
-              Понятно
+              ${isEn ? 'Got it' : 'Понятно'}
             </button>
           </div>
         `;
       }
-      this.showToast('Письмо со ссылкой для восстановления отправлено!', 'success');
+      this.showToast(isEn ? 'Password recovery link has been sent!' : 'Письмо со ссылкой для восстановления отправлено!', 'success');
     } catch (err) {
-      console.warn('Ошибка сброса пароля:', err);
+      console.warn('Password reset error:', err);
       if (submitBtn) {
         submitBtn.disabled = false;
-        submitBtn.textContent = '📨 Отправить ссылку для сброса';
+        submitBtn.textContent = isEn ? '📨 Send Reset Link' : '📨 Отправить ссылку для сброса';
       }
-      this.showToast(err.message || 'Не удалось отправить письмо для сброса', 'error');
+      this.showToast(err.message || (isEn ? 'Failed to send reset link' : 'Не удалось отправить письмо для сброса'), 'error');
     }
   }
 
-  /**
-   * Модальное окно установки нового пароля (после перехода по ссылке)
-   */
   showNewPasswordModal() {
     const modal = document.getElementById('generic-modal');
     const modalTitle = document.getElementById('generic-modal-title');
     const modalBody = document.getElementById('generic-modal-body');
+    const isEn = window.i18n && window.i18n.getLang() === 'en';
 
-    modalTitle.textContent = '🔒 Установка нового пароля';
+    modalTitle.textContent = isEn ? '🔒 Set New Password' : '🔒 Установка нового пароля';
     modalBody.innerHTML = `
       <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1rem; line-height: 1.5;">
-        Вы успешно подтвердили доступ к аккаунту. Придумайте новый надёжный пароль:
+        ${isEn ? 'You have successfully verified your account. Please choose a new secure password:' : 'Вы успешно подтвердили доступ к аккаунту. Придумайте новый надёжный пароль:'}
       </p>
       <form onsubmit="event.preventDefault(); window.app.handleNewPasswordSubmit(event)">
         <div class="form-group" style="margin-bottom: 0.85rem;">
-          <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;">Новый пароль</label>
-          <input type="password" id="new-password-input" class="input-styled" required minlength="6" placeholder="Минимум 6 символов">
+          <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;">${isEn ? 'New Password' : 'Новый пароль'}</label>
+          <input type="password" id="new-password-input" class="input-styled" required minlength="6" placeholder="${isEn ? 'At least 6 characters' : 'Минимум 6 символов'}">
         </div>
         <div class="form-group" style="margin-bottom: 1.25rem;">
-          <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;">Повторите новый пароль</label>
-          <input type="password" id="new-password-confirm-input" class="input-styled" required minlength="6" placeholder="Повторите пароль">
+          <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;">${isEn ? 'Confirm New Password' : 'Повторите новый пароль'}</label>
+          <input type="password" id="new-password-confirm-input" class="input-styled" required minlength="6" placeholder="${isEn ? 'Confirm password' : 'Повторите пароль'}">
         </div>
         <div style="display: flex; gap: 8px; flex-direction: column;">
           <button type="submit" class="btn btn-accent btn-large" style="width: 100%;" id="new-password-submit-btn">
-            💾 Сохранить новый пароль
+            ${isEn ? '💾 Save New Password' : '💾 Сохранить новый пароль'}
           </button>
           <button type="button" class="btn btn-secondary" style="width: 100%; opacity: 0.8;" onclick="window.app.closeAllModals()">
-            ✕ Отмена
+            ${isEn ? '✕ Cancel' : '✕ Отмена'}
           </button>
         </div>
       </form>
@@ -852,39 +881,40 @@ class App {
   }
 
   async handleNewPasswordSubmit(e) {
+    const isEn = window.i18n && window.i18n.getLang() === 'en';
     const pass = document.getElementById('new-password-input')?.value;
     const confirmPass = document.getElementById('new-password-confirm-input')?.value;
     const submitBtn = document.getElementById('new-password-submit-btn');
 
     if (!pass || pass.length < 6) {
-      this.showToast('Пароль должен содержать минимум 6 символов', 'warning');
+      this.showToast(isEn ? 'Password must contain at least 6 characters' : 'Пароль должен содержать минимум 6 символов', 'warning');
       return;
     }
 
     if (pass !== confirmPass) {
-      this.showToast('Пароли не совпадают', 'error');
+      this.showToast(isEn ? 'Passwords do not match' : 'Пароли не совпадают', 'error');
       return;
     }
 
     if (submitBtn) {
       submitBtn.disabled = true;
-      submitBtn.textContent = '⏳ Сохранение нового пароля...';
+      submitBtn.textContent = isEn ? '⏳ Saving new password...' : '⏳ Сохранение нового пароля...';
     }
 
     try {
       await window.auth.updateUserPassword(pass);
-      this.showToast('🎉 Пароль успешно изменён! Вы вошли в аккаунт.', 'success');
+      this.showToast(isEn ? '🎉 Password successfully updated! You are now signed in.' : '🎉 Пароль успешно изменён! Вы вошли в аккаунт.', 'success');
       this.closeAllModals();
       this.renderUserHeader();
       this.renderStorefront();
       this.handleRoleVisibility(window.auth.getRole());
     } catch (err) {
-      console.warn('Ошибка смены пароля:', err);
+      console.warn('Password update error:', err);
       if (submitBtn) {
         submitBtn.disabled = false;
-        submitBtn.textContent = '💾 Сохранить новый пароль';
+        submitBtn.textContent = isEn ? '💾 Save New Password' : '💾 Сохранить новый пароль';
       }
-      this.showToast(err.message || 'Ошибка обновления пароля', 'error');
+      this.showToast(err.message || (isEn ? 'Failed to update password' : 'Не удалось изменить пароль'), 'error');
     }
   }
 
