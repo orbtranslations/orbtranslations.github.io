@@ -764,6 +764,19 @@ The fate of the kingdom is now in your hands.
   }
 
   /**
+   * Динамический расчет требуемых подтверждений в сети блокчейн:
+   * - До 100 Орбов: 1 подтверждение
+   * - До 500 Орбов: 2 подтверждения
+   * - Свыше 500 Орбов: 3 подтверждения
+   */
+  getRequiredConfirmations(orbsAmount) {
+    const amount = Number(orbsAmount) || 0;
+    if (amount <= 100) return 1;
+    if (amount <= 500) return 2;
+    return 3;
+  }
+
+  /**
    * Получение истории пополнений баланса Орбов (локальные + сессии + Supabase)
    */
   async getDepositHistory() {
@@ -858,7 +871,7 @@ The fate of the kingdom is now in your hands.
           status: s.status || 'pending',
           expiresAt: s.expiresAt || null,
           confirmations: s.confirmations || 0,
-          requiredConfirmations: s.requiredConfirmations || 3,
+          requiredConfirmations: s.requiredConfirmations || this.getRequiredConfirmations(s.orbsAmount || s.expectedAmount),
           canResume: Boolean(canResume)
         };
 
@@ -929,6 +942,7 @@ The fate of the kingdom is now in your hands.
 
             const existingIndex = list.findIndex(item => item.id === ord.id || (txHash && item.txHash === txHash));
             if (existingIndex === -1) {
+              const reqConfs = this.getRequiredConfirmations(ord.orbs_amount || ord.expected_amount);
               list.push({
                 id: ord.id,
                 date: ord.completed_at || ord.created_at,
@@ -938,6 +952,8 @@ The fate of the kingdom is now in your hands.
                 txHash,
                 explorerUrl,
                 status,
+                confirmations: ord.confirmations || 0,
+                requiredConfirmations: ord.required_confirmations || reqConfs,
                 canResume: Boolean(canResume)
               });
             } else {

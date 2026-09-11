@@ -145,6 +145,8 @@ class I18nManager {
         modal_topup_txid_label: 'Уже отправили перевод? Проверьте по хэшу транзакции (TxID):',
         modal_topup_txid_btn: '⚡ Проверить TxID',
         modal_topup_txid_placeholder: 'Вставьте хэш транзакции (TxID)...',
+        modal_topup_cancel_warning: '⚠️ Сделку можно отменить только до первого подтверждения в сети.',
+        modal_topup_cancel_warning_locked: '🔒 Получено первое подтверждение в сети. Отмена сделки невозможна.',
         txid_already_used: 'Эта транзакция уже была зачислена ранее.',
         txid_invalid: 'Транзакция не найдена в сети или отправлена на другой адрес.',
 
@@ -391,6 +393,8 @@ class I18nManager {
         modal_topup_txid_label: 'Already sent transfer? Verify instantly by Transaction Hash (TxID):',
         modal_topup_txid_btn: '⚡ Check TxID',
         modal_topup_txid_placeholder: 'Paste transaction hash (TxID)...',
+        modal_topup_cancel_warning: '⚠️ The deal can only be cancelled before the first confirmation on the network.',
+        modal_topup_cancel_warning_locked: '🔒 First network confirmation received. This transaction cannot be cancelled.',
         txid_already_used: 'This transaction has already been credited.',
         txid_invalid: 'Transaction not found or recipient address does not match.',
 

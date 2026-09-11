@@ -458,7 +458,8 @@ class App {
         if (isCompleted) {
           statusBadge = `<span class="badge badge-success">${isEn ? '✅ Completed' : '✅ Завершено'}</span>`;
         } else if (isAwaiting) {
-          statusBadge = `<span class="badge badge-info" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.4);">${isEn ? '⛓️ Confirming' : '⛓️ Подтверждения'} (${item.confirmations || 0}/3)</span>`;
+          const reqConfs = item.requiredConfirmations || (window.cryptoPay ? window.cryptoPay.getRequiredConfirmations(item.orbs) : 3);
+          statusBadge = `<span class="badge badge-info" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.4);">${isEn ? '⛓️ Confirming' : '⛓️ Подтверждения'} (${item.confirmations || 0}/${reqConfs})</span>`;
         } else if (isCancelled) {
           statusBadge = `<span class="badge" style="background: rgba(239, 68, 68, 0.15); color: #fca5a5; border: 1px solid rgba(239, 68, 68, 0.3);">${isEn ? '✕ Cancelled' : '✕ Отменена'}</span>`;
         } else {
@@ -918,11 +919,16 @@ class App {
     }
 
     // Состояние: ожидание первого перевода (pending) vs ожидание подтверждений в сети (awaiting_confirmations)
+    const cancelBtn = document.getElementById('topup-cancel-order-btn');
+    const cancelWarningBanner = document.getElementById('topup-cancel-warning-banner');
+    const cancelWarningText = document.getElementById('topup-cancel-warning-text');
+    const reqConfs = invoice.requiredConfirmations || (window.cryptoPay ? window.cryptoPay.getRequiredConfirmations(invoice.orbsAmount) : 3);
+
     if (invoice.status === 'awaiting_confirmations') {
       if (timerBanner) timerBanner.style.display = 'none';
       if (markPaidBtn) markPaidBtn.style.display = 'none';
       if (confBox) confBox.style.display = 'flex';
-      this.updateConfirmationsUI(invoice.confirmations || 0, invoice.requiredConfirmations || 3, invoice.txHash);
+      this.updateConfirmationsUI(invoice.confirmations || 0, reqConfs, invoice.txHash);
     } else {
       if (timerBanner) timerBanner.style.display = 'block';
       if (markPaidBtn) {
@@ -931,11 +937,28 @@ class App {
         markPaidBtn.textContent = isEn ? '✅ I Have Paid' : '✅ Я оплатил';
       }
       if (confBox) confBox.style.display = 'none';
+      if (cancelBtn) {
+        cancelBtn.disabled = false;
+        cancelBtn.style.opacity = '1';
+        cancelBtn.style.cursor = 'pointer';
+        cancelBtn.style.pointerEvents = 'auto';
+        cancelBtn.title = '';
+      }
+      if (cancelWarningBanner) {
+        cancelWarningBanner.style.background = 'rgba(245, 158, 11, 0.08)';
+        cancelWarningBanner.style.borderColor = 'rgba(245, 158, 11, 0.25)';
+        cancelWarningBanner.style.color = '#fbbf24';
+      }
+      if (cancelWarningText) {
+        cancelWarningText.textContent = isEn
+          ? '⚠️ The deal can only be cancelled before the first confirmation on the network.'
+          : '⚠️ Сделку можно отменить только до первого подтверждения в сети.';
+      }
     }
   }
 
   /**
-   * Пользователь нажал кнопку "Оплачено" — убираем таймер, переводим сделку в ожидание 3 подтверждений
+   * Пользователь нажал кнопку "Оплачено" — убираем таймер, переводим сделку в ожидание подтверждений
    */
   handleMarkAsPaid() {
     if (!window.cryptoPay) return;
@@ -950,13 +973,14 @@ class App {
     if (markPaidBtn) markPaidBtn.style.display = 'none';
     if (confBox) confBox.style.display = 'flex';
 
-    this.updateConfirmationsUI(session.confirmations || 0, session.requiredConfirmations || 3, session.txHash);
+    const req = session.requiredConfirmations || (window.cryptoPay ? window.cryptoPay.getRequiredConfirmations(session.orbsAmount) : 3);
+    this.updateConfirmationsUI(session.confirmations || 0, req, session.txHash);
 
     const isEn = window.i18n && window.i18n.getLang() === 'en';
     this.showToast(
       isEn
-        ? '✅ Marked as paid! Tracking blockchain confirmations (0/3)...'
-        : '✅ Сделка переведена в режим ожидания подтверждений в сети (0/3)...',
+        ? `✅ Marked as paid! Tracking blockchain confirmations (0/${req})...`
+        : `✅ Сделка переведена в режим ожидания подтверждений в сети (0/${req})...`,
       'info'
     );
     this.renderDepositHistory();
@@ -970,9 +994,16 @@ class App {
     const badge = document.getElementById('confirmations-counter-badge');
     const fill = document.getElementById('confirmations-bar-fill');
     const note = document.getElementById('confirmations-status-note');
+    const stepsRow = document.getElementById('confirmations-steps-row');
     const step1 = document.getElementById('conf-step-1');
     const step2 = document.getElementById('conf-step-2');
     const step3 = document.getElementById('conf-step-3');
+    const step1Text = document.getElementById('conf-step-1-text');
+    const step2Text = document.getElementById('conf-step-2-text');
+    const step3Text = document.getElementById('conf-step-3-text');
+    const cancelBtn = document.getElementById('topup-cancel-order-btn');
+    const cancelWarningBanner = document.getElementById('topup-cancel-warning-banner');
+    const cancelWarningText = document.getElementById('topup-cancel-warning-text');
     const isEn = window.i18n && window.i18n.getLang() === 'en';
 
     if (box) box.style.display = 'flex';
@@ -982,9 +1013,50 @@ class App {
     const pct = conf <= 0 ? 12 : Math.min(100, Math.round((conf / total) * 100));
     if (fill) fill.style.width = `${pct}%`;
 
-    // Шаги 1, 2, 3
+    // Динамическая сетка колонок в зависимости от требуемых подтверждений (1, 2 или 3)
+    if (stepsRow) {
+      stepsRow.style.gridTemplateColumns = total === 1 ? '1fr' : total === 2 ? '1fr 1fr' : '1fr 1fr 1fr';
+    }
+
+    // Настройка шага 1
+    if (step1) {
+      step1.style.display = 'flex';
+      if (step1Text) {
+        step1Text.textContent = total === 1
+          ? (isEn ? '1st conf. (Credited)' : '1-е подтв. (Зачисление)')
+          : (isEn ? '1st conf.' : '1-е подтв.');
+      }
+    }
+
+    // Настройка шага 2
+    if (step2) {
+      if (total >= 2) {
+        step2.style.display = 'flex';
+        if (step2Text) {
+          step2Text.textContent = total === 2
+            ? (isEn ? '2nd conf. (Credited)' : '2-е подтв. (Зачисление)')
+            : (isEn ? '2nd conf.' : '2-е подтв.');
+        }
+      } else {
+        step2.style.display = 'none';
+      }
+    }
+
+    // Настройка шага 3
+    if (step3) {
+      if (total >= 3) {
+        step3.style.display = 'flex';
+        if (step3Text) {
+          step3Text.textContent = isEn ? '3rd conf. (Credited)' : '3-е подтв. (Зачисление)';
+        }
+      } else {
+        step3.style.display = 'none';
+      }
+    }
+
+    // Подсветка активных / завершенных шагов
     const updateStep = (el, stepNum) => {
-      if (!el) return;
+      if (!el || el.style.display === 'none') return;
       el.classList.remove('active', 'completed');
       const numSpan = el.querySelector('.conf-step-num');
       if (conf >= stepNum) {
@@ -1002,35 +1074,88 @@ class App {
     updateStep(step2, 2);
     updateStep(step3, 3);
 
+    // Статусная строка
     if (note) {
       if (conf === 0) {
         note.textContent = isEn
           ? '📡 Transfer detected or awaiting first block confirmation...'
           : '📡 Перевод обнаружен или ожидается первое включение в блок...';
         note.style.borderLeftColor = '#38bdf8';
-      } else if (conf === 1) {
+      } else if (conf >= total) {
         note.textContent = isEn
-          ? '⛓️ 1st confirmation received! 2 confirmations remaining...'
-          : '⛓️ 1-е подтверждение получено! Ожидаем еще 2 подтверждения...';
-        note.style.borderLeftColor = '#38bdf8';
-      } else if (conf === 2) {
-        note.textContent = isEn
-          ? '⛓️ 2nd confirmation received! 1 confirmation remaining...'
-          : '⛓️ 2-е подтверждение получено! Остался 1 блок до зачисления...';
-        note.style.borderLeftColor = '#38bdf8';
-      } else {
-        note.textContent = isEn
-          ? '🎉 All 3 confirmations confirmed! Deal completed, Orbs credited!'
-          : '🎉 Все 3 подтверждения получены! Сделка завершена, Орбы зачислены!';
+          ? `🎉 All ${total} confirmation${total > 1 ? 's' : ''} received! Deal completed, Orbs credited!`
+          : (total === 1
+              ? '🎉 1 подтверждение получено! Сделка завершена, Орбы зачислены!'
+              : `🎉 Все ${total} подтверждения получены! Сделка завершена, Орбы зачислены!`);
         note.style.borderLeftColor = '#10b981';
+      } else {
+        const remaining = total - conf;
+        note.textContent = isEn
+          ? `⛓️ ${conf} of ${total} confirmation${total > 1 ? 's' : ''} received (${remaining} remaining)...`
+          : `⛓️ Получено ${conf}-е подтверждение из ${total} (осталось ${remaining})...`;
+        note.style.borderLeftColor = '#38bdf8';
+      }
+    }
+
+    // Политика отмены: блокировка кнопки отмены после первого подтверждения в сети
+    if (conf >= 1) {
+      if (cancelBtn) {
+        cancelBtn.disabled = true;
+        cancelBtn.style.opacity = '0.45';
+        cancelBtn.style.cursor = 'not-allowed';
+        cancelBtn.style.pointerEvents = 'none';
+        cancelBtn.title = isEn
+          ? 'Deal cannot be cancelled after the first network confirmation'
+          : 'Сделку нельзя отменить после первого подтверждения в сети';
+      }
+      if (cancelWarningBanner) {
+        cancelWarningBanner.style.background = 'rgba(239, 68, 68, 0.12)';
+        cancelWarningBanner.style.borderColor = 'rgba(239, 68, 68, 0.35)';
+        cancelWarningBanner.style.color = '#fca5a5';
+      }
+      if (cancelWarningText) {
+        cancelWarningText.textContent = isEn
+          ? '🔒 First network confirmation received. This transaction cannot be cancelled.'
+          : '🔒 Получено первое подтверждение в сети. Отмена сделки невозможна.';
+      }
+    } else {
+      if (cancelBtn) {
+        cancelBtn.disabled = false;
+        cancelBtn.style.opacity = '1';
+        cancelBtn.style.cursor = 'pointer';
+        cancelBtn.style.pointerEvents = 'auto';
+        cancelBtn.title = '';
+      }
+      if (cancelWarningBanner) {
+        cancelWarningBanner.style.background = 'rgba(245, 158, 11, 0.08)';
+        cancelWarningBanner.style.borderColor = 'rgba(245, 158, 11, 0.25)';
+        cancelWarningBanner.style.color = '#fbbf24';
+      }
+      if (cancelWarningText) {
+        cancelWarningText.textContent = isEn
+          ? '⚠️ The deal can only be cancelled before the first confirmation on the network.'
+          : '⚠️ Сделку можно отменить только до первого подтверждения в сети.';
       }
     }
   }
 
   /**
    * Отмена текущего заказа и возврат на Шаг 1 (только при явном клике пользователем)
+   * Разрешена ТОЛЬКО до первого подтверждения в сети блокчейн.
    */
   handleCancelTopup() {
+    const session = window.cryptoPay ? (window.cryptoPay.activeSession || window.store.getActiveCryptoSession()) : null;
+    if (session && typeof session.confirmations === 'number' && session.confirmations >= 1) {
+      const isEn = window.i18n && window.i18n.getLang() === 'en';
+      this.showToast(
+        isEn
+          ? '⚠️ Cannot cancel order: first network confirmation already received.'
+          : '⚠️ Нельзя отменить сделку: первое подтверждение в сети уже получено.',
+        'warning'
+      );
+      return;
+    }
+
     if (window.cryptoPay) {
       window.cryptoPay.cancelSession('user_cancelled');
     }

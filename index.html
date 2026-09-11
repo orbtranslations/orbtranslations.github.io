@@ -20,9 +20,9 @@
   <meta http-equiv="Expires" content="0">
 
   <!-- Custom Styles -->
-  <link rel="stylesheet" href="css/style.css?v=3.0.0">
-  <link rel="stylesheet" href="css/components.css?v=3.0.0">
-  <link rel="stylesheet" href="css/reader.css?v=3.0.0">
+  <link rel="stylesheet" href="css/style.css?v=3.1.0">
+  <link rel="stylesheet" href="css/components.css?v=3.1.0">
+  <link rel="stylesheet" href="css/reader.css?v=3.1.0">
 </head>
 <body>
 
@@ -649,19 +649,19 @@
               <div class="confirmations-bar-track">
                 <div class="confirmations-bar-fill" id="confirmations-bar-fill" style="width: 0%;"></div>
               </div>
-              <!-- 3 Steps -->
-              <div class="confirmations-steps-row">
+              <!-- Dynamic Steps (1, 2, or 3) -->
+              <div class="confirmations-steps-row" id="confirmations-steps-row">
                 <div class="conf-step-item" id="conf-step-1">
                   <span class="conf-step-num">1</span>
-                  <span class="conf-step-text" data-i18n="modal_conf_step_1">1-е подтв.</span>
+                  <span class="conf-step-text" id="conf-step-1-text" data-i18n="modal_conf_step_1">1-е подтв.</span>
                 </div>
                 <div class="conf-step-item" id="conf-step-2">
                   <span class="conf-step-num">2</span>
-                  <span class="conf-step-text" data-i18n="modal_conf_step_2">2-е подтв.</span>
+                  <span class="conf-step-text" id="conf-step-2-text" data-i18n="modal_conf_step_2">2-е подтв.</span>
                 </div>
                 <div class="conf-step-item" id="conf-step-3">
                   <span class="conf-step-num">3</span>
-                  <span class="conf-step-text" data-i18n="modal_conf_step_3">3-е подтв. (Зачисление)</span>
+                  <span class="conf-step-text" id="conf-step-3-text" data-i18n="modal_conf_step_3">3-е подтв. (Зачисление)</span>
                 </div>
               </div>
               <p class="confirmations-status-note" id="confirmations-status-note" data-i18n="modal_conf_status_awaiting">
@@ -680,22 +680,10 @@
               <span id="blockchain-tracker-text" data-i18n="modal_topup_tracking_text">📡 Scanning blockchain every 12s...</span>
             </div>
 
-            <!-- Real Blockchain Check Button -->
-            <button type="button" class="btn btn-accent btn-large" style="width: 100%;" id="check-blockchain-tx-btn" onclick="window.app.checkPaymentInBlockchain()" data-i18n="modal_topup_check_btn">
-              🔄 Check Blockchain for Payment
-            </button>
-
-            <!-- Optional manual TxID verification -->
-            <div style="background: rgba(0, 0, 0, 0.3); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 8px 10px; margin-top: 2px;">
-              <label style="font-size: 0.73rem; color: var(--text-muted); display: block; margin-bottom: 4px;" data-i18n="modal_topup_txid_label">
-                Already sent transfer? Verify instantly by Transaction Hash (TxID):
-              </label>
-              <div style="display: flex; gap: 6px;">
-                <input type="text" id="invoice-txid-input" class="copy-input" placeholder="Paste transaction hash / TxID..." style="font-size: 0.75rem; padding: 0.45rem 0.65rem;" data-i18n-placeholder="modal_topup_txid_placeholder">
-                <button type="button" class="btn btn-secondary btn-small" id="verify-txid-btn" onclick="window.app.verifyManualTxId()" style="white-space: nowrap;" data-i18n="modal_topup_txid_btn">
-                  ⚡ Check TxID
-                </button>
-              </div>
+            <!-- Warning: Cancellation policy -->
+            <div id="topup-cancel-warning-banner" style="display: flex; align-items: center; gap: 8px; padding: 0.6rem 0.85rem; background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.25); border-radius: var(--radius-sm); font-size: 0.78rem; color: #fbbf24; line-height: 1.4;">
+              <span style="font-size: 1rem; flex-shrink: 0;">⚠️</span>
+              <span id="topup-cancel-warning-text" data-i18n="modal_topup_cancel_warning">Сделку можно отменить только до первого подтверждения в сети.</span>
             </div>
 
             <!-- Cancel / Return to Step 1 Button -->
@@ -810,15 +798,15 @@
        Application JavaScript Modules
        ======================================================================== -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="js/supabase-client.js?v=3.0.0"></script>
-  <script src="js/store.js?v=3.0.0"></script>
-  <script src="js/i18n.js?v=3.0.0"></script>
-  <script src="js/script-parser.js?v=3.0.0"></script>
-  <script src="js/auth.js?v=3.0.0"></script>
-  <script src="js/qrcode.min.js?v=3.0.0"></script>
-  <script src="js/crypto-pay.js?v=3.0.0"></script>
-  <script src="js/reader.js?v=3.0.0"></script>
-  <script src="js/admin.js?v=3.0.0"></script>
-  <script src="js/app.js?v=3.0.0"></script>
+  <script src="js/supabase-client.js?v=3.1.0"></script>
+  <script src="js/store.js?v=3.1.0"></script>
+  <script src="js/i18n.js?v=3.1.0"></script>
+  <script src="js/script-parser.js?v=3.1.0"></script>
+  <script src="js/auth.js?v=3.1.0"></script>
+  <script src="js/qrcode.min.js?v=3.1.0"></script>
+  <script src="js/crypto-pay.js?v=3.1.0"></script>
+  <script src="js/reader.js?v=3.1.0"></script>
+  <script src="js/admin.js?v=3.1.0"></script>
+  <script src="js/app.js?v=3.1.0"></script>
 </body>
 </html>

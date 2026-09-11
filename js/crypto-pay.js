@@ -61,6 +61,19 @@ class CryptoPaymentService {
   }
 
   /**
+   * Динамический расчет требуемых подтверждений в сети блокчейн:
+   * - До 100 Орбов: 1 подтверждение
+   * - До 500 Орбов (101-500): 2 подтверждения
+   * - Свыше 500 Орбов: 3 подтверждения
+   */
+  getRequiredConfirmations(orbsAmount) {
+    const amount = Number(orbsAmount) || 0;
+    if (amount <= 100) return 1;
+    if (amount <= 500) return 2;
+    return 3;
+  }
+
+  /**
    * Получение адреса для приёма оплаты:
    * - Поддерживает USDT TRC-20 (Tron), USDT POL (Polygon) и Bitcoin (BTC).
    * - Возвращает установленный статический адрес кошелька для выбранной сети.
@@ -164,7 +177,7 @@ class CryptoPaymentService {
       expiresAt,
       status: 'pending', // 'pending' | 'awaiting_confirmations' | 'completed' | 'cancelled'
       confirmations: 0,
-      requiredConfirmations: 3,
+      requiredConfirmations: this.getRequiredConfirmations(amount),
       detectedNotified: false
     };
 
@@ -199,7 +212,7 @@ class CryptoPaymentService {
     // При обнаружении перевода в сети этот лимит сразу снимается.
     this.activeSession.awaitingExpiresAt = Date.now() + 3 * 60 * 60 * 1000;
     if (typeof this.activeSession.confirmations !== 'number') this.activeSession.confirmations = 0;
-    this.activeSession.requiredConfirmations = 3;
+    this.activeSession.requiredConfirmations = this.getRequiredConfirmations(this.activeSession.orbsAmount || this.activeSession.amount);
 
     this.store.saveCryptoSession(this.activeSession);
 
@@ -314,6 +327,9 @@ class CryptoPaymentService {
         }
         return null;
       }
+      if (!session.requiredConfirmations) {
+        session.requiredConfirmations = this.getRequiredConfirmations(session.orbsAmount);
+      }
       this.activeSession = session;
       this.startCountdownTimer();
       // Для pending сессий работает только 30-минутный таймер фиксации курса
@@ -338,6 +354,9 @@ class CryptoPaymentService {
             .catch(() => {});
         }
         return null;
+      }
+      if (!session.requiredConfirmations) {
+        session.requiredConfirmations = this.getRequiredConfirmations(session.orbsAmount);
       }
       this.activeSession = session;
       this.stopCountdownTimer();
@@ -563,8 +582,9 @@ class CryptoPaymentService {
         delete session.awaitingExpiresAt;
 
         const conf = Math.max(0, detectedTx.confirmations || 0);
-        const req = session.requiredConfirmations || 3;
+        const req = session.requiredConfirmations || this.getRequiredConfirmations(session.orbsAmount) || 3;
         session.confirmations = conf;
+        session.requiredConfirmations = req;
         session.txHash = detectedTx.txHash;
 
         // Если сессия была в режиме pending (до истечения 30 мин), переводим в awaiting_confirmations и останавливаем таймер
@@ -609,7 +629,7 @@ class CryptoPaymentService {
           window.app.updateConfirmationsUI(conf, req, detectedTx.txHash);
         }
 
-        // 3. Завершение сделки при получении 3 подтверждений
+        // 3. Завершение сделки при получении всех требуемых подтверждений
         if (conf >= req) {
           if (trackerText) {
             trackerText.textContent = isEn
@@ -622,8 +642,10 @@ class CryptoPaymentService {
             if (window.app) {
               window.app.showToast(
                 isEn
-                  ? `🎉 ${req} of ${req} confirmations received! Deal completed, Orbs credited!`
-                  : `🎉 Получено ${req} подтверждения из ${req}! Сделка завершена, Орбы зачислены!`,
+                  ? `🎉 ${req} of ${req} confirmation${req > 1 ? 's' : ''} received! Deal completed, Orbs credited!`
+                  : (req === 1
+                      ? '🎉 1 подтверждение получено! Сделка завершена, Орбы зачислены!'
+                      : `🎉 Все ${req} подтверждения получены! Сделка завершена, Орбы зачислены!`),
                 'success'
               );
             }
@@ -828,6 +850,7 @@ class CryptoPaymentService {
     }
 
     if (verified) {
+      const reqConfs = this.getRequiredConfirmations(detectedAmount || (this.activeSession ? this.activeSession.orbsAmount : 0));
       if (!this.activeSession || (this.activeSession.status !== 'pending' && this.activeSession.status !== 'awaiting_confirmations')) {
         const orderIndex = this.store.getNextOrderIndex();
         this.activeSession = {
@@ -839,14 +862,15 @@ class CryptoPaymentService {
           network,
           address: targetAddress,
           derivationPath: 'Direct Transfer',
-          status: confirmations >= 3 ? 'completed' : 'awaiting_confirmations',
+          status: confirmations >= reqConfs ? 'completed' : 'awaiting_confirmations',
           confirmations,
-          requiredConfirmations: 3,
+          requiredConfirmations: reqConfs,
           txHash
         };
       } else {
         if (detectedAmount) this.activeSession.orbsAmount = detectedAmount;
         this.activeSession.confirmations = confirmations;
+        this.activeSession.requiredConfirmations = reqConfs;
         this.activeSession.txHash = txHash;
       }
 
@@ -854,15 +878,16 @@ class CryptoPaymentService {
       this.store.saveCryptoSession(this.activeSession);
 
       if (window.app && window.app.updateConfirmationsUI) {
-        window.app.updateConfirmationsUI(confirmations, 3, txHash);
+        window.app.updateConfirmationsUI(confirmations, reqConfs, txHash);
       }
 
-      if (confirmations >= 3) {
+      if (confirmations >= reqConfs) {
         await this.confirmRealPayment(txHash, network);
         return {
           success: true,
           completed: true,
           confirmations,
+          requiredConfirmations: reqConfs,
           amount: this.activeSession.orbsAmount,
           orderId: this.activeSession.orderId
         };
