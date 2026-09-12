@@ -21,6 +21,7 @@ class AdminService {
     this.loadTelegramSettings();
     this.renderFeedbackTable();
     this.renderDemoImageRows([]);
+    this.loadStorageBackupInfo();
   }
 
   bindEvents() {
@@ -130,6 +131,35 @@ class AdminService {
         if (coverUrlInput) coverUrlInput.value = '';
         if (coverFileInput) coverFileInput.value = '';
         this.updateCoverPreview('');
+      });
+    }
+
+    // Слушатели системы резервного копирования и восстановления (Storage 1 GB)
+    const btnCreateBackup = document.getElementById('admin-btn-create-storage-backup');
+    if (btnCreateBackup) {
+      btnCreateBackup.addEventListener('click', () => this.handleCreateStorageBackup());
+    }
+
+    const btnRestoreBackup = document.getElementById('admin-btn-restore-storage-backup');
+    if (btnRestoreBackup) {
+      btnRestoreBackup.addEventListener('click', () => this.handleRestoreStorageBackup());
+    }
+
+    const btnExportBackup = document.getElementById('admin-btn-export-backup-file');
+    if (btnExportBackup) {
+      btnExportBackup.addEventListener('click', () => this.handleExportBackupFile());
+    }
+
+    const btnImportBackup = document.getElementById('admin-btn-import-backup-file');
+    const backupFileInput = document.getElementById('admin-backup-file-input');
+    if (btnImportBackup && backupFileInput) {
+      btnImportBackup.addEventListener('click', () => backupFileInput.click());
+      backupFileInput.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (file) {
+          this.handleImportBackupFile(file);
+          backupFileInput.value = '';
+        }
       });
     }
   }
@@ -1284,6 +1314,145 @@ class AdminService {
       this.renderFeedbackTable();
     } catch (err) {
       window.app.showToast(err.message || 'Ошибка удаления обращения', 'error');
+    }
+  }
+
+  /**
+   * ============================================================================
+   * МЕТОДЫ РЕЗЕРВНОГО КОПИРОВАНИЯ И ВОССТАНОВЛЕНИЯ (Disaster Recovery)
+   * ============================================================================
+   */
+
+  async handleCreateStorageBackup() {
+    const btn = document.getElementById('admin-btn-create-storage-backup');
+    const originalText = btn ? btn.innerHTML : '';
+    const isEn = window.i18n && window.i18n.getLang() === 'en';
+
+    try {
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '⏳ ' + (isEn ? 'Creating backup...' : 'Создание снимка...');
+      }
+
+      const res = await this.store.createStorageBackup();
+      window.app.showToast(isEn 
+        ? `✅ Backup created in Supabase Storage! Works saved: ${res.worksCount}` 
+        : `✅ Резервный снимок сохранен в Supabase Storage! Работ в снимке: ${res.worksCount}`, 'success');
+
+      await this.loadStorageBackupInfo();
+    } catch (err) {
+      console.error('Ошибка создания бэкапа в Storage:', err);
+      window.app.showToast((isEn ? 'Backup failed: ' : 'Ошибка создания бэкапа: ') + (err.message || err), 'error');
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+      }
+    }
+  }
+
+  async handleRestoreStorageBackup() {
+    const isEn = window.i18n && window.i18n.getLang() === 'en';
+    const confirmMsg = isEn 
+      ? 'Are you sure you want to restore the catalog from Supabase Storage? This will refresh all works in database.'
+      : 'Вы уверены, что хотите восстановить каталог из Supabase Storage? Данные работ в таблицах будут обновлены из резервного снимка.';
+
+    if (!confirm(confirmMsg)) return;
+
+    const btn = document.getElementById('admin-btn-restore-storage-backup');
+    const originalText = btn ? btn.innerHTML : '';
+
+    try {
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '⏳ ' + (isEn ? 'Restoring...' : 'Восстановление...');
+      }
+
+      const res = await this.store.restoreFromStorageBackup();
+      window.app.showToast(isEn 
+        ? `🎉 Catalog restored from Storage! Works restored: ${res.count}` 
+        : `🎉 Каталог успешно восстановлен из Supabase Storage! Работ: ${res.count}`, 'success');
+
+      this.renderWorksTable();
+      await this.loadStorageBackupInfo();
+    } catch (err) {
+      console.error('Ошибка восстановления из Storage:', err);
+      window.app.showToast((isEn ? 'Restore failed: ' : 'Ошибка восстановления из Storage: ') + (err.message || err), 'error');
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+      }
+    }
+  }
+
+  async handleExportBackupFile() {
+    const isEn = window.i18n && window.i18n.getLang() === 'en';
+    try {
+      const res = await this.store.exportBackupToFile();
+      window.app.showToast(isEn 
+        ? `📥 Backup downloaded: ${res.filename} (${res.count} works)` 
+        : `📥 Резервная копия скачана: ${res.filename} (${res.count} работ)`, 'success');
+    } catch (err) {
+      window.app.showToast((isEn ? 'Export failed: ' : 'Ошибка скачивания копии: ') + (err.message || err), 'error');
+    }
+  }
+
+  async handleImportBackupFile(file) {
+    const isEn = window.i18n && window.i18n.getLang() === 'en';
+    if (!file) return;
+
+    try {
+      window.app.showToast(isEn ? 'Reading backup file...' : 'Чтение файла резервной копии...', 'info');
+      const res = await this.store.importBackupFromFile(file);
+      window.app.showToast(isEn 
+        ? `🎉 Successfully restored from file! Works: ${res.count}` 
+        : `🎉 Каталог успешно восстановлен из файла! Работ: ${res.count}`, 'success');
+      this.renderWorksTable();
+      await this.loadStorageBackupInfo();
+    } catch (err) {
+      console.error('Ошибка импорта бэкапа из файла:', err);
+      window.app.showToast((isEn ? 'Import failed: ' : 'Ошибка импорта файла: ') + (err.message || err), 'error');
+    }
+  }
+
+  async loadStorageBackupInfo() {
+    const statusBadge = document.getElementById('admin-backup-status-badge');
+    const infoText = document.getElementById('admin-backup-info-text');
+    const isEn = window.i18n && window.i18n.getLang() === 'en';
+
+    if (!statusBadge && !infoText) return;
+
+    try {
+      const info = await this.store.getStorageBackupInfo();
+      if (info && info.exists) {
+        if (statusBadge) {
+          statusBadge.className = 'badge badge-success';
+          statusBadge.textContent = isEn ? '✓ Snapshot active' : '✓ Снимок активен';
+        }
+        if (infoText) {
+          const dateStr = info.updatedAt ? new Date(info.updatedAt).toLocaleString() : (isEn ? 'Recently' : 'Недавно');
+          const sizeStr = info.size ? ` (${Math.round(info.size / 1024)} KB)` : '';
+          infoText.textContent = isEn 
+            ? `Latest Storage snapshot: ${dateStr}${sizeStr}. Storage bucket: backups.` 
+            : `Последний снимок в Storage: ${dateStr}${sizeStr}. Бакет: backups.`;
+        }
+      } else {
+        if (statusBadge) {
+          statusBadge.className = 'badge badge-glass';
+          statusBadge.textContent = isEn ? 'No snapshots yet' : 'Снимков пока нет';
+        }
+        if (infoText) {
+          infoText.textContent = isEn 
+            ? 'Storage bucket "backups" ready. Click "Create snapshot" to backup.' 
+            : 'Бакет "backups" подключен. Нажмите "Создать снимок в Storage" для первого резервирования.';
+        }
+      }
+    } catch (e) {
+      if (statusBadge) {
+        statusBadge.className = 'badge badge-warning';
+        statusBadge.textContent = isEn ? 'Connection issue' : 'Ожидание бакета';
+      }
     }
   }
 }

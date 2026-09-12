@@ -455,6 +455,48 @@
         </div>
       </div>
 
+      <!-- Disaster Recovery & Storage Backup Card -->
+      <div class="modal-card" id="admin-backup-card" style="max-width: 100%; margin-bottom: 2rem; box-shadow: var(--shadow-sm); border: 1px solid rgba(56, 189, 248, 0.25);">
+        <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+          <div>
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <h3 class="modal-title" data-i18n="admin_backup_card_title">🛡️ Резервное копирование и Восстановление (Supabase Storage 1 GB)</h3>
+              <span class="badge badge-glass" id="admin-backup-status-badge">Проверка...</span>
+            </div>
+            <p style="font-size: 0.82rem; color: var(--text-muted); margin-top: 4px;" data-i18n="admin_backup_card_sub">
+              Полная изоляция от сбоев БД: сохранение и восстановление каталога, метаданных и полных скриптов через бесплатное хранилище
+            </p>
+          </div>
+        </div>
+        <div class="modal-body">
+          <div style="margin-bottom: 1.25rem; padding: 12px 16px; background: rgba(0, 0, 0, 0.25); border-radius: var(--radius-sm); border: 1px solid var(--border-color); display: flex; align-items: center; gap: 12px;">
+            <div style="font-size: 1.8rem; flex-shrink: 0;">📦</div>
+            <div style="flex: 1; font-size: 0.85rem; color: var(--text-secondary);" id="admin-backup-info-text">
+              Бакет "backups" подключен к бесплатному облачному хранилищу 1 GB.
+            </div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px;">
+            <!-- Облачный бэкап в Storage -->
+            <button type="button" class="btn btn-accent" id="admin-btn-create-storage-backup" style="justify-content: center;" data-i18n="admin_btn_create_storage_backup">
+              💾 Создать снимок в Storage
+            </button>
+            <button type="button" class="btn btn-secondary" id="admin-btn-restore-storage-backup" style="justify-content: center; border-color: rgba(56, 189, 248, 0.4);" data-i18n="admin_btn_restore_storage_backup">
+              🔄 Восстановить базу из Storage
+            </button>
+
+            <!-- Локальный бэкап на диск -->
+            <button type="button" class="btn btn-secondary" id="admin-btn-export-backup-file" style="justify-content: center;" data-i18n="admin_btn_export_backup">
+              📥 Скачать копию на ПК (JSON)
+            </button>
+            <input type="file" id="admin-backup-file-input" accept=".json" style="display: none;">
+            <button type="button" class="btn btn-secondary" id="admin-btn-import-backup-file" style="justify-content: center;" data-i18n="admin_btn_import_backup">
+              📤 Загрузить копию с ПК (JSON)
+            </button>
+          </div>
+        </div>
+      </div>
+
       <!-- User Inquiries & Support Tickets Card -->
       <div class="modal-card" id="admin-feedback-card" style="max-width: 100%; box-shadow: var(--shadow-sm);">
         <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
@@ -1045,15 +1087,15 @@
        Application JavaScript Modules
        ======================================================================== -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="js/supabase-client.js?v=3.4.8"></script>
-  <script src="js/store.js?v=3.4.8"></script>
-  <script src="js/i18n.js?v=3.4.8"></script>
-  <script src="js/script-parser.js?v=3.4.8"></script>
-  <script src="js/auth.js?v=3.4.8"></script>
-  <script src="js/qrcode.min.js?v=3.4.8"></script>
-  <script src="js/crypto-pay.js?v=3.4.8"></script>
-  <script src="js/reader.js?v=3.4.8"></script>
-  <script src="js/admin.js?v=3.4.8"></script>
-  <script src="js/app.js?v=3.4.8"></script>
+  <script src="js/supabase-client.js?v=3.4.9"></script>
+  <script src="js/store.js?v=3.4.9"></script>
+  <script src="js/i18n.js?v=3.4.9"></script>
+  <script src="js/script-parser.js?v=3.4.9"></script>
+  <script src="js/auth.js?v=3.4.9"></script>
+  <script src="js/qrcode.min.js?v=3.4.9"></script>
+  <script src="js/crypto-pay.js?v=3.4.9"></script>
+  <script src="js/reader.js?v=3.4.9"></script>
+  <script src="js/admin.js?v=3.4.9"></script>
+  <script src="js/app.js?v=3.4.9"></script>
 </body>
 </html>

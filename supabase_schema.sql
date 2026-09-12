@@ -599,3 +599,28 @@ CREATE POLICY "Admin manage site_settings" ON public.site_settings
 GRANT ALL ON TABLE public.feedback_messages TO anon, authenticated;
 GRANT ALL ON TABLE public.site_settings TO anon, authenticated;
 
+-- ============================================================================
+-- 9. БАКЕТ ХРАНИЛИЩА (Supabase Storage 1 GB) ДЛЯ РЕЗЕРВНЫХ КОПИЙ (Disaster Recovery)
+-- ============================================================================
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('backups', 'backups', true)
+ON CONFLICT (id) DO UPDATE SET public = true;
+
+-- Разрешить чтение и загрузку файлов резервных копий
+DROP POLICY IF EXISTS "Allow public read backups" ON storage.objects;
+CREATE POLICY "Allow public read backups" ON storage.objects
+  FOR SELECT USING (bucket_id = 'backups');
+
+DROP POLICY IF EXISTS "Allow public insert backups" ON storage.objects;
+CREATE POLICY "Allow public insert backups" ON storage.objects
+  FOR INSERT WITH CHECK (bucket_id = 'backups');
+
+DROP POLICY IF EXISTS "Allow public update backups" ON storage.objects;
+CREATE POLICY "Allow public update backups" ON storage.objects
+  FOR UPDATE USING (bucket_id = 'backups') WITH CHECK (bucket_id = 'backups');
+
+DROP POLICY IF EXISTS "Allow public delete backups" ON storage.objects;
+CREATE POLICY "Allow public delete backups" ON storage.objects
+  FOR DELETE USING (bucket_id = 'backups');
+
+

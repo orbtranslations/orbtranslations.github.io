@@ -11,7 +11,7 @@ git add .
 
 echo.
 echo [2/3] Committing changes...
-git commit -m "feat: clean store architecture, establish Supabase as SSOT (v3.4.8)"
+git commit -m "feat: add 1GB Supabase Storage disaster recovery system (v3.4.9)"
 
 echo.
 echo [3/3] Pushing to GitHub (main)...

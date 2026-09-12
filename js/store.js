@@ -970,6 +970,22 @@ class Store {
         } catch (dbScriptErr) {
           console.warn('Сохранение в таблицу work_scripts:', dbScriptErr);
         }
+
+        // В. Автоматический фоновый бэкап работы в бакет backups (Disaster Recovery)
+        try {
+          const workBackupPayload = {
+            ...dbPayload,
+            full_script_text: scriptToSave,
+            backup_timestamp: new Date().toISOString()
+          };
+          const backupBlob = new Blob([JSON.stringify(workBackupPayload, null, 2)], { type: 'application/json;charset=utf-8' });
+          window.supabaseClient.storage
+            .from('backups')
+            .upload(`work_backups/${work.id}.json`, backupBlob, {
+              cacheControl: '60',
+              upsert: true
+            }).catch(bErr => console.warn('Фоновый бэкап в backups:', bErr));
+        } catch (bErr) {}
       }
 
       return { success: true };
@@ -1055,6 +1071,253 @@ class Store {
 
     return null;
   }
+
+  /**
+   * ============================================================================
+   * СИСТЕМА РЕЗЕРВНОГО КОПИРОВАНИЯ И ВОССТАНОВЛЕНИЯ (Disaster Recovery via Storage)
+   * ============================================================================
+   */
+
+  /**
+   * Собирает полный снимок каталога со всеми метаданными и текстами скриптов
+   */
+  async generateFullCatalogSnapshot() {
+    const worksList = this.getWorks();
+    const snapshotWorks = [];
+
+    for (const w of worksList) {
+      let fullScript = w.fullScriptText || '';
+      if (!fullScript || fullScript.startsWith('[STORED_IN_IDB')) {
+        fullScript = await this.getFullScript(w.id) || w.sampleScriptText || '';
+      }
+
+      snapshotWorks.push({
+        id: w.id,
+        title: typeof w.title === 'object' ? w.title : { ru: w.title || '', en: w.titleEn || w.title || '' },
+        description: typeof w.description === 'object' ? w.description : { ru: w.description || '', en: w.descriptionEn || '' },
+        author: w.author || '',
+        price: Number(w.price) || 1,
+        totalPages: Number(w.totalPages) || 1,
+        previewPagesCount: Number(w.previewPagesCount) || 3,
+        tags: Array.isArray(w.tags) ? w.tags : [],
+        coverUrl: w.coverUrl || 'assets/demo/cover-1.svg',
+        availableLanguages: Array.isArray(w.availableLanguages) ? w.availableLanguages : ['Русский', 'English'],
+        scriptFileName: w.scriptFileName || 'script.txt',
+        sampleScriptText: w.sampleScriptText || '',
+        fullScriptText: fullScript,
+        demoImages: Array.isArray(w.demoImages) ? w.demoImages : [],
+        createdAt: w.createdAt || new Date().toISOString().split('T')[0]
+      });
+    }
+
+    return {
+      version: '3.4.9',
+      system: 'Orb Translations Platform Backup',
+      createdAt: new Date().toISOString(),
+      worksCount: snapshotWorks.length,
+      works: snapshotWorks
+    };
+  }
+
+  /**
+   * Создает резервную копию в бакете 'backups' Supabase Storage (1 GB)
+   */
+  async createStorageBackup() {
+    if (!window.supabaseClient) {
+      throw new Error('Supabase клиент не инициализирован');
+    }
+
+    const snapshot = await this.generateFullCatalogSnapshot();
+    const jsonStr = JSON.stringify(snapshot, null, 2);
+    const blob = new Blob([jsonStr], { type: 'application/json;charset=utf-8' });
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const filenameLatest = 'catalog_latest.json';
+    const filenameArchive = `snapshots/catalog_${timestamp}.json`;
+
+    // 1. Загрузка последнего слепка
+    const resLatest = await window.supabaseClient.storage
+      .from('backups')
+      .upload(filenameLatest, blob, {
+        cacheControl: '0',
+        upsert: true
+      });
+
+    if (resLatest.error) {
+      console.error('Ошибка создания catalog_latest.json в backups:', resLatest.error);
+      throw resLatest.error;
+    }
+
+    // 2. Загрузка архивного слепка с меткой времени
+    await window.supabaseClient.storage
+      .from('backups')
+      .upload(filenameArchive, blob, {
+        cacheControl: '3600',
+        upsert: true
+      }).catch(err => console.warn('Архивный снимок не загружен:', err));
+
+    return {
+      success: true,
+      worksCount: snapshot.worksCount,
+      timestamp: snapshot.createdAt
+    };
+  }
+
+  /**
+   * Восстанавливает каталог из резервного файла в Supabase Storage (1 GB)
+   */
+  async restoreFromStorageBackup() {
+    if (!window.supabaseClient) {
+      throw new Error('Supabase клиент не инициализирован');
+    }
+
+    let backupData = null;
+
+    // 1. Попытка загрузить через storage.download
+    try {
+      const { data, error } = await window.supabaseClient.storage
+        .from('backups')
+        .download('catalog_latest.json');
+
+      if (!error && data) {
+        const text = await data.text();
+        backupData = JSON.parse(text);
+      } else if (error) {
+        console.warn('Storage.download ошибка, пробуем publicUrl:', error);
+      }
+    } catch (e) {
+      console.warn('Ошибка скачивания бэкапа из Storage:', e);
+    }
+
+    // 2. Резервная попытка через getPublicUrl и fetch
+    if (!backupData) {
+      const { data } = window.supabaseClient.storage
+        .from('backups')
+        .getPublicUrl('catalog_latest.json');
+
+      if (data && data.publicUrl) {
+        const resp = await fetch(data.publicUrl + '?t=' + Date.now());
+        if (resp.ok) {
+          backupData = await resp.json();
+        }
+      }
+    }
+
+    if (!backupData || !Array.isArray(backupData.works)) {
+      throw new Error('Не удалось загрузить или разобрать резервный файл catalog_latest.json из бакета backups');
+    }
+
+    return await this.applyBackupData(backupData);
+  }
+
+  /**
+   * Применяет данные бэкапа к базе данных Supabase и локальному состоянию
+   */
+  async applyBackupData(backupData) {
+    if (!backupData || !Array.isArray(backupData.works)) {
+      throw new Error('Некорректный формат файла бэкапа (отсутствует массив works)');
+    }
+
+    let restoredCount = 0;
+    const restoredWorks = [];
+
+    for (const w of backupData.works) {
+      const fullScript = w.fullScriptText || w.sampleScriptText || '';
+      await this.saveWorkToSupabase(w, fullScript);
+      restoredWorks.push({
+        ...w,
+        fullScriptText: fullScript
+      });
+      restoredCount++;
+    }
+
+    this.data.works = restoredWorks;
+    this.saveToStorage();
+
+    if (window.app) window.app.renderStorefront();
+    if (window.admin) window.admin.renderWorksTable();
+
+    return {
+      success: true,
+      count: restoredCount,
+      timestamp: backupData.createdAt || new Date().toISOString()
+    };
+  }
+
+  /**
+   * Экспорт резервной копии каталога в локальный файл JSON (скачивание на компьютер)
+   */
+  async exportBackupToFile() {
+    const snapshot = await this.generateFullCatalogSnapshot();
+    const jsonStr = JSON.stringify(snapshot, null, 2);
+    const blob = new Blob([jsonStr], { type: 'application/json;charset=utf-8' });
+
+    const dateStr = new Date().toISOString().slice(0, 10);
+    const filename = `orb_translations_backup_${dateStr}.json`;
+
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(a.href);
+    }, 1000);
+
+    return { success: true, filename, count: snapshot.worksCount };
+  }
+
+  /**
+   * Импорт и восстановление каталога из локального файла JSON
+   */
+  async importBackupFromFile(file) {
+    return new Promise((resolve, reject) => {
+      if (!file) return reject(new Error('Файл не выбран'));
+
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        try {
+          const json = JSON.parse(e.target.result);
+          const result = await this.applyBackupData(json);
+          // Также сохраняем обновленный бэкап в Storage
+          this.createStorageBackup().catch(err => console.warn('Автобэкап после импорта:', err));
+          resolve(result);
+        } catch (err) {
+          reject(err);
+        }
+      };
+      reader.onerror = () => reject(new Error('Ошибка чтения файла'));
+      reader.readAsText(file);
+    });
+  }
+
+  /**
+   * Проверяет наличие и дату последнего бэкапа в Supabase Storage
+   */
+  async getStorageBackupInfo() {
+    if (!window.supabaseClient) return null;
+
+    try {
+      const { data, error } = await window.supabaseClient.storage
+        .from('backups')
+        .list('', { limit: 20, search: 'catalog_latest.json' });
+
+      if (!error && data && data.length > 0) {
+        const file = data.find(f => f.name === 'catalog_latest.json') || data[0];
+        return {
+          exists: true,
+          updatedAt: file.updated_at || file.created_at,
+          size: file.metadata ? file.metadata.size : null
+        };
+      }
+      return { exists: false };
+    } catch (e) {
+      return { exists: false, error: e };
+    }
+  }
+
+
 
   /**
    * Получение скрипта превью для работы:
