@@ -295,6 +295,7 @@
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   gap: 1.75rem;
+  align-items: start;
 }
 
 .work-card {
@@ -412,15 +413,62 @@
   font-style: italic;
 }
 
+.work-desc-container {
+  margin-bottom: 1rem;
+  display: flex;
+  flex-direction: column;
+}
+
 .work-desc {
   font-size: 0.85rem;
   color: var(--text-secondary);
   line-height: 1.5;
-  margin-bottom: 1rem;
+  margin-bottom: 0;
   display: -webkit-box;
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  transition: color 0.2s ease;
+  word-break: break-word;
+  user-select: text;
+}
+
+.work-desc.has-expand {
+  cursor: pointer;
+}
+
+.work-desc.has-expand:hover {
+  color: var(--text-primary);
+}
+
+.work-desc.is-expanded {
+  display: block;
+  -webkit-line-clamp: unset;
+  overflow: visible;
+  max-height: none;
+}
+
+.work-desc-toggle {
+  align-self: flex-start;
+  margin-top: 6px;
+  background: rgba(56, 189, 248, 0.08);
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  padding: 3px 8px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--accent-secondary, #38bdf8);
+  cursor: pointer;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.2s ease;
+}
+
+.work-desc-toggle:hover {
+  color: #fff;
+  background: rgba(56, 189, 248, 0.25);
+  border-color: rgba(56, 189, 248, 0.4);
 }
 
 .work-meta-row {

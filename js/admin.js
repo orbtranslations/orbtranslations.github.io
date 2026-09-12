@@ -226,7 +226,7 @@ class AdminService {
   /**
    * Вход в режим редактирования существующей работы
    */
-  editWork(workId) {
+  async editWork(workId) {
     const work = this.store.getWorkById(workId);
     if (!work) return;
 
@@ -253,10 +253,21 @@ class AdminService {
     const coverUrlInput = document.getElementById('admin-work-cover-url');
     if (coverUrlInput) coverUrlInput.value = work.coverUrl || '';
     this.updateCoverPreview(work.coverUrl || '');
-    document.getElementById('admin-script-text').value = work.sampleScriptText || '';
+
+    // Загрузка полного скрипта (из памяти или закрытой таблицы Supabase work_scripts)
+    const scriptTextarea = document.getElementById('admin-script-text');
+    scriptTextarea.value = '⏳ Загрузка полного скрипта...';
+    let fullScript = work.fullScriptText || '';
+    if (!fullScript || fullScript.startsWith('[STORED_IN_IDB')) {
+      fullScript = await this.store.getFullScript(workId);
+    }
+    if (!fullScript) {
+      fullScript = work.sampleScriptText || '';
+    }
+    scriptTextarea.value = fullScript;
 
     // Автоматический пересчет страниц
-    const totalPages = work.totalPages || this.calculateTotalPagesFromScript(work.sampleScriptText);
+    const totalPages = this.calculateTotalPagesFromScript(fullScript) || work.totalPages || 4;
     const displayEl = document.getElementById('admin-total-pages-display');
     const hiddenInput = document.getElementById('admin-work-total-pages');
     const slider = document.getElementById('admin-preview-pages-slider');
@@ -329,7 +340,7 @@ class AdminService {
     if (formCard) formCard.style.borderColor = 'var(--border-color)';
   }
 
-  handleWorkSubmit(e) {
+  async handleWorkSubmit(e) {
     e.preventDefault();
 
     const titleRu = document.getElementById('admin-work-title-ru').value.trim();
@@ -375,12 +386,12 @@ class AdminService {
     if (this.editingWorkId) {
       // Обновление существующей работы
       const updated = this.store.updateWork(this.editingWorkId, payload);
-      window.app.showToast(isEn ? `Changes in work "${payload.title.ru}" successfully saved!` : `Изменения в работе "${payload.title.ru}" надежно сохранены!`, 'success');
+      window.app.showToast(isEn ? `Changes in work "${payload.title.ru}" saved and secured with RLS!` : `Работа "${payload.title.ru}" сохранена, а скрипт защищен RLS!`, 'success');
       this.cancelEdit();
     } else {
       // Добавление новой работы
       const newWork = this.store.addWork(payload);
-      window.app.showToast(isEn ? `Work "${newWork.title.ru}" successfully registered! (pages: ${totalPages})` : `Работа "${newWork.title.ru}" успешно зарегистрирована! (страниц: ${totalPages})`, 'success');
+      window.app.showToast(isEn ? `Work "${newWork.title.ru}" registered and secured!` : `Работа "${newWork.title.ru}" успешно зарегистрирована и защищена RLS!`, 'success');
       this.cancelEdit();
     }
 
@@ -446,7 +457,7 @@ class AdminService {
     });
   }
 
-  handleDeleteWork(workId) {
+  async handleDeleteWork(workId) {
     const work = this.store.getWorkById(workId);
     if (!work) return;
 
@@ -456,7 +467,7 @@ class AdminService {
       if (this.editingWorkId === workId) {
         this.cancelEdit();
       }
-      this.store.deleteWork(workId);
+      await this.store.deleteWork(workId);
       this.renderWorksTable();
       window.app.renderStorefront();
       window.app.showToast('Работа удалена', 'info');

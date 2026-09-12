@@ -262,13 +262,37 @@ class ReaderService {
   /**
    * Открытие купленной работы в полном режиме
    */
-  openFullTranslationModal(workId) {
+  async openFullTranslationModal(workId) {
     const work = this.store.getWorkById(workId);
     if (!work) return;
 
+    const isEn = window.i18n && window.i18n.getLang() === 'en';
+    const isPurchased = this.store.hasPurchased(workId);
+
+    // Если не куплено и не админ — уведомляем и открываем превью
+    if (!isPurchased) {
+      window.app.showToast(
+        isEn ? 'Please purchase this work to read the full translation' : 'Для доступа к полному переводу необходимо приобрести работу',
+        'warning'
+      );
+      this.openPreview(workId);
+      return;
+    }
+
     this.currentWork = work;
     this.isFullMode = true;
-    this.parseWorkScript(work);
+
+    // Безопасная загрузка закрытого скрипта из Supabase work_scripts (защищено RLS)
+    let fullScript = work.fullScriptText || '';
+    if (!fullScript || fullScript.startsWith('[STORED_IN_IDB')) {
+      fullScript = await this.store.getFullScript(workId);
+    }
+
+    if (fullScript) {
+      this.parseWorkScript(work, fullScript);
+    } else {
+      this.parseWorkScript(work);
+    }
 
     const availableLangs = (this.parsedScript && this.parsedScript.languages && this.parsedScript.languages.length > 0)
       ? this.parsedScript.languages
@@ -285,10 +309,13 @@ class ReaderService {
     }
   }
 
-  parseWorkScript(work) {
-    if (work && work.sampleScriptText) {
+  parseWorkScript(work, customScript = null) {
+    const scriptToParse = customScript 
+      || (this.isFullMode ? (work.fullScriptText || work.sampleScriptText) : work.sampleScriptText);
+
+    if (scriptToParse && !scriptToParse.startsWith('[STORED_IN_IDB')) {
       try {
-        this.parsedScript = this.parser.parse(work.sampleScriptText);
+        this.parsedScript = this.parser.parse(scriptToParse);
       } catch (e) {
         console.error('Ошибка парсинга скрипта работы:', e);
       }
@@ -298,8 +325,16 @@ class ReaderService {
   /**
    * Разблокировка прямо из читалки после оплаты
    */
-  unlockFullReading() {
+  async unlockFullReading() {
     this.isFullMode = true;
+    if (this.currentWork) {
+      const fullScript = await this.store.getFullScript(this.currentWork.id);
+      if (fullScript) {
+        this.parseWorkScript(this.currentWork, fullScript);
+        this.rebuildPagesFromScript();
+      }
+    }
+
     this.pages.forEach(p => { p.isLocked = false; });
     const modeBadge = document.getElementById('reader-mode-badge');
     if (modeBadge) {

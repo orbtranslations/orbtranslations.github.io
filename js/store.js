@@ -200,27 +200,31 @@ class Store {
         .order('created_at', { ascending: false });
 
       if (!worksErr && dbWorks && dbWorks.length > 0) {
-        const mappedWorks = dbWorks.map(w => ({
-          id: w.id,
-          title: {
-            ru: w.title_ru,
-            en: w.title_en || w.title_ru
-          },
-          description: {
-            ru: w.description_ru,
-            en: w.description_en || w.description_ru
-          },
-          author: w.author,
-          price: Number(w.price),
-          totalPages: w.total_pages,
-          previewPagesCount: w.preview_pages_count,
-          tags: w.tags || [],
-          coverUrl: w.cover_url,
-          availableLanguages: w.available_languages || ['Русский', 'English'],
-          scriptFileName: w.script_file_name || 'script.txt',
-          sampleScriptText: w.sample_script_text || '',
-          createdAt: w.created_at ? w.created_at.split('T')[0] : '2026-09-01'
-        }));
+        const mappedWorks = dbWorks.map(w => {
+          const existing = (this.data.works || []).find(ew => ew.id === w.id);
+          return {
+            id: w.id,
+            title: {
+              ru: w.title_ru,
+              en: w.title_en || w.title_ru
+            },
+            description: {
+              ru: w.description_ru,
+              en: w.description_en || w.description_ru
+            },
+            author: w.author,
+            price: Number(w.price),
+            totalPages: w.total_pages,
+            previewPagesCount: w.preview_pages_count,
+            tags: w.tags || [],
+            coverUrl: w.cover_url,
+            availableLanguages: w.available_languages || ['Русский', 'English'],
+            scriptFileName: w.script_file_name || 'script.txt',
+            sampleScriptText: w.sample_script_text || '',
+            fullScriptText: (existing && existing.fullScriptText) ? existing.fullScriptText : null,
+            createdAt: w.created_at ? w.created_at.split('T')[0] : '2026-09-01'
+          };
+        });
 
         this.data.works = mappedWorks;
         this.saveToStorage();
@@ -588,6 +592,12 @@ The fate of the kingdom is now in your hands.
 
   addWork(workData) {
     const newId = 'work-' + String(Date.now()).slice(-5);
+    const fullScript = workData.sampleScriptText || '';
+    const previewPagesCount = Number(workData.previewPagesCount) || 3;
+    const previewSlice = (typeof ScriptParser !== 'undefined' && ScriptParser.generatePreviewSlice && fullScript)
+      ? ScriptParser.generatePreviewSlice(fullScript, previewPagesCount)
+      : fullScript;
+
     const work = {
       id: newId,
       title: typeof workData.title === 'object' 
@@ -599,7 +609,7 @@ The fate of the kingdom is now in your hands.
       author: workData.author || 'Автор перевода',
       price: Number(workData.price) || 1,
       totalPages: Number(workData.totalPages) || 10,
-      previewPagesCount: Number(workData.previewPagesCount) || 3,
+      previewPagesCount: previewPagesCount,
       tags: workData.tags || ['Перевод'],
       coverUrl: workData.coverUrl || 'assets/demo/cover-1.svg',
       previewImages: workData.previewImages || [
@@ -609,11 +619,17 @@ The fate of the kingdom is now in your hands.
       ],
       availableLanguages: workData.availableLanguages || ['Русский', 'English'],
       scriptFileName: workData.scriptFileName || 'script.txt',
-      sampleScriptText: workData.sampleScriptText || '',
+      sampleScriptText: previewSlice,
+      fullScriptText: fullScript,
       createdAt: new Date().toISOString().split('T')[0]
     };
+
     this.data.works.unshift(work);
     this.saveToStorage();
+
+    // Фоновая синхронизация с Supabase (метаданные + RLS скрипт)
+    this.saveWorkToSupabase(work, fullScript);
+
     return work;
   }
 
@@ -622,6 +638,19 @@ The fate of the kingdom is now in your hands.
     if (index === -1) return null;
 
     const current = this.data.works[index];
+    const previewPagesCount = updatedData.previewPagesCount !== undefined 
+      ? Number(updatedData.previewPagesCount) 
+      : (current.previewPagesCount || 3);
+
+    let fullScript = current.fullScriptText || current.sampleScriptText || '';
+    if (updatedData.sampleScriptText !== undefined && !updatedData.sampleScriptText.startsWith('[STORED_IN_IDB')) {
+      fullScript = updatedData.sampleScriptText;
+    }
+
+    const previewSlice = (typeof ScriptParser !== 'undefined' && ScriptParser.generatePreviewSlice && fullScript)
+      ? ScriptParser.generatePreviewSlice(fullScript, previewPagesCount)
+      : (updatedData.sampleScriptText !== undefined ? updatedData.sampleScriptText : current.sampleScriptText);
+
     this.data.works[index] = {
       ...current,
       title: typeof updatedData.title === 'object' 
@@ -639,20 +668,179 @@ The fate of the kingdom is now in your hands.
       author: updatedData.author !== undefined ? updatedData.author : current.author,
       price: updatedData.price !== undefined ? Number(updatedData.price) : current.price,
       totalPages: updatedData.totalPages !== undefined ? Number(updatedData.totalPages) : current.totalPages,
-      previewPagesCount: updatedData.previewPagesCount !== undefined ? Number(updatedData.previewPagesCount) : current.previewPagesCount,
+      previewPagesCount: previewPagesCount,
       tags: updatedData.tags !== undefined ? updatedData.tags : current.tags,
       coverUrl: updatedData.coverUrl !== undefined ? updatedData.coverUrl : (current.coverUrl || 'assets/demo/cover-1.svg'),
-      sampleScriptText: updatedData.sampleScriptText !== undefined ? updatedData.sampleScriptText : current.sampleScriptText,
+      sampleScriptText: previewSlice,
+      fullScriptText: fullScript,
       updatedAt: new Date().toISOString().split('T')[0]
     };
 
+    const updated = this.data.works[index];
     this.saveToStorage();
-    return this.data.works[index];
+
+    // Фоновая синхронизация с Supabase
+    this.saveWorkToSupabase(updated, fullScript);
+
+    return updated;
   }
 
-  deleteWork(id) {
+  async deleteWork(id) {
     this.data.works = this.data.works.filter(w => w.id !== id);
     this.saveToStorage();
+
+    if (window.supabaseClient) {
+      try {
+        await window.supabaseClient.from('works').delete().eq('id', id);
+      } catch (err) {
+        console.warn('Ошибка удаления работы из Supabase:', err);
+      }
+    }
+  }
+
+  /**
+   * Сохраняет работу в Supabase:
+   * - Открытая таблица public.works: метаданные + только безопасная превью-выжимка
+   * - Закрытая таблица public.work_scripts: полный скрипт под защитой RLS
+   */
+  async saveWorkToSupabase(work, fullScriptText = null) {
+    if (!window.supabaseClient) return { success: true, localOnly: true };
+
+    const scriptToSave = fullScriptText || work.fullScriptText || work.sampleScriptText || '';
+    const previewPages = Number(work.previewPagesCount) || 3;
+    const previewSlice = (typeof ScriptParser !== 'undefined' && ScriptParser.generatePreviewSlice && scriptToSave)
+      ? ScriptParser.generatePreviewSlice(scriptToSave, previewPages)
+      : (work.sampleScriptText || scriptToSave);
+
+    const titleRu = typeof work.title === 'object' ? (work.title.ru || '') : (work.title || '');
+    const titleEn = typeof work.title === 'object' ? (work.title.en || '') : (work.titleEn || titleRu);
+    const descRu = typeof work.description === 'object' ? (work.description.ru || '') : (work.description || '');
+    const descEn = typeof work.description === 'object' ? (work.description.en || '') : (work.descriptionEn || descRu);
+
+    const dbPayload = {
+      id: work.id,
+      title_ru: titleRu,
+      title_en: titleEn,
+      description_ru: descRu,
+      description_en: descEn,
+      author: work.author || '',
+      price: Number(work.price) || 1,
+      total_pages: Number(work.totalPages) || 1,
+      preview_pages_count: previewPages,
+      tags: work.tags || [],
+      cover_url: work.coverUrl || 'assets/demo/cover-1.svg',
+      available_languages: work.availableLanguages || ['Русский', 'English'],
+      script_file_name: work.scriptFileName || 'script.txt',
+      sample_script_text: previewSlice,
+      updated_at: new Date().toISOString()
+    };
+
+    try {
+      // 1. Сохранение метаданных и публичной превью-выжимки в public.works
+      const { error: worksErr } = await window.supabaseClient
+        .from('works')
+        .upsert(dbPayload);
+
+      if (worksErr) {
+        console.error('Ошибка сохранения работы в public.works:', worksErr);
+        throw worksErr;
+      }
+
+      // 2. Сохранение полного скрипта в закрытый бакет Storage (1 GB) и таблицу work_scripts
+      if (scriptToSave && !scriptToSave.startsWith('[STORED_IN_IDB')) {
+        // А. Загрузка в закрытый бакет Storage (1 GB)
+        try {
+          const blob = new Blob([scriptToSave], { type: 'text/plain;charset=utf-8' });
+          await window.supabaseClient.storage
+            .from('work-scripts')
+            .upload(`${work.id}.txt`, blob, {
+              cacheControl: '3600',
+              upsert: true
+            });
+        } catch (storageUpErr) {
+          console.warn('Загрузка в бакет work-scripts:', storageUpErr);
+        }
+
+        // Б. Резервное сохранение в таблицу work_scripts
+        try {
+          await window.supabaseClient
+            .from('work_scripts')
+            .upsert({
+              work_id: work.id,
+              full_script_text: scriptToSave,
+              updated_at: new Date().toISOString()
+            });
+        } catch (dbScriptErr) {
+          console.warn('Сохранение в таблицу work_scripts:', dbScriptErr);
+        }
+      }
+
+      return { success: true };
+    } catch (err) {
+      console.warn('Ошибка облачной синхронизации работы с Supabase:', err);
+      return { success: false, error: err };
+    }
+  }
+
+  /**
+   * Безопасное получение полного скрипта работы:
+   * 1. Проверяет Edge Function get-work-script (читает закрытый Storage 1 GB)
+   * 2. Резервно опрашивает закрытую таблицу Supabase work_scripts (RLS)
+   * Гости и неоплатившие пользователи получат null (доступ отклонен).
+   */
+  async getFullScript(workId) {
+    const work = this.getWorkById(workId);
+
+    // 1. Если полный скрипт уже загружен в память
+    if (work && work.fullScriptText && !work.fullScriptText.startsWith('[STORED_IN_IDB')) {
+      return work.fullScriptText;
+    }
+
+    // 2. Запрашиваем через серверную Edge Function get-work-script
+    if (window.supabaseClient) {
+      try {
+        if (window.supabaseClient.functions) {
+          const { data: fnData, error: fnErr } = await window.supabaseClient.functions.invoke('get-work-script', {
+            body: { workId: workId }
+          });
+          if (!fnErr && fnData && fnData.script) {
+            if (work) {
+              work.fullScriptText = fnData.script;
+              this.saveToStorage();
+            }
+            return fnData.script;
+          }
+        }
+      } catch (fnErr) {
+        console.warn('Edge Function недоступна, пробуем прямой запрос:', fnErr);
+      }
+
+      // 3. Резервный запрос в закрытую таблицу work_scripts из Supabase (RLS базы данных)
+      try {
+        const { data, error } = await window.supabaseClient
+          .from('work_scripts')
+          .select('full_script_text')
+          .eq('work_id', workId)
+          .maybeSingle();
+
+        if (!error && data && data.full_script_text) {
+          if (work) {
+            work.fullScriptText = data.full_script_text;
+            this.saveToStorage();
+          }
+          return data.full_script_text;
+        }
+      } catch (err) {
+        console.warn('Ошибка получения закрытого скрипта из Supabase:', err);
+      }
+    }
+
+    // 4. Резерв: если скрипт хранится в sampleScriptText (для локального офлайн-режима)
+    if (work && work.sampleScriptText && !work.sampleScriptText.startsWith('[STORED_IN_IDB')) {
+      return work.sampleScriptText;
+    }
+
+    return null;
   }
 
   // Настройки кошельков и приёма платежей

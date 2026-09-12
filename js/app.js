@@ -250,6 +250,23 @@ class App {
   }
 
   /**
+   * Переключение развернутого/свернутого состояния описания карточки
+   */
+  toggleDesc(workId, prefix = '') {
+    const descEl = document.getElementById(`${prefix}desc-${workId}`);
+    const btnEl = document.getElementById(`${prefix}desc-btn-${workId}`);
+    if (!descEl) return;
+
+    const isExpanded = descEl.classList.toggle('is-expanded');
+    if (btnEl) {
+      const isEn = window.i18n && window.i18n.getLang() === 'en';
+      const moreTxt = window.i18n ? window.i18n.t('card_desc_more') : (isEn ? 'Show full description ▾' : 'Развернуть описание ▾');
+      const lessTxt = window.i18n ? window.i18n.t('card_desc_less') : (isEn ? 'Collapse ▴' : 'Свернуть ▴');
+      btnEl.textContent = isExpanded ? lessTxt : moreTxt;
+    }
+  }
+
+  /**
    * Рендер каталога на главной витрине (с учетом выбранного языка RU / EN)
    */
   renderStorefront() {
@@ -278,6 +295,9 @@ class App {
       const freePagesTxt = window.i18n ? `${work.previewPagesCount} ${window.i18n.t('card_preview_free')}` : `${work.previewPagesCount} ${isEn ? 'pages free' : 'стр. бесплатно'}`;
       const totalTxt = window.i18n ? `${window.i18n.t('card_total_pages')} ${work.totalPages}` : `${isEn ? 'Total:' : 'Всего:'} ${work.totalPages} ${isEn ? 'pages' : 'стр.'}`;
 
+      const isLongDesc = Boolean(desc && desc.length > 80);
+      const moreTxt = window.i18n ? window.i18n.t('card_desc_more') : (isEn ? 'Show full description ▾' : 'Развернуть описание ▾');
+
       return `
         <article class="work-card">
           <div class="work-card-media">
@@ -293,7 +313,14 @@ class App {
               ${(work.tags || []).map(t => `<span class="tag-pill">${t}</span>`).join('')}
             </div>
             <h3 class="work-title" title="${title}">${title}</h3>
-            <p class="work-desc">${desc || ''}</p>
+            <div class="work-desc-container">
+              <p class="work-desc ${isLongDesc ? 'has-expand' : ''}" id="desc-${work.id}" ${isLongDesc ? `onclick="window.app.toggleDesc('${work.id}')"` : ''}>${desc || ''}</p>
+              ${isLongDesc ? `
+                <button type="button" class="work-desc-toggle" id="desc-btn-${work.id}" onclick="window.app.toggleDesc('${work.id}')">
+                  ${moreTxt}
+                </button>
+              ` : ''}
+            </div>
             <div class="work-meta-row">
               <span>✍️ ${work.author}</span>
               <span>📄 ${totalTxt}</span>
@@ -370,6 +397,9 @@ class App {
         const readBtnTxt = window.i18n ? window.i18n.t('card_btn_read') : '📖 Читать перевод';
         const accessTxt = window.i18n ? window.i18n.t('card_access_granted') : '✓ Доступ открыт';
 
+        const isLongDesc = Boolean(desc && desc.length > 80);
+        const moreTxt = window.i18n ? window.i18n.t('card_desc_more') : (isEn ? 'Show full description ▾' : 'Развернуть описание ▾');
+
         return `
           <article class="work-card">
             <div class="work-card-media">
@@ -381,7 +411,14 @@ class App {
             </div>
             <div class="work-card-body">
               <h3 class="work-title">${title}</h3>
-              <p class="work-desc">${desc}</p>
+              <div class="work-desc-container">
+                <p class="work-desc ${isLongDesc ? 'has-expand' : ''}" id="p-desc-${work.id}" ${isLongDesc ? `onclick="window.app.toggleDesc('${work.id}', 'p-')"` : ''}>${desc || ''}</p>
+                ${isLongDesc ? `
+                  <button type="button" class="work-desc-toggle" id="p-desc-btn-${work.id}" onclick="window.app.toggleDesc('${work.id}', 'p-')">
+                    ${moreTxt}
+                  </button>
+                ` : ''}
+              </div>
             </div>
             <div class="work-card-footer">
               <button class="btn btn-secondary" onclick="window.reader.openPreview('${work.id}')">${previewBtnTxt}</button>

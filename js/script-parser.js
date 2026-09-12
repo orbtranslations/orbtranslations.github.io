@@ -469,6 +469,129 @@ class ScriptParser {
     if (!Array.isArray(blocks)) return '';
     return blocks.filter(b => b && b.trim()).join('\n\n');
   }
+
+  /**
+   * Генерирует безопасную выжимку скрипта только для превью-страниц (первые N страниц).
+   * Удаляет весь остальной текст истории и лишние координаты, защищая полный перевод от утечки.
+   * @param {string} fullScriptText - Исходный полный скрипт
+   * @param {number} previewPagesCount - Количество разрешенных превью страниц (по умолчанию 3)
+   * @returns {string} Безопасный урезанный скрипт для публичного каталога
+   */
+  static generatePreviewSlice(fullScriptText, previewPagesCount = 3) {
+    if (!fullScriptText || typeof fullScriptText !== 'string' || !fullScriptText.trim()) {
+      return '';
+    }
+
+    try {
+      const parser = new ScriptParser();
+      const parsed = parser.parse(fullScriptText);
+
+      if (!parsed || !parsed.languages || parsed.languages.length === 0) {
+        // Если структура нестандартная, отдаем только первые 2000 символов
+        return fullScriptText.slice(0, 2000);
+      }
+
+      const limit = Math.max(1, Number(previewPagesCount) || 3);
+      const keptKeys = new Set();
+      const out = [];
+
+      // 1. Заголовок и технические строки папок
+      out.push(parsed.titleMarker || 'Title');
+      if (parsed.techHeaderLines && parsed.techHeaderLines.length > 0) {
+        parsed.techHeaderLines.forEach(l => out.push(l));
+      }
+      if (parsed.titleContent && parsed.titleContent.length > 0) {
+        parsed.titleContent.forEach(l => out.push(l));
+      }
+      out.push('');
+
+      // 2. Для каждого языка сохраняем только первые limit записей
+      parsed.languages.forEach(lang => {
+        out.push(`【${lang}】`);
+        out.push('');
+
+        const entries = parsed.entries[lang] || [];
+        const sliceEntries = entries.slice(0, limit);
+
+        sliceEntries.forEach(entry => {
+          // Регистрируем ключ для фильтрации OVERLAY_DATA
+          const normKey = (entry.key || '').replace(/\\/g, '/');
+          const pureName = normKey.split('/').pop();
+          const targetNorm = (entry.targetKey || '').replace(/\\/g, '/');
+          const pureTarget = targetNorm.split('/').pop();
+
+          if (entry.key) keptKeys.add(entry.key);
+          if (normKey) keptKeys.add(normKey);
+          if (pureName) keptKeys.add(pureName);
+          if (entry.targetKey) keptKeys.add(entry.targetKey);
+          if (targetNorm) keptKeys.add(targetNorm);
+          if (pureTarget) keptKeys.add(pureTarget);
+
+          // Записываем заголовок записи
+          if (entry.rawLine) {
+            out.push(entry.rawLine);
+          } else if (entry.alias) {
+            out.push(`${entry.key}=${entry.alias}`);
+          } else {
+            out.push(entry.key);
+          }
+
+          // Текст диалогов текущей превью-записи
+          if (entry.text) {
+            out.push(entry.text.trimEnd());
+          }
+          out.push('');
+        });
+      });
+
+      // 3. Секция OVERLAY_DATA: фильтруем, оставляя координаты только для превью-записей
+      if (parsed.overlayData && typeof parsed.overlayData === 'object') {
+        const rawOverlay = parsed.overlayData;
+        const filteredDialogData = {};
+        const usedPortraits = new Set();
+
+        if (rawOverlay.dialogData && typeof rawOverlay.dialogData === 'object') {
+          for (const [blockKey, bSettings] of Object.entries(rawOverlay.dialogData)) {
+            const baseTarget = blockKey.split('_block_')[0];
+            const normBase = baseTarget.replace(/\\/g, '/');
+            const pureBase = normBase.split('/').pop();
+
+            if (keptKeys.has(baseTarget) || keptKeys.has(normBase) || keptKeys.has(pureBase)) {
+              filteredDialogData[blockKey] = bSettings;
+              if (bSettings && bSettings.portraitName) {
+                usedPortraits.add(bSettings.portraitName);
+              }
+            }
+          }
+        }
+
+        const filteredPortraits = {};
+        if (rawOverlay.portraits && typeof rawOverlay.portraits === 'object') {
+          let portraitCount = 0;
+          for (const [pName, pObj] of Object.entries(rawOverlay.portraits)) {
+            if (usedPortraits.has(pName) || portraitCount < 10) {
+              filteredPortraits[pName] = pObj;
+              portraitCount++;
+            }
+          }
+        }
+
+        const cleanOverlay = {
+          ...rawOverlay,
+          dialogData: filteredDialogData,
+          portraits: filteredPortraits
+        };
+
+        out.push('【OVERLAY_DATA】');
+        out.push(JSON.stringify(cleanOverlay, null, 2));
+      }
+
+      return out.join('\n');
+    } catch (err) {
+      console.warn('Ошибка нарезки превью-скрипта:', err);
+      return fullScriptText.slice(0, 3000);
+    }
+  }
 }
 
 if (typeof module !== 'undefined') {

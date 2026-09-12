@@ -34,6 +34,21 @@ CREATE TABLE IF NOT EXISTS public.works (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- 2.1. Защищенная таблица полных скриптов перевода (доступна только покупателям и администраторам)
+CREATE TABLE IF NOT EXISTS public.work_scripts (
+  work_id TEXT PRIMARY KEY REFERENCES public.works(id) ON DELETE CASCADE,
+  full_script_text TEXT NOT NULL,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Автоматический перенос существующих скриптов из works в work_scripts при первом накате
+INSERT INTO public.work_scripts (work_id, full_script_text)
+SELECT id, sample_script_text
+FROM public.works
+WHERE sample_script_text IS NOT NULL AND sample_script_text != ''
+ON CONFLICT (work_id) DO UPDATE
+SET full_script_text = EXCLUDED.full_script_text;
+
 -- 3. Таблица купленных работ
 CREATE TABLE IF NOT EXISTS public.purchases (
   id BIGSERIAL PRIMARY KEY,
@@ -293,12 +308,16 @@ $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 -- 8. Включение RLS (Row Level Security) для защиты таблиц
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.works ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.work_scripts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.purchases ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.crypto_orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.wallet_settings ENABLE ROW LEVEL SECURITY;
 
 -- Удаление старых политик при повторном накате
 DROP POLICY IF EXISTS "Public read works" ON public.works;
+DROP POLICY IF EXISTS "Admin manage works" ON public.works;
+DROP POLICY IF EXISTS "Admin manage work scripts" ON public.work_scripts;
+DROP POLICY IF EXISTS "Read work script if purchased or admin" ON public.work_scripts;
 DROP POLICY IF EXISTS "Public read wallet_settings" ON public.wallet_settings;
 DROP POLICY IF EXISTS "Read own profile" ON public.profiles;
 DROP POLICY IF EXISTS "Update own profile" ON public.profiles;
@@ -314,29 +333,75 @@ DROP POLICY IF EXISTS "Insert orders" ON public.crypto_orders;
 DROP POLICY IF EXISTS "Update orders" ON public.crypto_orders;
 DROP POLICY IF EXISTS "Delete orders" ON public.crypto_orders;
 
--- Чтение каталога и настроек доступно всем
+-- 8.1. Каталог работ: публичное чтение метаданных и превью, управление — только администратору
 CREATE POLICY "Public read works" ON public.works FOR SELECT USING (true);
+CREATE POLICY "Admin manage works" ON public.works FOR ALL
+  USING (public.is_admin())
+  WITH CHECK (public.is_admin());
+
+-- 8.2. Полные скрипты перевода: чтение только при наличии покупки или роли администратора
+CREATE POLICY "Read work script if purchased or admin" ON public.work_scripts FOR SELECT
+  USING (
+    public.is_admin() OR 
+    EXISTS (
+      SELECT 1 FROM public.purchases 
+      WHERE purchases.user_id = auth.uid() 
+        AND purchases.work_id = work_scripts.work_id
+    )
+  );
+CREATE POLICY "Admin manage work scripts" ON public.work_scripts FOR ALL
+  USING (public.is_admin())
+  WITH CHECK (public.is_admin());
+
+-- 8.3. Настройки кошельков: публичное чтение
 CREATE POLICY "Public read wallet_settings" ON public.wallet_settings FOR SELECT USING (true);
 
--- Профили: чтение и вставка доступны всем пользователям, а обновление баланса — владельцу или администратору
+-- 8.4. Профили: чтение и вставка доступны всем пользователям, а обновление баланса — владельцу или администратору
 CREATE POLICY "Users read profiles" ON public.profiles FOR SELECT USING (true);
 CREATE POLICY "Users insert profiles" ON public.profiles FOR INSERT WITH CHECK (true);
 CREATE POLICY "Users update profiles" ON public.profiles FOR UPDATE USING (auth.uid() = id OR public.is_admin()) WITH CHECK (auth.uid() = id OR public.is_admin());
 
--- Покупки: чтение и вставка своих покупок
+-- 8.5. Покупки: чтение и вставка своих покупок
 CREATE POLICY "Read own purchases" ON public.purchases FOR SELECT USING (auth.uid() = user_id);
 CREATE POLICY "Insert own purchases" ON public.purchases FOR INSERT WITH CHECK (auth.uid() = user_id);
 
--- Заказы: пользователи могут создавать, просматривать, обновлять и удалять заказы (администраторы могут стирать сделки)
+-- 8.6. Заказы: пользователи могут создавать, просматривать, обновлять и удалять заказы (администраторы могут стирать сделки)
 CREATE POLICY "Read orders" ON public.crypto_orders FOR SELECT USING (true);
 CREATE POLICY "Insert orders" ON public.crypto_orders FOR INSERT WITH CHECK (true);
 CREATE POLICY "Update orders" ON public.crypto_orders FOR UPDATE USING (true) WITH CHECK (true);
 CREATE POLICY "Delete orders" ON public.crypto_orders FOR DELETE USING (true);
 
+-- 8.7. Закрытый бакет Storage work-scripts (1 GB) и политики доступа
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('work-scripts', 'work-scripts', false)
+ON CONFLICT (id) DO UPDATE SET public = false;
+
+DROP POLICY IF EXISTS "Admin upload work scripts" ON storage.objects;
+DROP POLICY IF EXISTS "Admin update work scripts" ON storage.objects;
+DROP POLICY IF EXISTS "Admin delete work scripts" ON storage.objects;
+DROP POLICY IF EXISTS "Admin read work scripts" ON storage.objects;
+
+CREATE POLICY "Admin upload work scripts" ON storage.objects
+FOR INSERT TO authenticated
+WITH CHECK (bucket_id = 'work-scripts' AND public.is_admin());
+
+CREATE POLICY "Admin update work scripts" ON storage.objects
+FOR UPDATE TO authenticated
+USING (bucket_id = 'work-scripts' AND public.is_admin());
+
+CREATE POLICY "Admin delete work scripts" ON storage.objects
+FOR DELETE TO authenticated
+USING (bucket_id = 'work-scripts' AND public.is_admin());
+
+CREATE POLICY "Admin read work scripts" ON storage.objects
+FOR SELECT TO authenticated
+USING (bucket_id = 'work-scripts' AND public.is_admin());
+
 -- 9. Права доступа к таблицам и процедурам для PostgREST API (роли anon и authenticated)
 GRANT USAGE ON SCHEMA public TO anon, authenticated;
 GRANT ALL ON TABLE public.profiles TO anon, authenticated;
-GRANT SELECT ON TABLE public.works TO anon, authenticated;
+GRANT ALL ON TABLE public.works TO anon, authenticated;
+GRANT ALL ON TABLE public.work_scripts TO anon, authenticated;
 GRANT ALL ON TABLE public.purchases TO anon, authenticated;
 GRANT ALL ON TABLE public.crypto_orders TO anon, authenticated;
 GRANT SELECT ON TABLE public.wallet_settings TO anon, authenticated;

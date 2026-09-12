@@ -71,6 +71,8 @@ class I18nManager {
         card_access_granted: '✓ Доступ открыт',
         card_total_pages: 'Всего:',
         card_author: 'Автор:',
+        card_desc_more: 'Развернуть описание ▾',
+        card_desc_less: 'Свернуть ▴',
         currency_orb: 'Орб',
 
         // Purchases Section & Tabs
@@ -344,6 +346,8 @@ class I18nManager {
         card_access_granted: '✓ Unlocked',
         card_total_pages: 'Total:',
         card_author: 'Author:',
+        card_desc_more: 'Show full description ▾',
+        card_desc_less: 'Collapse ▴',
         currency_orb: 'Orbs',
 
         // Purchases Section & Tabs
