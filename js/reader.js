@@ -68,17 +68,41 @@ class ReaderService {
   ];
 
   /**
+   * Нормализует список портретов (преобразует словарь или массив в единый массив объектов)
+   */
+  normalizePortraits(portraits) {
+    if (!portraits) return [];
+    if (Array.isArray(portraits)) {
+      return portraits.filter(Boolean).map(p => ({
+        ...p,
+        name: p.name || ''
+      }));
+    }
+    if (typeof portraits === 'object') {
+      return Object.entries(portraits).map(([key, val]) => {
+        if (!val || typeof val !== 'object') return null;
+        return {
+          ...val,
+          name: val.name || key
+        };
+      }).filter(Boolean);
+    }
+    return [];
+  }
+
+  /**
    * Поиск наиболее подходящего портрета с поддержкой русских и английских алиасов
    */
-  findBestPortrait(portraits, charName, sceneKey, explicitName = '') {
+  findBestPortrait(rawPortraits, charName, sceneKey, explicitName = '') {
+    const portraits = this.normalizePortraits(rawPortraits);
     if (!portraits || portraits.length === 0) return null;
 
     // 1. Точное или частичное совпадение по явному имени из dialogData
     if (explicitName) {
       const expClean = explicitName.toLowerCase().trim();
-      const exact = portraits.find(p => p.name.toLowerCase() === expClean);
+      const exact = portraits.find(p => p && p.name && p.name.toLowerCase() === expClean);
       if (exact) return exact;
-      const partial = portraits.find(p => p.name.toLowerCase().includes(expClean));
+      const partial = portraits.find(p => p && p.name && p.name.toLowerCase().includes(expClean));
       if (partial) return partial;
     }
 
@@ -107,6 +131,7 @@ class ReaderService {
 
     // Приоритет 1: Имя + сцена (например, Хасами для сцены 10-02 -> Хасами 10-01A)
     const matchScene = portraits.find(p => {
+      if (!p || !p.name) return false;
       const pLower = p.name.toLowerCase();
       const sLower = (p.sourceImage || '').toLowerCase();
       const hasChar = targetAliases.some(a => pLower.includes(a));
@@ -118,6 +143,7 @@ class ReaderService {
 
     // Приоритет 2: Любой портрет данного персонажа
     const matchAny = portraits.find(p => {
+      if (!p || !p.name) return false;
       const pLower = p.name.toLowerCase();
       return targetAliases.some(a => pLower.includes(a));
     });
@@ -1289,7 +1315,7 @@ class ReaderService {
     const presets = overlayData.presets || [];
     const frames = overlayData.frames || {};
     const dialogData = overlayData.dialogData || {};
-    const portraits = overlayData.portraits || [];
+    const portraits = this.normalizePortraits(overlayData.portraits);
     const imagesData = overlayData.images || {};
 
     const cleanBase = (page.key || '').split(/[\/\\]/).pop().replace(/\.[^/.]+$/, '');
