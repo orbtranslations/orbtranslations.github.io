@@ -167,7 +167,18 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- 8. Политики безопасности (Row Level Security - RLS)
+-- 7.1. Вспомогательная функция проверки роли администратора (SECURITY DEFINER исключает рекурсию RLS)
+CREATE OR REPLACE FUNCTION public.is_admin()
+RETURNS BOOLEAN AS $$
+BEGIN
+  RETURN EXISTS (
+    SELECT 1 FROM public.profiles
+    WHERE id = auth.uid() AND role = 'admin'
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- 8. Включение RLS (Row Level Security) для защиты таблиц
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.works ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.purchases ENABLE ROW LEVEL SECURITY;
@@ -179,29 +190,33 @@ DROP POLICY IF EXISTS "Public read works" ON public.works;
 DROP POLICY IF EXISTS "Public read wallet_settings" ON public.wallet_settings;
 DROP POLICY IF EXISTS "Read own profile" ON public.profiles;
 DROP POLICY IF EXISTS "Update own profile" ON public.profiles;
+DROP POLICY IF EXISTS "Users read profiles" ON public.profiles;
+DROP POLICY IF EXISTS "Users update profiles" ON public.profiles;
 DROP POLICY IF EXISTS "Read own purchases" ON public.purchases;
 DROP POLICY IF EXISTS "Insert own purchases" ON public.purchases;
 DROP POLICY IF EXISTS "Read own orders" ON public.crypto_orders;
 DROP POLICY IF EXISTS "Read orders" ON public.crypto_orders;
 DROP POLICY IF EXISTS "Insert orders" ON public.crypto_orders;
 DROP POLICY IF EXISTS "Update orders" ON public.crypto_orders;
+DROP POLICY IF EXISTS "Delete orders" ON public.crypto_orders;
 
 -- Чтение каталога и настроек доступно всем
 CREATE POLICY "Public read works" ON public.works FOR SELECT USING (true);
 CREATE POLICY "Public read wallet_settings" ON public.wallet_settings FOR SELECT USING (true);
 
--- Профили: каждый читает свой
-CREATE POLICY "Read own profile" ON public.profiles FOR SELECT USING (auth.uid() = id);
-CREATE POLICY "Update own profile" ON public.profiles FOR UPDATE USING (auth.uid() = id);
+-- Профили: пользователи видят и обновляют свой профиль, а администраторы — любые профили (для изменения баланса)
+CREATE POLICY "Users read profiles" ON public.profiles FOR SELECT USING (auth.uid() = id OR public.is_admin());
+CREATE POLICY "Users update profiles" ON public.profiles FOR UPDATE USING (auth.uid() = id OR public.is_admin()) WITH CHECK (auth.uid() = id OR public.is_admin());
 
 -- Покупки: чтение и вставка своих покупок
 CREATE POLICY "Read own purchases" ON public.purchases FOR SELECT USING (auth.uid() = user_id);
 CREATE POLICY "Insert own purchases" ON public.purchases FOR INSERT WITH CHECK (auth.uid() = user_id);
 
--- Заказы: пользователи могут создавать, просматривать и обновлять заказы
+-- Заказы: пользователи могут создавать, просматривать, обновлять и удалять заказы (администраторы могут стирать сделки)
 CREATE POLICY "Read orders" ON public.crypto_orders FOR SELECT USING (true);
 CREATE POLICY "Insert orders" ON public.crypto_orders FOR INSERT WITH CHECK (true);
 CREATE POLICY "Update orders" ON public.crypto_orders FOR UPDATE USING (true) WITH CHECK (true);
+CREATE POLICY "Delete orders" ON public.crypto_orders FOR DELETE USING (true);
 
 -- 9. Права доступа к таблицам и процедурам для PostgREST API (роли anon и authenticated)
 GRANT USAGE ON SCHEMA public TO anon, authenticated;
@@ -210,4 +225,5 @@ GRANT SELECT ON TABLE public.works TO anon, authenticated;
 GRANT ALL ON TABLE public.purchases TO anon, authenticated;
 GRANT ALL ON TABLE public.crypto_orders TO anon, authenticated;
 GRANT SELECT ON TABLE public.wallet_settings TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.is_admin() TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.complete_crypto_order(TEXT, TEXT) TO anon, authenticated;

@@ -142,7 +142,10 @@ class App {
     if (tabName === 'purchases') {
       this.renderPurchases();
     } else if (tabName === 'admin') {
-      if (window.admin) window.admin.renderWorksTable();
+      if (window.admin) {
+        window.admin.renderWorksTable();
+        window.admin.renderUsersTable();
+      }
     } else {
       this.renderStorefront();
     }

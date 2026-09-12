@@ -9,11 +9,14 @@ class AdminService {
   constructor(store) {
     this.store = store;
     this.editingWorkId = null;
+    this.activeDealsUserId = null;
+    this.activeDealsUserName = '';
   }
 
   init() {
     this.bindEvents();
     this.renderWorksTable();
+    this.renderUsersTable();
     this.loadXpubSettings();
   }
 
@@ -521,6 +524,275 @@ class AdminService {
     }
 
     window.app.showToast('Настройки адресов кошельков успешно сохранены!', 'success');
+  }
+
+  /**
+   * Рендер таблицы зарегистрированных пользователей с возможностью изменения баланса
+   */
+  async renderUsersTable() {
+    const tableBody = document.getElementById('admin-users-table-body');
+    if (!tableBody) return;
+
+    const isEn = window.i18n && window.i18n.getLang() === 'en';
+    tableBody.innerHTML = `<tr><td colspan="5" style="text-align: center; padding: 2rem; color: var(--text-muted);">${isEn ? '⏳ Loading users...' : '⏳ Загрузка пользователей...'}</td></tr>`;
+
+    try {
+      const users = await this.store.getRegisteredUsers();
+      tableBody.innerHTML = '';
+
+      if (!users || users.length === 0) {
+        tableBody.innerHTML = `<tr><td colspan="5" style="text-align: center; padding: 2rem; color: var(--text-muted);">${isEn ? 'No registered users found.' : 'Зарегистрированные пользователи не найдены.'}</td></tr>`;
+        return;
+      }
+
+      users.forEach(u => {
+        const tr = document.createElement('tr');
+        tr.style.borderBottom = '1px solid var(--border-color)';
+        tr.style.transition = 'background 0.2s ease';
+
+        const safeId = u.id || '';
+        const safeName = u.name || 'User';
+        const safeEmail = u.email || '—';
+        const role = u.role || 'user';
+        const orbs = Number(u.orbs || 0);
+
+        tr.innerHTML = `
+          <td style="padding: 0.85rem 1rem;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <div style="width: 36px; height: 36px; border-radius: 50%; background: linear-gradient(135deg, rgba(108, 92, 231, 0.3), rgba(0, 206, 201, 0.3)); border: 1px solid var(--border-color); display: flex; align-items: center; justify-content: center; font-size: 1.1rem; flex-shrink: 0;">
+                ${role === 'admin' ? '👑' : '👤'}
+              </div>
+              <div>
+                <div style="font-weight: 600; color: var(--text-primary);">${safeName}</div>
+                <div style="font-size: 0.72rem; color: var(--text-muted); font-family: monospace;">${safeId}</div>
+              </div>
+            </div>
+          </td>
+          <td style="padding: 0.85rem 1rem; color: var(--text-secondary); font-size: 0.85rem;">
+            ${safeEmail}
+          </td>
+          <td style="padding: 0.85rem 1rem;">
+            <span class="badge ${role === 'admin' ? 'badge-accent' : 'badge-glass'}" style="font-size: 0.75rem;">
+              ${role === 'admin' ? (isEn ? '👑 Admin' : '👑 Админ') : (isEn ? '🛡️ User' : '🛡️ Пользователь')}
+            </span>
+          </td>
+          <td style="padding: 0.85rem 1rem;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <input type="number" id="admin-user-orbs-${safeId}" class="input-styled" min="0" step="0.5" value="${orbs}" style="width: 95px; padding: 0.35rem 0.6rem; font-size: 0.85rem; font-weight: 600; text-align: right; color: var(--accent-gold);">
+              <span style="font-size: 0.82rem; color: var(--text-muted);">🪙</span>
+              <button type="button" class="btn btn-secondary btn-small" onclick="window.admin.handleUserBalanceSave('${safeId}')" style="padding: 0.35rem 0.65rem; font-size: 0.8rem;" title="${isEn ? 'Save balance' : 'Сохранить баланс'}">
+                💾
+              </button>
+            </div>
+          </td>
+          <td style="padding: 0.85rem 1rem;">
+            <button type="button" class="btn btn-secondary btn-small" onclick="window.admin.openUserDealsModal('${safeId}', '${safeName.replace(/'/g, "\\'")}')" style="padding: 0.35rem 0.75rem; font-size: 0.82rem; display: inline-flex; align-items: center; gap: 5px;">
+              📜 ${isEn ? 'Deals' : 'Сделки'}
+            </button>
+          </td>
+        `;
+        tableBody.appendChild(tr);
+      });
+    } catch (err) {
+      console.error('Ошибка рендера таблицы пользователей:', err);
+      tableBody.innerHTML = `<tr><td colspan="5" style="text-align: center; padding: 2rem; color: #ff6b6b;">${isEn ? 'Failed to load users' : 'Не удалось загрузить список пользователей'}</td></tr>`;
+    }
+  }
+
+  /**
+   * Сохранение нового баланса пользователя
+   */
+  async handleUserBalanceSave(userId) {
+    const input = document.getElementById(`admin-user-orbs-${userId}`);
+    if (!input) return;
+
+    const isEn = window.i18n && window.i18n.getLang() === 'en';
+    const val = parseFloat(input.value);
+
+    if (isNaN(val) || val < 0) {
+      window.app.showToast(isEn ? 'Please enter a valid positive number' : 'Введите корректное неотрицательное число', 'error');
+      return;
+    }
+
+    try {
+      await this.store.updateUserOrbs(userId, val);
+
+      // Если обновился баланс текущего пользователя, обновляем шапку профиля
+      if (this.store.data.currentUser && this.store.data.currentUser.id === userId) {
+        if (window.app && window.app.renderUserHeader) {
+          window.app.renderUserHeader();
+        }
+      }
+
+      window.app.showToast(isEn ? 'User balance updated successfully!' : 'Баланс пользователя успешно обновлен!', 'success');
+    } catch (err) {
+      console.error('Ошибка сохранения баланса пользователя:', err);
+      window.app.showToast(isEn ? `Failed to update balance: ${err.message}` : `Ошибка сохранения баланса: ${err.message}`, 'error');
+    }
+  }
+
+  /**
+   * Открытие модального окна просмотра сделок конкретного пользователя
+   */
+  async openUserDealsModal(userId, userName = '') {
+    this.activeDealsUserId = userId;
+    this.activeDealsUserName = userName || userId;
+
+    const modal = document.getElementById('admin-user-deals-modal');
+    const nameEl = document.getElementById('admin-deals-modal-username');
+    if (nameEl) {
+      nameEl.textContent = this.activeDealsUserName;
+    }
+
+    if (modal) {
+      modal.classList.add('active');
+      document.body.classList.add('modal-open');
+    }
+
+    await this.renderUserDealsTable(userId);
+  }
+
+  refreshCurrentDealsModal() {
+    if (this.activeDealsUserId) {
+      this.renderUserDealsTable(this.activeDealsUserId);
+    }
+  }
+
+  /**
+   * Рендер таблицы сделок выбранного пользователя
+   */
+  async renderUserDealsTable(userId) {
+    const tableBody = document.getElementById('admin-user-deals-table-body');
+    if (!tableBody) return;
+
+    const isEn = window.i18n && window.i18n.getLang() === 'en';
+    tableBody.innerHTML = `<tr><td colspan="8" style="text-align: center; padding: 2rem; color: var(--text-muted);">${isEn ? '⏳ Loading deals...' : '⏳ Загрузка сделок...'}</td></tr>`;
+
+    try {
+      const orders = await this.store.getUserOrders(userId);
+      tableBody.innerHTML = '';
+
+      if (!orders || orders.length === 0) {
+        tableBody.innerHTML = `<tr><td colspan="8" style="text-align: center; padding: 2.5rem; color: var(--text-muted);">${isEn ? 'No deals found for this user.' : 'У этого пользователя пока нет сделок.'}</td></tr>`;
+        return;
+      }
+
+      orders.forEach(ord => {
+        const tr = document.createElement('tr');
+        tr.style.borderBottom = '1px solid var(--border-color)';
+        tr.style.transition = 'background 0.2s ease';
+
+        // Форматирование даты
+        let dateStr = '—';
+        if (ord.date) {
+          try {
+            const d = new Date(ord.date);
+            dateStr = d.toLocaleDateString(isEn ? 'en-US' : 'ru-RU', {
+              day: '2-digit', month: '2-digit', year: 'numeric',
+              hour: '2-digit', minute: '2-digit'
+            });
+          } catch (_) {
+            dateStr = String(ord.date).slice(0, 16);
+          }
+        }
+
+        // Сеть и значок
+        const net = ord.network || 'USDT';
+        let netBadge = 'badge-glass';
+        let netIcon = '🔴';
+        if (net.includes('Polygon') || net.includes('POL')) {
+          netBadge = 'badge-info';
+          netIcon = '🟣';
+        } else if (net.includes('BTC') || net.includes('Bitcoin')) {
+          netBadge = 'badge-gold';
+          netIcon = '🟠';
+        }
+
+        // Статус
+        let statusBadge = '';
+        if (ord.status === 'completed' || ord.status === 'success') {
+          statusBadge = `<span class="badge badge-success" style="font-size: 0.75rem;">${isEn ? '✅ Completed' : '✅ Завершено'}</span>`;
+        } else if (ord.status === 'cancelled' || ord.status === 'expired') {
+          statusBadge = `<span class="badge badge-glass" style="font-size: 0.75rem; color: #ff7675;">${isEn ? '✕ Cancelled' : '✕ Отменена'}</span>`;
+        } else if (ord.status === 'awaiting_confirmations') {
+          statusBadge = `<span class="badge badge-warning" style="font-size: 0.75rem;">${isEn ? '⛓️ Confirmations' : '⛓️ Подтверждения'}</span>`;
+        } else {
+          statusBadge = `<span class="badge badge-warning" style="font-size: 0.75rem;">${isEn ? '⏳ Pending' : '⏳ Ожидание'}</span>`;
+        }
+
+        // Ссылка на хэш
+        let txHtml = '<span style="color: var(--text-muted);">—</span>';
+        if (ord.txHash) {
+          const shortHash = ord.txHash.slice(0, 8) + '...' + ord.txHash.slice(-6);
+          if (ord.explorerUrl) {
+            txHtml = `<a href="${ord.explorerUrl}" target="_blank" rel="noopener noreferrer" style="color: var(--accent-secondary); font-family: monospace; text-decoration: underline; font-size: 0.78rem;">${shortHash} ↗</a>`;
+          } else {
+            txHtml = `<span style="font-family: monospace; font-size: 0.78rem;">${shortHash}</span>`;
+          }
+        }
+
+        tr.innerHTML = `
+          <td style="padding: 0.65rem 0.6rem; color: var(--text-secondary); white-space: nowrap;">${dateStr}</td>
+          <td style="padding: 0.65rem 0.6rem; font-family: monospace; font-size: 0.75rem; color: var(--accent-secondary); white-space: nowrap;">#${ord.id}</td>
+          <td style="padding: 0.65rem 0.6rem; white-space: nowrap;">
+            <span class="badge ${netBadge}" style="font-size: 0.72rem;">${netIcon} ${net}</span>
+          </td>
+          <td style="padding: 0.65rem 0.6rem; font-weight: 600; white-space: nowrap;">${ord.amountUsdt || '0'}</td>
+          <td style="padding: 0.65rem 0.6rem; color: var(--accent-gold); font-weight: 700; white-space: nowrap;">+${ord.orbs || '0'} 🪙</td>
+          <td style="padding: 0.65rem 0.6rem; white-space: nowrap;">${txHtml}</td>
+          <td style="padding: 0.65rem 0.6rem; white-space: nowrap;">${statusBadge}</td>
+          <td style="padding: 0.65rem 0.6rem; text-align: center; white-space: nowrap;">
+            <button type="button" class="btn btn-secondary btn-small" style="color: #ff6b6b; padding: 2px 7px; font-size: 0.75rem;" onclick="window.admin.handleDeleteSingleDeal('${ord.id}', '${userId}')" title="${isEn ? 'Delete deal' : 'Удалить сделку'}">
+              🗑️
+            </button>
+          </td>
+        `;
+        tableBody.appendChild(tr);
+      });
+    } catch (err) {
+      console.error('Ошибка загрузки сделок пользователя:', err);
+      tableBody.innerHTML = `<tr><td colspan="8" style="text-align: center; padding: 2rem; color: #ff6b6b;">${isEn ? 'Failed to load deals' : 'Не удалось загрузить историю сделок'}</td></tr>`;
+    }
+  }
+
+  /**
+   * Выборочное удаление одной сделки
+   */
+  async handleDeleteSingleDeal(orderId, userId) {
+    const isEn = window.i18n && window.i18n.getLang() === 'en';
+    const confirmMsg = isEn ? 'Delete this deal from history?' : 'Удалить эту сделку из истории?';
+    if (!confirm(confirmMsg)) return;
+
+    try {
+      await this.store.deleteCryptoOrder(orderId);
+      window.app.showToast(isEn ? 'Deal removed from history' : 'Сделка удалена из истории', 'info');
+      await this.renderUserDealsTable(userId);
+    } catch (err) {
+      console.error('Ошибка удаления сделки:', err);
+      window.app.showToast(isEn ? 'Failed to delete deal' : 'Не удалось удалить сделку', 'error');
+    }
+  }
+
+  /**
+   * Полное стирание всей истории сделок пользователя
+   */
+  async handleClearAllUserDeals() {
+    if (!this.activeDealsUserId) return;
+
+    const isEn = window.i18n && window.i18n.getLang() === 'en';
+    const confirmMsg = isEn 
+      ? 'Are you sure you want to permanently delete ALL deals for this user?' 
+      : 'Вы уверены, что хотите безвозвратно удалить ВСЮ историю сделок этого пользователя?';
+    if (!confirm(confirmMsg)) return;
+
+    try {
+      await this.store.clearUserOrders(this.activeDealsUserId);
+      window.app.showToast(isEn ? 'User deal history cleared' : 'Вся история сделок пользователя стёрта', 'info');
+      await this.renderUserDealsTable(this.activeDealsUserId);
+    } catch (err) {
+      console.error('Ошибка очистки сделок:', err);
+      window.app.showToast(isEn ? 'Failed to clear deals' : 'Не удалось очистить историю сделок', 'error');
+    }
   }
 }
 

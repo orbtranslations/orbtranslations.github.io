@@ -994,6 +994,218 @@ The fate of the kingdom is now in your hands.
     list.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
     return list;
   }
+
+  /**
+   * Получение списка всех зарегистрированных пользователей платформы
+   */
+  async getRegisteredUsers() {
+    let users = [];
+
+    if (window.supabaseClient) {
+      try {
+        const { data, error } = await window.supabaseClient
+          .from('profiles')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (!error && Array.isArray(data)) {
+          users = data.map(p => ({
+            id: p.id,
+            email: p.email || '—',
+            name: p.name || (p.email ? p.email.split('@')[0] : 'User'),
+            orbs: Number(p.orbs || 0),
+            role: p.role || 'user',
+            createdAt: p.created_at || null
+          }));
+        }
+      } catch (e) {
+        console.warn('Ошибка загрузки пользователей из Supabase:', e);
+      }
+    }
+
+    // Если список пуст или Supabase недоступен, гарантируем присутствие хотя бы текущего пользователя (если не гость)
+    if (users.length === 0 && this.data.currentUser && this.data.currentUser.id && this.data.currentUser.id !== 'guest') {
+      users.push({
+        id: this.data.currentUser.id,
+        email: this.data.currentUser.email || '—',
+        name: this.data.currentUser.name || 'Admin',
+        orbs: Number(this.data.currentUser.orbs || 0),
+        role: this.getRole() || 'admin',
+        createdAt: new Date().toISOString()
+      });
+    }
+
+    return users;
+  }
+
+  /**
+   * Изменение баланса Орбов пользователя (для панели администратора)
+   */
+  async updateUserOrbs(userId, newOrbs) {
+    const val = Math.max(0, Math.round((Number(newOrbs) || 0) * 100) / 100);
+
+    // 1. Обновляем в Supabase
+    if (window.supabaseClient && userId && !userId.startsWith('usr_')) {
+      const { error } = await window.supabaseClient
+        .from('profiles')
+        .update({ orbs: val, updated_at: new Date().toISOString() })
+        .eq('id', userId);
+
+      if (error) {
+        throw new Error(error.message || 'Ошибка обновления баланса в Supabase');
+      }
+    }
+
+    // 2. Если редактируется профиль текущего активного пользователя — обновляем локальное состояние
+    if (this.data.currentUser && this.data.currentUser.id === userId) {
+      this.data.currentUser.orbs = val;
+      this.saveToStorage();
+    }
+
+    return { success: true, orbs: val };
+  }
+
+  /**
+   * Загрузка всех сделок конкретного пользователя
+   */
+  async getUserOrders(userId) {
+    const orders = [];
+
+    // 1. Из таблицы crypto_orders в Supabase
+    if (window.supabaseClient && userId) {
+      try {
+        const { data, error } = await window.supabaseClient
+          .from('crypto_orders')
+          .select('*')
+          .eq('user_id', userId)
+          .order('created_at', { ascending: false });
+
+        if (!error && Array.isArray(data)) {
+          data.forEach(ord => {
+            const network = ord.network || 'USDT (TRC-20)';
+            let explorerUrl = '';
+            if (ord.tx_hash) {
+              if (network.includes('Polygon') || network.includes('POL')) {
+                explorerUrl = `https://polygonscan.com/tx/${ord.tx_hash}`;
+              } else if (network.includes('BTC') || network.includes('Bitcoin')) {
+                explorerUrl = `https://www.blockchain.com/explorer/transactions/btc/${ord.tx_hash}`;
+              } else {
+                explorerUrl = `https://tronscan.org/#/transaction/${ord.tx_hash}`;
+              }
+            }
+
+            orders.push({
+              id: ord.id,
+              date: ord.completed_at || ord.created_at,
+              amountUsdt: Number(ord.expected_amount || ord.orbs_amount || 0),
+              orbs: Number(ord.orbs_amount || 0),
+              network,
+              txHash: ord.tx_hash || '',
+              explorerUrl,
+              status: ord.status || 'pending'
+            });
+          });
+        }
+      } catch (e) {
+        console.warn('Ошибка загрузки сделок пользователя из Supabase:', e);
+      }
+    }
+
+    // 2. Дополняем из локальных сессий (если пользователь совпадает)
+    if (this.data.cryptoSessions) {
+      Object.values(this.data.cryptoSessions).forEach(s => {
+        if (!s || !s.orderId) return;
+        const belongsToUser = (this.data.currentUser && this.data.currentUser.id === userId);
+        if (belongsToUser && !orders.some(o => o.id === s.orderId)) {
+          orders.push({
+            id: s.orderId,
+            date: s.completedAt || s.paidAt || (s.createdAt ? new Date(s.createdAt).toISOString() : new Date().toISOString()),
+            amountUsdt: Number(s.expectedAmount || s.orbsAmount || 0),
+            orbs: Number(s.orbsAmount || 0),
+            network: s.network,
+            txHash: s.txHash || '',
+            explorerUrl: '',
+            status: s.status || 'pending'
+          });
+        }
+      });
+    }
+
+    orders.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+    return orders;
+  }
+
+  /**
+   * Выборочное удаление отдельной сделки
+   */
+  async deleteCryptoOrder(orderId) {
+    if (!orderId) return { success: false, message: 'ID заказа не указан' };
+
+    // 1. Удаление из Supabase
+    if (window.supabaseClient) {
+      try {
+        const { error } = await window.supabaseClient
+          .from('crypto_orders')
+          .delete()
+          .eq('id', orderId);
+
+        if (error) {
+          console.warn('Ошибка удаления из Supabase crypto_orders:', error);
+        }
+      } catch (e) {
+        console.warn('Ошибка вызова delete в Supabase:', e);
+      }
+    }
+
+    // 2. Удаление из локального хранилища
+    let changed = false;
+    if (this.data.cryptoSessions && this.data.cryptoSessions[orderId]) {
+      delete this.data.cryptoSessions[orderId];
+      changed = true;
+    }
+    if (this.data.orders) {
+      const origLen = this.data.orders.length;
+      this.data.orders = this.data.orders.filter(o => o.id !== orderId);
+      if (this.data.orders.length !== origLen) changed = true;
+    }
+
+    if (changed) {
+      this.saveToStorage();
+    }
+
+    return { success: true, orderId };
+  }
+
+  /**
+   * Полная очистка всей истории сделок пользователя
+   */
+  async clearUserOrders(userId) {
+    if (!userId) return { success: false, message: 'ID пользователя не указан' };
+
+    // 1. Удаление всех записей из Supabase crypto_orders
+    if (window.supabaseClient) {
+      try {
+        const { error } = await window.supabaseClient
+          .from('crypto_orders')
+          .delete()
+          .eq('user_id', userId);
+
+        if (error) {
+          console.warn('Ошибка полной очистки crypto_orders в Supabase:', error);
+        }
+      } catch (e) {
+        console.warn('Ошибка вызова clearUserOrders в Supabase:', e);
+      }
+    }
+
+    // 2. Очистка локальных сессий текущего пользователя
+    if (this.data.currentUser && this.data.currentUser.id === userId) {
+      this.data.cryptoSessions = {};
+      this.saveToStorage();
+    }
+
+    return { success: true, userId };
+  }
 }
 
 window.store = new Store();
