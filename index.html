@@ -20,9 +20,9 @@
   <meta http-equiv="Expires" content="0">
 
   <!-- Custom Styles -->
-  <link rel="stylesheet" href="css/style.css?v=3.3.4">
-  <link rel="stylesheet" href="css/components.css?v=3.3.4">
-  <link rel="stylesheet" href="css/reader.css?v=3.3.4">
+  <link rel="stylesheet" href="css/style.css?v=3.4.0">
+  <link rel="stylesheet" href="css/components.css?v=3.4.0">
+  <link rel="stylesheet" href="css/reader.css?v=3.4.0">
 </head>
 <body>
 
@@ -403,6 +403,90 @@
             </div>
             <button type="submit" class="btn btn-secondary" data-i18n="admin_wallets_save_btn">💾 Save Wallet Addresses</button>
           </form>
+        </div>
+      </div>
+
+      <!-- Telegram Bot Configuration Card -->
+      <div class="modal-card" id="admin-telegram-card" style="max-width: 100%; margin-bottom: 2rem; box-shadow: var(--shadow-sm);">
+        <div class="modal-header">
+          <div>
+            <h3 class="modal-title" data-i18n="admin_telegram_card_title">🤖 Настройки Telegram-бота (@OrbTranslationsSupportBot)</h3>
+            <p style="font-size: 0.82rem; color: var(--text-muted); margin-top: 4px;" data-i18n="admin_telegram_card_sub">
+              Мгновенная доставка новых обращений пользователей и тикетов прямо в ваш Telegram
+            </p>
+          </div>
+        </div>
+        <div class="modal-body">
+          <form id="admin-telegram-form">
+            <div class="form-grid-2" style="margin-bottom: 1rem;">
+              <div>
+                <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;" data-i18n="admin_telegram_bot_token_label">
+                  HTTP API Bot Token (от @BotFather)
+                </label>
+                <div style="display: flex; gap: 8px;">
+                  <input type="password" id="admin-telegram-bot-token" class="input-styled" placeholder="Например: 7123456789:AAFlk..._xYz" data-i18n-placeholder="admin_telegram_bot_token_placeholder" style="font-family: monospace;">
+                  <button type="button" class="btn btn-secondary btn-small" id="admin-tg-toggle-visibility" title="Показать/скрыть токен" style="padding: 0 10px;">👁️</button>
+                </div>
+              </div>
+              <div>
+                <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;" data-i18n="admin_telegram_chat_id_label">
+                  Ваш Telegram Chat ID (куда слать сообщения)
+                </label>
+                <input type="text" id="admin-telegram-chat-id" class="input-styled" value="276204182" style="font-family: monospace;">
+              </div>
+            </div>
+
+            <div style="margin-bottom: 1.25rem;">
+              <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.88rem; color: var(--text-primary);">
+                <input type="checkbox" id="admin-telegram-enabled" checked style="width: 16px; height: 16px; accent-color: var(--accent-primary);">
+                <span data-i18n="admin_telegram_enabled_label">🔔 Включить мгновенные уведомления в Telegram</span>
+              </label>
+            </div>
+
+            <div style="display: flex; flex-wrap: wrap; gap: 10px;">
+              <button type="submit" class="btn btn-accent" id="admin-telegram-save-btn" data-i18n="admin_telegram_btn_save">
+                💾 Сохранить настройки Telegram
+              </button>
+              <button type="button" class="btn btn-secondary" id="admin-telegram-test-btn" data-i18n="admin_telegram_btn_test">
+                🧪 Отправить тестовое сообщение в Telegram
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- User Inquiries & Support Tickets Card -->
+      <div class="modal-card" id="admin-feedback-card" style="max-width: 100%; box-shadow: var(--shadow-sm);">
+        <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+          <div>
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <h3 class="modal-title" data-i18n="admin_feedback_card_title">📬 Обращения пользователей и тикеты поддержки</h3>
+              <span class="badge badge-info" id="admin-feedback-count-badge">0</span>
+            </div>
+            <p style="font-size: 0.82rem; color: var(--text-muted); margin-top: 4px;" data-i18n="admin_feedback_card_sub">
+              Все сообщения, отправленные через виджет обратной связи на сайте
+            </p>
+          </div>
+          <button type="button" class="btn btn-secondary btn-small" id="admin-feedback-refresh-btn" data-i18n="admin_feedback_refresh">
+            🔄 Обновить список
+          </button>
+        </div>
+        <div class="modal-body" style="padding: 0; overflow-x: auto;">
+          <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 0.85rem;">
+            <thead>
+              <tr style="border-bottom: 1px solid var(--border-color); background: rgba(255, 255, 255, 0.03); color: var(--text-muted);">
+                <th style="padding: 0.85rem 1rem;" data-i18n="admin_th_fb_date">Дата / Время</th>
+                <th style="padding: 0.85rem 1rem;" data-i18n="admin_th_fb_user">Отправитель / Контакт</th>
+                <th style="padding: 0.85rem 1rem;" data-i18n="admin_th_fb_category">Тема / Категория</th>
+                <th style="padding: 0.85rem 1rem; min-width: 260px;" data-i18n="admin_th_fb_message">Сообщение</th>
+                <th style="padding: 0.85rem 1rem;" data-i18n="admin_th_fb_status">Статус</th>
+                <th style="padding: 0.85rem 1rem;" data-i18n="admin_th_fb_actions">Действия</th>
+              </tr>
+            </thead>
+            <tbody id="admin-feedback-table-body">
+              <!-- Rendered dynamically via admin.js -->
+            </tbody>
+          </table>
         </div>
       </div>
     </section>
@@ -880,6 +964,74 @@
     </div>
   </div>
 
+  <!-- Floating Feedback Action Button (FAB) -->
+  <button type="button" class="feedback-fab" id="feedback-fab-btn" aria-label="Support and feedback" data-i18n-title="feedback_fab_tooltip" title="✉️ Поддержка и обратная связь">
+    <span class="feedback-fab-icon">✉️</span>
+    <span class="feedback-fab-tooltip" data-i18n="feedback_fab_tooltip">✉️ Поддержка и обратная связь</span>
+  </button>
+
+  <!-- ========================================================================
+       MODAL 5: Feedback & Support (Обратная связь и Telegram)
+       ======================================================================== -->
+  <div class="modal-backdrop" id="feedback-modal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 class="modal-title" data-i18n="feedback_modal_title">✉️ Поддержка и обратная связь</h3>
+        <button class="modal-close-btn">&times;</button>
+      </div>
+      <div class="modal-body">
+        <!-- Direct Telegram Contact Banner -->
+        <div class="telegram-direct-banner">
+          <div>
+            <div style="font-weight: 700; font-size: 0.88rem; color: #38bdf8;" data-i18n="feedback_direct_tg_title">Чат поддержки в Telegram</div>
+            <div style="font-size: 0.76rem; color: var(--text-muted); margin-top: 2px;" data-i18n="feedback_direct_tg_sub">Ответим быстрее всего в Telegram-боте платформы</div>
+          </div>
+          <a href="https://t.me/OrbTranslationsSupportBot" target="_blank" rel="noopener noreferrer" class="telegram-direct-btn" data-i18n="feedback_direct_tg_btn">
+            ✈️ Написать в Telegram
+          </a>
+        </div>
+
+        <div class="feedback-divider">
+          <span data-i18n="feedback_divider_text">или отправьте сообщение через форму</span>
+        </div>
+
+        <form id="feedback-form">
+          <div style="margin-bottom: 0.85rem;">
+            <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;" data-i18n="feedback_label_contact">
+              Ваш контакт для ответа (Telegram @ник или Email)
+            </label>
+            <input type="text" id="feedback-contact-input" class="input-styled" required placeholder="@username или your.email@example.com" data-i18n-placeholder="feedback_placeholder_contact">
+          </div>
+
+          <div style="margin-bottom: 0.85rem;">
+            <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;" data-i18n="feedback_label_category">
+              Тема обращения
+            </label>
+            <select id="feedback-category-select" class="select-styled">
+              <option value="general" data-i18n="feedback_cat_general" selected>❓ Общий вопрос по платформе</option>
+              <option value="payment" data-i18n="feedback_cat_payment">🪙 Вопрос по оплате и пополнению Орбов</option>
+              <option value="reader" data-i18n="feedback_cat_reader">📖 Ошибка / баг в читалке или переводе</option>
+              <option value="request" data-i18n="feedback_cat_request">💡 Запрос на перевод / Предложение новеллы</option>
+              <option value="other" data-i18n="feedback_cat_other">📝 Другое</option>
+            </select>
+          </div>
+
+          <div style="margin-bottom: 1.25rem;">
+            <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;" data-i18n="feedback_label_message">
+              Текст вашего сообщения
+            </label>
+            <textarea id="feedback-message-input" class="textarea-styled" rows="4" required placeholder="Подробно опишите ваш вопрос, предложение или проблему..." data-i18n-placeholder="feedback_placeholder_message"></textarea>
+          </div>
+
+          <div style="display: flex; justify-content: flex-end; gap: 10px;">
+            <button type="button" class="btn btn-secondary" onclick="window.app.closeAllModals()" data-i18n="btn_cancel">✕ Отмена</button>
+            <button type="submit" class="btn btn-accent" id="feedback-submit-btn" data-i18n="feedback_btn_submit">🚀 Отправить обращение</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
   <!-- Toast Notification Container -->
   <div class="toast-container" id="toast-container"></div>
 
@@ -887,15 +1039,15 @@
        Application JavaScript Modules
        ======================================================================== -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="js/supabase-client.js?v=3.3.12"></script>
-  <script src="js/store.js?v=3.3.12"></script>
-  <script src="js/i18n.js?v=3.3.12"></script>
-  <script src="js/script-parser.js?v=3.3.12"></script>
-  <script src="js/auth.js?v=3.3.12"></script>
-  <script src="js/qrcode.min.js?v=3.3.12"></script>
-  <script src="js/crypto-pay.js?v=3.3.12"></script>
-  <script src="js/reader.js?v=3.3.12"></script>
-  <script src="js/admin.js?v=3.3.12"></script>
-  <script src="js/app.js?v=3.3.12"></script>
+  <script src="js/supabase-client.js?v=3.4.0"></script>
+  <script src="js/store.js?v=3.4.0"></script>
+  <script src="js/i18n.js?v=3.4.0"></script>
+  <script src="js/script-parser.js?v=3.4.0"></script>
+  <script src="js/auth.js?v=3.4.0"></script>
+  <script src="js/qrcode.min.js?v=3.4.0"></script>
+  <script src="js/crypto-pay.js?v=3.4.0"></script>
+  <script src="js/reader.js?v=3.4.0"></script>
+  <script src="js/admin.js?v=3.4.0"></script>
+  <script src="js/app.js?v=3.4.0"></script>
 </body>
 </html>

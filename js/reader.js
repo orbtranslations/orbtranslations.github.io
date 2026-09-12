@@ -2003,6 +2003,7 @@ class ReaderService {
 
     modal.classList.add('active');
     document.body.classList.add('modal-open');
+    document.body.classList.add('reader-open');
 
     const titleEl = document.getElementById('reader-work-title');
     const modeBadge = document.getElementById('reader-mode-badge');
@@ -2512,6 +2513,7 @@ class ReaderService {
     if (modal) {
       modal.classList.remove('active');
       document.body.classList.remove('modal-open');
+      document.body.classList.remove('reader-open');
     }
   }
 }

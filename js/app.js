@@ -7,6 +7,7 @@ class App {
     this.currentTab = 'storefront';
     this.store = (typeof window !== 'undefined' && window.store) ? window.store : null;
     this.openedFromHistory = false;
+    this.lastFeedbackSubmitTime = 0;
   }
 
   init() {
@@ -76,6 +77,21 @@ class App {
       btnEn.addEventListener('click', () => {
         if (window.i18n) window.i18n.setLang('en');
       });
+    }
+
+    // Плавающая кнопка обратной связи (FAB)
+    const feedbackFab = document.getElementById('feedback-fab-btn');
+    if (feedbackFab) {
+      feedbackFab.addEventListener('click', (e) => {
+        e.preventDefault();
+        this.showFeedbackModal();
+      });
+    }
+
+    // Форма отправки обращения в обратную связь
+    const feedbackForm = document.getElementById('feedback-form');
+    if (feedbackForm) {
+      feedbackForm.addEventListener('submit', (e) => this.handleFeedbackSubmit(e));
     }
 
     // Клавиатурная навигация в читалке и закрытие окон по Escape
@@ -2096,6 +2112,204 @@ class App {
       toast.classList.add('fade-out');
       setTimeout(() => toast.remove(), 300);
     }, 3500);
+  }
+
+  /**
+   * Открытие модального окна обратной связи
+   */
+  showFeedbackModal() {
+    const modal = document.getElementById('feedback-modal');
+    if (!modal) return;
+
+    const contactInput = document.getElementById('feedback-contact-input');
+    const msgInput = document.getElementById('feedback-message-input');
+    const catSelect = document.getElementById('feedback-category-select');
+    const submitBtn = document.getElementById('feedback-submit-btn');
+
+    const currentUser = window.auth ? window.auth.getUser() : null;
+    if (contactInput) {
+      if (currentUser && currentUser.email) {
+        contactInput.value = currentUser.email;
+      } else if (!contactInput.value) {
+        contactInput.value = '';
+      }
+    }
+
+    if (msgInput) {
+      msgInput.value = '';
+    }
+
+    if (catSelect) {
+      catSelect.value = 'general';
+    }
+
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = window.i18n ? window.i18n.t('feedback_btn_submit') : '🚀 Отправить обращение';
+    }
+
+    modal.classList.add('active');
+    document.body.classList.add('modal-open');
+  }
+
+  /**
+   * Отправка обращения из модального окна обратной связи
+   */
+  async handleFeedbackSubmit(e) {
+    if (e) e.preventDefault();
+
+    const isEn = window.i18n && window.i18n.getLang() === 'en';
+    const contactInput = document.getElementById('feedback-contact-input');
+    const msgInput = document.getElementById('feedback-message-input');
+    const catSelect = document.getElementById('feedback-category-select');
+    const submitBtn = document.getElementById('feedback-submit-btn');
+
+    const contact = contactInput ? contactInput.value.trim() : '';
+    const message = msgInput ? msgInput.value.trim() : '';
+    const category = catSelect ? catSelect.value : 'general';
+
+    if (!contact || !message) {
+      this.showToast(
+        window.i18n ? window.i18n.t('feedback_error_empty') : 'Пожалуйста, заполните контакт для связи и текст сообщения',
+        'warning'
+      );
+      return;
+    }
+
+    // Защита от спама: не чаще одного раза в 25 секунд
+    const now = Date.now();
+    if (now - this.lastFeedbackSubmitTime < 25000) {
+      this.showToast(
+        window.i18n ? window.i18n.t('feedback_cooldown_toast') : 'Пожалуйста, подождите немного перед отправкой следующего сообщения',
+        'warning'
+      );
+      return;
+    }
+
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.textContent = window.i18n ? window.i18n.t('feedback_btn_sending') : '⏳ Отправка...';
+    }
+
+    try {
+      const currentUser = window.auth ? window.auth.getUser() : null;
+      const userRole = window.auth ? window.auth.getRole() : 'guest';
+      const userEmail = currentUser ? currentUser.email : null;
+      const userId = currentUser && currentUser.id !== 'guest' ? currentUser.id : null;
+
+      // 1. Сохранение в Supabase / локальное хранилище
+      await this.store.sendFeedbackMessage({
+        contactInfo: contact,
+        category,
+        message,
+        userEmail,
+        userId
+      });
+
+      this.lastFeedbackSubmitTime = Date.now();
+
+      // 2. Отправка уведомления в Telegram (асинхронно/фоново)
+      this.sendTelegramFeedbackNotification({
+        contact,
+        category,
+        message,
+        userEmail,
+        userName: currentUser?.user_metadata?.name || '',
+        userRole
+      }).catch(tgErr => console.warn('Telegram send notice:', tgErr));
+
+      // 3. Закрытие модального окна и уведомление об успехе
+      this.closeAllModals();
+      this.showToast(
+        window.i18n ? window.i18n.t('feedback_success_toast') : '✅ Ваше обращение успешно отправлено в поддержку! Скоро мы с вами свяжемся.',
+        'success'
+      );
+
+      // Если открыта панель админа, обновляем таблицу обращений
+      if (window.admin && typeof window.admin.renderFeedbackTable === 'function') {
+        window.admin.renderFeedbackTable();
+      }
+    } catch (err) {
+      console.error('Ошибка отправки обращения:', err);
+      this.showToast(err.message || 'Ошибка отправки обращения', 'error');
+    } finally {
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = window.i18n ? window.i18n.t('feedback_btn_submit') : '🚀 Отправить обращение';
+      }
+    }
+  }
+
+  /**
+   * Отправка форматированного уведомления в Telegram через Telegram Bot API
+   */
+  async sendTelegramFeedbackNotification({ contact, category, message, userEmail = '', userName = '', userRole = '' }) {
+    try {
+      const settings = await this.store.getSiteSettings();
+      if (!settings || !settings.telegramEnabled) return false;
+
+      const botToken = (settings.telegramBotToken || '').trim();
+      const chatId = (settings.telegramChatId || '276204182').trim();
+
+      if (!botToken || !chatId) {
+        console.info('Telegram notification skipped: bot token or chat ID not set');
+        return false;
+      }
+
+      const isEn = window.i18n && window.i18n.getLang() === 'en';
+      const categoryLabels = {
+        payment: isEn ? '🪙 Payment & Top-Up' : '🪙 Оплата и пополнение',
+        reader: isEn ? '📖 Reader / Translation bug' : '📖 Баг в читалке / переводе',
+        request: isEn ? '💡 Translation request' : '💡 Запрос на перевод',
+        general: isEn ? '❓ General inquiry' : '❓ Общий вопрос',
+        other: isEn ? '📝 Other' : '📝 Другое'
+      };
+      const catText = categoryLabels[category] || category;
+
+      // Экранирование спецсимволов HTML для Telegram API
+      const escapeHtml = (str) => {
+        if (!str) return '';
+        return String(str)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;');
+      };
+
+      const roleBadge = userRole === 'admin' ? '👑 Admin' : (userRole === 'user' ? '🛡️ User' : '👤 Guest');
+      const senderInfo = userEmail ? `${escapeHtml(contact)} (Email: ${escapeHtml(userEmail)})` : escapeHtml(contact);
+
+      const telegramMessage = 
+`<b>✉️ Новое обращение в поддержку Orb Translations!</b>
+
+👤 <b>Отправитель:</b> ${senderInfo} [${roleBadge}]
+🏷️ <b>Категория:</b> ${escapeHtml(catText)}
+💬 <b>Сообщение:</b>
+${escapeHtml(message)}
+
+🕒 <i>${new Date().toLocaleString('ru-RU')}</i>`;
+
+      const response = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: telegramMessage,
+          parse_mode: 'HTML'
+        })
+      });
+
+      const resJson = await response.json();
+      if (!resJson.ok) {
+        console.warn('Telegram send error:', resJson);
+        return false;
+      }
+      return true;
+    } catch (err) {
+      console.warn('Telegram notification exception:', err);
+      return false;
+    }
   }
 }
 

@@ -1093,4 +1093,222 @@
   padding: 1rem 1.25rem;
 }
 
+/* ==========================================================================
+   Feedback Floating Action Button (FAB) & Pulsing Glow
+   ========================================================================== */
+.feedback-fab {
+  position: fixed;
+  bottom: 26px;
+  right: 26px;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #0ea5e9 0%, #6366f1 55%, #8b5cf6 100%);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  box-shadow: 0 4px 22px rgba(14, 165, 233, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.1) inset;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 950;
+  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.25s ease, background 0.25s ease;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.feedback-fab:hover {
+  transform: translateY(-4px) scale(1.08);
+  box-shadow: 0 8px 30px rgba(99, 102, 241, 0.6), 0 0 20px rgba(14, 165, 233, 0.55);
+}
+
+.feedback-fab:active {
+  transform: translateY(-1px) scale(0.98);
+}
+
+.feedback-fab::before {
+  content: '';
+  position: absolute;
+  inset: -5px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(14, 165, 233, 0.45) 0%, transparent 72%);
+  animation: fab-pulse 2.8s infinite cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: -1;
+  pointer-events: none;
+}
+
+@keyframes fab-pulse {
+  0% {
+    transform: scale(0.92);
+    opacity: 0.85;
+  }
+  50% {
+    transform: scale(1.38);
+    opacity: 0.25;
+  }
+  100% {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+}
+
+.feedback-fab-icon {
+  font-size: 1.6rem;
+  line-height: 1;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+  transition: transform 0.25s ease;
+}
+
+.feedback-fab:hover .feedback-fab-icon {
+  transform: rotate(-8deg) scale(1.1);
+}
+
+/* Tooltip floating beside FAB */
+.feedback-fab-tooltip {
+  position: absolute;
+  right: calc(100% + 14px);
+  top: 50%;
+  transform: translateY(-50%) translateX(6px);
+  background: rgba(15, 23, 42, 0.94);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.4);
+  border-radius: 20px;
+  padding: 6px 14px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #f8fafc;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.feedback-fab:hover .feedback-fab-tooltip {
+  opacity: 1;
+  transform: translateY(-50%) translateX(0);
+}
+
+/* Скрытие кнопки в режиме открытой читалки */
+body.reader-open .feedback-fab {
+  display: none !important;
+}
+
+@media (max-width: 640px) {
+  .feedback-fab {
+    bottom: 18px;
+    right: 18px;
+    width: 48px;
+    height: 48px;
+  }
+  .feedback-fab-icon {
+    font-size: 1.35rem;
+  }
+  .feedback-fab-tooltip {
+    display: none; /* скрываем тултип на сенсорных экранах */
+  }
+}
+
+/* ==========================================================================
+   Feedback Modal & Telegram Banner
+   ========================================================================== */
+#feedback-modal .modal-card {
+  max-width: 540px;
+  width: 95%;
+}
+
+.telegram-direct-banner {
+  background: linear-gradient(135deg, rgba(36, 161, 222, 0.14) 0%, rgba(36, 161, 222, 0.04) 100%);
+  border: 1px solid rgba(36, 161, 222, 0.35);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 1.15rem;
+}
+
+.telegram-direct-btn {
+  background: #24a1de;
+  color: #ffffff !important;
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 0.82rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  text-decoration: none;
+  transition: var(--transition);
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(36, 161, 222, 0.35);
+}
+
+.telegram-direct-btn:hover {
+  background: #1e87bb;
+  box-shadow: 0 4px 14px rgba(36, 161, 222, 0.5);
+  transform: translateY(-1px);
+}
+
+.feedback-divider {
+  display: flex;
+  align-items: center;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.74rem;
+  font-weight: 600;
+  margin: 1rem 0;
+}
+
+.feedback-divider::before,
+.feedback-divider::after {
+  content: '';
+  flex: 1;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.feedback-divider span {
+  padding: 0 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+
+/* Status badges for admin tickets */
+.badge-ticket-new {
+  display: inline-block;
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.badge-ticket-progress {
+  display: inline-block;
+  background: rgba(56, 189, 248, 0.15);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.badge-ticket-resolved {
+  display: inline-block;
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+
 

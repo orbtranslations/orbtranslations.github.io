@@ -18,6 +18,8 @@ class AdminService {
     this.renderWorksTable();
     this.renderUsersTable();
     this.loadXpubSettings();
+    this.loadTelegramSettings();
+    this.renderFeedbackTable();
     this.renderDemoImageRows([]);
   }
 
@@ -52,6 +54,33 @@ class AdminService {
     const xpubForm = document.getElementById('admin-xpub-form');
     if (xpubForm) {
       xpubForm.addEventListener('submit', (e) => this.handleXpubSave(e));
+    }
+
+    // Настройки Telegram
+    const tgForm = document.getElementById('admin-telegram-form');
+    if (tgForm) {
+      tgForm.addEventListener('submit', (e) => this.handleTelegramSettingsSave(e));
+    }
+
+    const tgTestBtn = document.getElementById('admin-telegram-test-btn');
+    if (tgTestBtn) {
+      tgTestBtn.addEventListener('click', () => this.testTelegramNotification());
+    }
+
+    const tgToggleShowBtn = document.getElementById('admin-tg-toggle-visibility');
+    if (tgToggleShowBtn) {
+      tgToggleShowBtn.addEventListener('click', () => {
+        const input = document.getElementById('admin-telegram-bot-token');
+        if (input) {
+          input.type = input.type === 'password' ? 'text' : 'password';
+          tgToggleShowBtn.textContent = input.type === 'password' ? '👁️' : '🙈';
+        }
+      });
+    }
+
+    const fbRefreshBtn = document.getElementById('admin-feedback-refresh-btn');
+    if (fbRefreshBtn) {
+      fbRefreshBtn.addEventListener('click', () => this.renderFeedbackTable());
     }
 
     // Обработка загрузки файла скрипта
@@ -1002,6 +1031,262 @@ class AdminService {
 
     window.reader.loadDemoImagesWithData(tempWork, demoImages, scriptText);
   }
+
+  /**
+   * Загрузка настроек Telegram в форму панели администратора
+   */
+  async loadTelegramSettings() {
+    const tokenInput = document.getElementById('admin-telegram-bot-token');
+    const chatIdInput = document.getElementById('admin-telegram-chat-id');
+    const enabledCheckbox = document.getElementById('admin-telegram-enabled');
+
+    if (!tokenInput || !chatIdInput) return;
+
+    try {
+      const settings = await this.store.getSiteSettings();
+      if (settings) {
+        tokenInput.value = settings.telegramBotToken || '';
+        chatIdInput.value = settings.telegramChatId || '276204182';
+        if (enabledCheckbox) {
+          enabledCheckbox.checked = settings.telegramEnabled !== false;
+        }
+      }
+    } catch (err) {
+      console.warn('Ошибка загрузки настроек Telegram:', err);
+    }
+  }
+
+  /**
+   * Сохранение настроек Telegram из панели администратора
+   */
+  async handleTelegramSettingsSave(e) {
+    if (e) e.preventDefault();
+
+    const tokenInput = document.getElementById('admin-telegram-bot-token');
+    const chatIdInput = document.getElementById('admin-telegram-chat-id');
+    const enabledCheckbox = document.getElementById('admin-telegram-enabled');
+
+    const botToken = tokenInput ? tokenInput.value.trim() : '';
+    const chatId = chatIdInput ? chatIdInput.value.trim() : '276204182';
+    const enabled = enabledCheckbox ? enabledCheckbox.checked : true;
+
+    await this.store.saveSiteSettings({
+      telegramBotToken: botToken,
+      telegramChatId: chatId,
+      telegramEnabled: enabled
+    });
+
+    const isEn = window.i18n && window.i18n.getLang() === 'en';
+    window.app.showToast(
+      isEn ? 'Telegram settings saved successfully!' : 'Настройки Telegram успешно сохранены!',
+      'success'
+    );
+  }
+
+  /**
+   * Тестовая отправка сообщения в Telegram для проверки связи
+   */
+  async testTelegramNotification() {
+    const tokenInput = document.getElementById('admin-telegram-bot-token');
+    const chatIdInput = document.getElementById('admin-telegram-chat-id');
+    const isEn = window.i18n && window.i18n.getLang() === 'en';
+
+    const botToken = tokenInput ? tokenInput.value.trim() : '';
+    const chatId = chatIdInput ? chatIdInput.value.trim() : '276204182';
+
+    if (!botToken || !chatId) {
+      window.app.showToast(
+        isEn ? 'Please enter Bot Token and Chat ID before testing' : 'Пожалуйста, укажите Bot Token и Chat ID перед проверкой',
+        'warning'
+      );
+      return;
+    }
+
+    const testBtn = document.getElementById('admin-telegram-test-btn');
+    if (testBtn) {
+      testBtn.disabled = true;
+      testBtn.textContent = isEn ? '⏳ Sending test message...' : '⏳ Отправка тестового сообщения...';
+    }
+
+    try {
+      const testMsg = 
+`<b>🧪 Тестовое уведомление из Orb Translations!</b>
+
+✅ Telegram-бот успешно подключен и настроен для приёма обращений пользователей.
+🕒 <i>${new Date().toLocaleString('ru-RU')}</i>`;
+
+      const resp = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: testMsg,
+          parse_mode: 'HTML'
+        })
+      });
+
+      const data = await resp.json();
+      if (data && data.ok) {
+        window.app.showToast(
+          isEn ? '✅ Test message successfully delivered to Telegram!' : '✅ Тестовое сообщение успешно доставлено в Telegram!',
+          'success'
+        );
+      } else {
+        const errMsg = data?.description || 'Unknown error';
+        window.app.showToast(
+          (isEn ? '❌ Telegram API Error: ' : '❌ Ошибка Telegram API: ') + errMsg,
+          'error'
+        );
+      }
+    } catch (err) {
+      window.app.showToast(
+        (isEn ? '❌ Network Error: ' : '❌ Сетевая ошибка: ') + (err.message || ''),
+        'error'
+      );
+    } finally {
+      if (testBtn) {
+        testBtn.disabled = false;
+        testBtn.textContent = isEn ? '🧪 Send Test Message to Telegram' : '🧪 Отправить тестовое сообщение в Telegram';
+      }
+    }
+  }
+
+  /**
+   * Рендеринг таблицы обращений и тикетов пользователей в панели администратора
+   */
+  async renderFeedbackTable() {
+    const tbody = document.getElementById('admin-feedback-table-body');
+    const badgeEl = document.getElementById('admin-feedback-count-badge');
+    if (!tbody) return;
+
+    const isEn = window.i18n && window.i18n.getLang() === 'en';
+    tbody.innerHTML = `<tr><td colspan="6" style="padding: 1.5rem; text-align: center; color: var(--text-muted);">${isEn ? '⏳ Loading inquiries...' : '⏳ Загрузка обращений...'}</td></tr>`;
+
+    try {
+      const list = await this.store.getFeedbackMessages();
+
+      if (badgeEl) {
+        const newCount = list.filter(m => m.status === 'new').length;
+        badgeEl.textContent = newCount > 0 
+          ? (isEn ? `${newCount} new` : `${newCount} нов.`)
+          : (isEn ? `${list.length} total` : `Всего: ${list.length}`);
+        badgeEl.className = newCount > 0 ? 'badge badge-warning' : 'badge badge-info';
+      }
+
+      if (!list || list.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6" style="padding: 1.5rem; text-align: center; color: var(--text-muted);">${isEn ? 'No feedback messages found' : 'Обращений пользователей пока нет'}</td></tr>`;
+        return;
+      }
+
+      const categoryLabels = {
+        payment: isEn ? '🪙 Payment & Orbs' : '🪙 Оплата и Орбы',
+        reader: isEn ? '📖 Reader / Script Bug' : '📖 Ошибка читалки',
+        request: isEn ? '💡 Translation Request' : '💡 Запрос перевода',
+        general: isEn ? '❓ General Inquiry' : '❓ Общий вопрос',
+        other: isEn ? '📝 Other' : '📝 Другое'
+      };
+
+      tbody.innerHTML = list.map(item => {
+        const dateStr = item.created_at ? new Date(item.created_at).toLocaleString() : '—';
+        const catName = categoryLabels[item.category] || item.category || '—';
+        const contact = item.contact_info || item.user_email || '—';
+        
+        let tgLink = '';
+        if (contact.startsWith('@')) {
+          tgLink = `https://t.me/${contact.replace('@', '')}`;
+        } else if (contact.includes('t.me/')) {
+          tgLink = contact.startsWith('http') ? contact : `https://${contact}`;
+        }
+
+        const isNew = item.status === 'new' || !item.status;
+        const isProgress = item.status === 'in_progress';
+        const isResolved = item.status === 'resolved';
+
+        const statusBadge = isNew
+          ? `<span class="badge-ticket-new">${isEn ? '🟡 New' : '🟡 Новое'}</span>`
+          : isProgress
+          ? `<span class="badge-ticket-progress">${isEn ? '🔵 In Progress' : '🔵 В работе'}</span>`
+          : `<span class="badge-ticket-resolved">${isEn ? '🟢 Resolved' : '🟢 Решено'}</span>`;
+
+        return `
+          <tr style="border-bottom: 1px solid var(--border-color); vertical-align: top;">
+            <td style="padding: 0.85rem 1rem; font-size: 0.8rem; color: var(--text-muted); white-space: nowrap;">
+              ${dateStr}
+            </td>
+            <td style="padding: 0.85rem 1rem;">
+              <div style="font-weight: 600; color: #f8fafc; word-break: break-all;">
+                ${window.ScriptParser?.escapeHtml ? window.ScriptParser.escapeHtml(contact) : contact}
+              </div>
+              ${item.user_email && item.user_email !== contact ? `<div style="font-size: 0.75rem; color: var(--text-muted);">${item.user_email}</div>` : ''}
+              ${item.user_id ? `<span style="font-size: 0.7rem; color: #a78bfa;">👤 ID: ${item.user_id.slice(0, 8)}...</span>` : `<span style="font-size: 0.7rem; color: var(--text-muted);">👤 ${isEn ? 'Guest' : 'Гость'}</span>`}
+            </td>
+            <td style="padding: 0.85rem 1rem; font-size: 0.82rem; white-space: nowrap;">
+              ${catName}
+            </td>
+            <td style="padding: 0.85rem 1rem; font-size: 0.85rem; color: var(--text-primary); max-width: 340px; word-break: break-word;">
+              <div style="white-space: pre-wrap; line-height: 1.45;">${window.ScriptParser?.escapeHtml ? window.ScriptParser.escapeHtml(item.message) : item.message}</div>
+            </td>
+            <td style="padding: 0.85rem 1rem; white-space: nowrap;">
+              <div style="display: flex; flex-direction: column; gap: 6px;">
+                <div>${statusBadge}</div>
+                <select class="select-styled" style="padding: 3px 6px; font-size: 0.75rem;" onchange="window.admin.handleFeedbackStatusChange('${item.id}', this.value)">
+                  <option value="new" ${isNew ? 'selected' : ''}>${isEn ? 'New' : 'Новое'}</option>
+                  <option value="in_progress" ${isProgress ? 'selected' : ''}>${isEn ? 'In Progress' : 'В работе'}</option>
+                  <option value="resolved" ${isResolved ? 'selected' : ''}>${isEn ? 'Resolved' : 'Решено'}</option>
+                </select>
+              </div>
+            </td>
+            <td style="padding: 0.85rem 1rem; white-space: nowrap;">
+              <div style="display: flex; gap: 6px; align-items: center;">
+                ${tgLink ? `<a href="${tgLink}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-small" style="padding: 3px 8px; font-size: 0.75rem; color: #38bdf8;" title="Написать в Telegram">✈️ TG</a>` : ''}
+                <button type="button" class="btn btn-secondary btn-small" style="padding: 3px 8px; font-size: 0.75rem; color: #ff6b6b; border-color: rgba(255, 107, 107, 0.3);" onclick="window.admin.handleFeedbackDelete('${item.id}')" title="Удалить тикет">
+                  🗑️
+                </button>
+              </div>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    } catch (err) {
+      console.error('Ошибка рендера таблицы обращений:', err);
+      tbody.innerHTML = `<tr><td colspan="6" style="padding: 1.5rem; text-align: center; color: #ef4444;">${err.message || 'Ошибка загрузки обращений'}</td></tr>`;
+    }
+  }
+
+  /**
+   * Смена статуса обращения администратором
+   */
+  async handleFeedbackStatusChange(id, newStatus) {
+    if (!id || !newStatus) return;
+    const isEn = window.i18n && window.i18n.getLang() === 'en';
+
+    try {
+      await this.store.updateFeedbackStatus(id, newStatus);
+      window.app.showToast(isEn ? 'Ticket status updated' : 'Статус обращения обновлен', 'success');
+      this.renderFeedbackTable();
+    } catch (err) {
+      window.app.showToast(err.message || 'Ошибка обновления статуса', 'error');
+    }
+  }
+
+  /**
+   * Удаление обращения администратором
+   */
+  async handleFeedbackDelete(id) {
+    if (!id) return;
+    const isEn = window.i18n && window.i18n.getLang() === 'en';
+    const confirmed = confirm(isEn ? 'Delete this inquiry from database?' : 'Удалить это обращение из базы данных?');
+    if (!confirmed) return;
+
+    try {
+      await this.store.deleteFeedbackMessage(id);
+      window.app.showToast(isEn ? 'Ticket deleted' : 'Обращение удалено', 'success');
+      this.renderFeedbackTable();
+    } catch (err) {
+      window.app.showToast(err.message || 'Ошибка удаления обращения', 'error');
+    }
+  }
 }
 
 window.admin = new AdminService(window.store);
+

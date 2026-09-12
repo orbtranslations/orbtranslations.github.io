@@ -2234,6 +2234,227 @@ The fate of the kingdom is now in your hands.
 
     return { success: true, userId };
   }
+
+  /**
+   * Отправка сообщения в службу поддержки / обратную связь
+   */
+  async sendFeedbackMessage({ contactInfo, category, message, userEmail = null, userId = null }) {
+    const payload = {
+      contact_info: String(contactInfo || '').trim(),
+      category: String(category || 'general').trim(),
+      message: String(message || '').trim(),
+      user_email: userEmail || null,
+      user_id: userId || (this.data.currentUser && this.data.currentUser.id !== 'guest' ? this.data.currentUser.id : null),
+      status: 'new'
+    };
+
+    let savedRecord = null;
+
+    if (window.supabaseClient) {
+      try {
+        const { data, error } = await window.supabaseClient
+          .from('feedback_messages')
+          .insert(payload)
+          .select()
+          .single();
+
+        if (!error && data) {
+          savedRecord = data;
+        } else if (error) {
+          console.warn('Supabase feedback insert warning:', error);
+        }
+      } catch (err) {
+        console.warn('Supabase feedback insert exception:', err);
+      }
+    }
+
+    if (!savedRecord) {
+      // Локальный fallback, если Supabase оффлайн или таблица еще не создана
+      savedRecord = {
+        id: 'fb_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6),
+        created_at: new Date().toISOString(),
+        ...payload
+      };
+    }
+
+    // Сохраняем в локальный массив для быстрого доступа
+    if (!this.data.feedbackMessages) {
+      this.data.feedbackMessages = [];
+    }
+    this.data.feedbackMessages.unshift(savedRecord);
+    this.saveToStorage();
+
+    return { success: true, record: savedRecord };
+  }
+
+  /**
+   * Получение списка обращений (для администратора)
+   */
+  async getFeedbackMessages() {
+    if (window.supabaseClient) {
+      try {
+        const { data, error } = await window.supabaseClient
+          .from('feedback_messages')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (!error && Array.isArray(data)) {
+          this.data.feedbackMessages = data;
+          this.saveToStorage();
+          return data;
+        }
+      } catch (err) {
+        console.warn('Ошибка загрузки feedback_messages из Supabase:', err);
+      }
+    }
+
+    return this.data.feedbackMessages || [];
+  }
+
+  /**
+   * Смена статуса обращения (new / in_progress / resolved)
+   */
+  async updateFeedbackStatus(id, status, adminNotes = null) {
+    if (!id || !status) return { success: false };
+
+    if (window.supabaseClient) {
+      try {
+        const updatePayload = { status };
+        if (adminNotes !== null) updatePayload.admin_notes = adminNotes;
+        await window.supabaseClient
+          .from('feedback_messages')
+          .update(updatePayload)
+          .eq('id', id);
+      } catch (err) {
+        console.warn('Ошибка обновления статуса тикета в Supabase:', err);
+      }
+    }
+
+    if (this.data.feedbackMessages) {
+      const item = this.data.feedbackMessages.find(m => m.id === id);
+      if (item) {
+        item.status = status;
+        if (adminNotes !== null) item.admin_notes = adminNotes;
+        this.saveToStorage();
+      }
+    }
+
+    return { success: true };
+  }
+
+  /**
+   * Удаление обращения
+   */
+  async deleteFeedbackMessage(id) {
+    if (!id) return { success: false };
+
+    if (window.supabaseClient) {
+      try {
+        await window.supabaseClient
+          .from('feedback_messages')
+          .delete()
+          .eq('id', id);
+      } catch (err) {
+        console.warn('Ошибка удаления тикета из Supabase:', err);
+      }
+    }
+
+    if (this.data.feedbackMessages) {
+      this.data.feedbackMessages = this.data.feedbackMessages.filter(m => m.id !== id);
+      this.saveToStorage();
+    }
+
+    return { success: true };
+  }
+
+  /**
+   * Загрузка настроек платформы и Telegram
+   */
+  async getSiteSettings() {
+    let settings = {
+      telegramBotToken: '',
+      telegramChatId: '276204182',
+      telegramEnabled: true,
+      supportTelegramUsername: 'OrbTranslationsSupportBot'
+    };
+
+    // 1. Попытка чтения из Supabase
+    if (window.supabaseClient) {
+      try {
+        const { data, error } = await window.supabaseClient
+          .from('site_settings')
+          .select('*')
+          .eq('id', 1)
+          .single();
+
+        if (!error && data) {
+          settings.telegramBotToken = data.telegram_bot_token || '';
+          settings.telegramChatId = data.telegram_chat_id || '276204182';
+          settings.telegramEnabled = data.telegram_enabled !== false;
+          settings.supportTelegramUsername = data.support_telegram_username || 'OrbTranslationsSupportBot';
+          this.data.siteSettings = settings;
+          this.saveToStorage();
+          return settings;
+        }
+      } catch (err) {
+        console.warn('Ошибка получения site_settings из Supabase:', err);
+      }
+    }
+
+    // 2. Локальный fallback
+    if (this.data.siteSettings) {
+      return { ...settings, ...this.data.siteSettings };
+    }
+
+    try {
+      const stored = localStorage.getItem('orb_site_settings');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        return { ...settings, ...parsed };
+      }
+    } catch (_) {}
+
+    return settings;
+  }
+
+  /**
+   * Сохранение настроек платформы и Telegram
+   */
+  async saveSiteSettings(newSettings) {
+    if (!newSettings) return false;
+
+    const current = await this.getSiteSettings();
+    const updated = {
+      ...current,
+      ...newSettings
+    };
+
+    this.data.siteSettings = updated;
+    this.saveToStorage();
+    try {
+      localStorage.setItem('orb_site_settings', JSON.stringify(updated));
+    } catch (_) {}
+
+    if (window.supabaseClient) {
+      try {
+        await window.supabaseClient
+          .from('site_settings')
+          .upsert({
+            id: 1,
+            telegram_bot_token: updated.telegramBotToken || '',
+            telegram_chat_id: updated.telegramChatId || '276204182',
+            telegram_enabled: updated.telegramEnabled !== false,
+            support_telegram_username: updated.supportTelegramUsername || 'OrbTranslationsSupportBot',
+            updated_at: new Date().toISOString()
+          });
+      } catch (err) {
+        console.warn('Сохранение site_settings в Supabase:', err);
+      }
+    }
+
+    return true;
+  }
 }
 
 window.store = new Store();
+

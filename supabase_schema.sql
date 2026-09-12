@@ -511,3 +511,69 @@ GRANT EXECUTE ON FUNCTION public.clear_user_purchases(UUID) TO anon, authenticat
 -- 10. Очистка устаревших тестовых записей без пользователя
 DELETE FROM public.crypto_orders WHERE id IN ('TEST-1', 'TEST-UPDATE') OR user_id IS NULL;
 
+-- ========================================================================
+-- 11. Система обратной связи (Feedback & Support) и настройки платформы
+-- ========================================================================
+
+-- Таблица тикетов и обращений пользователей
+CREATE TABLE IF NOT EXISTS public.feedback_messages (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  created_at TIMESTAMPTZ DEFAULT now(),
+  user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+  user_email TEXT,
+  contact_info TEXT NOT NULL,
+  category TEXT NOT NULL,
+  message TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'new', -- 'new', 'in_progress', 'resolved'
+  admin_notes TEXT
+);
+
+-- Таблица настроек платформы и Telegram-бота
+CREATE TABLE IF NOT EXISTS public.site_settings (
+  id INT PRIMARY KEY DEFAULT 1,
+  telegram_bot_token TEXT DEFAULT '',
+  telegram_chat_id TEXT DEFAULT '276204182',
+  telegram_enabled BOOLEAN DEFAULT true,
+  support_telegram_username TEXT DEFAULT 'OrbTranslationsSupportBot',
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Инициализация начальной строки настроек платформы
+INSERT INTO public.site_settings (id, telegram_bot_token, telegram_chat_id, telegram_enabled, support_telegram_username)
+VALUES (1, '', '276204182', true, 'OrbTranslationsSupportBot')
+ON CONFLICT (id) DO NOTHING;
+
+-- Включение RLS
+ALTER TABLE public.feedback_messages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.site_settings ENABLE ROW LEVEL SECURITY;
+
+-- RLS для feedback_messages
+DROP POLICY IF EXISTS "Anyone can submit feedback" ON public.feedback_messages;
+CREATE POLICY "Anyone can submit feedback" ON public.feedback_messages
+  FOR INSERT WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Admin view all feedback" ON public.feedback_messages;
+CREATE POLICY "Admin view all feedback" ON public.feedback_messages
+  FOR SELECT USING (public.is_admin() OR (auth.uid() IS NOT NULL AND auth.uid() = user_id));
+
+DROP POLICY IF EXISTS "Admin update feedback" ON public.feedback_messages;
+CREATE POLICY "Admin update feedback" ON public.feedback_messages
+  FOR UPDATE USING (public.is_admin()) WITH CHECK (public.is_admin());
+
+DROP POLICY IF EXISTS "Admin delete feedback" ON public.feedback_messages;
+CREATE POLICY "Admin delete feedback" ON public.feedback_messages
+  FOR DELETE USING (public.is_admin());
+
+-- RLS для site_settings
+DROP POLICY IF EXISTS "Public read site_settings" ON public.site_settings;
+CREATE POLICY "Public read site_settings" ON public.site_settings
+  FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Admin manage site_settings" ON public.site_settings;
+CREATE POLICY "Admin manage site_settings" ON public.site_settings
+  FOR ALL USING (public.is_admin()) WITH CHECK (public.is_admin());
+
+-- Права доступа
+GRANT ALL ON TABLE public.feedback_messages TO anon, authenticated;
+GRANT ALL ON TABLE public.site_settings TO anon, authenticated;
+
