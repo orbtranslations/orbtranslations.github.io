@@ -1368,7 +1368,7 @@ class App {
       expiredAlert.style.display = 'block';
     }
 
-    this.showToast(isEn ? '⚠️ Payment window expired. Please refresh the rate.' : '⚠️ Время фиксации курса истекло. Пожалуйста, обновите курс.', 'warning');
+    this.showToast(isEn ? 'Payment window expired. Please refresh the rate.' : 'Время фиксации курса истекло. Пожалуйста, обновите курс.', 'warning');
     this.renderDepositHistory();
   }
 
@@ -1525,7 +1525,7 @@ class App {
         window.reader.currentIndex = 0;
         window.reader.currentDialogBlockIndex = 0;
         window.reader.renderReaderUI();
-        this.showToast(isEn ? '✅ Saved graphics loaded!' : '✅ Сохраненная графика загружена!', 'success');
+        this.showToast(isEn ? 'Saved graphics loaded!' : 'Сохраненная графика загружена!', 'success');
       } else {
         this.showToast(isEn ? 'Failed to restore saved archive' : 'Не удалось загрузить сохраненный архив', 'error');
       }
@@ -1546,7 +1546,7 @@ class App {
         const files = await window.reader.readFilesFromDirectoryHandle(handle);
         await window.reader.loadUserFolder(files);
         this.closeAllModals();
-        this.showToast(isEn ? '✅ Folder reconnected!' : '✅ Папка подключена!', 'success');
+        this.showToast(isEn ? 'Folder reconnected!' : 'Папка подключена!', 'success');
       } else {
         this.showToast(isEn ? 'Folder access was not granted' : 'Доступ к папке не был разрешен', 'warning');
       }
@@ -2221,7 +2221,7 @@ class App {
       // 3. Закрытие модального окна и уведомление об успехе
       this.closeAllModals();
       this.showToast(
-        window.i18n ? window.i18n.t('feedback_success_toast') : '✅ Ваше обращение успешно отправлено в поддержку! Скоро мы с вами свяжемся.',
+        window.i18n ? window.i18n.t('feedback_success_toast') : 'Ваше обращение успешно отправлено в поддержку! Скоро мы с вами свяжемся.',
         'success'
       );
 

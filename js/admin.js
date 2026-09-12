@@ -1128,19 +1128,19 @@ class AdminService {
       const data = await resp.json();
       if (data && data.ok) {
         window.app.showToast(
-          isEn ? '✅ Test message successfully delivered to Telegram!' : '✅ Тестовое сообщение успешно доставлено в Telegram!',
+          window.i18n ? window.i18n.t('admin_telegram_test_success') : (isEn ? 'Test message successfully delivered to Telegram!' : 'Тестовое сообщение успешно доставлено в Telegram!'),
           'success'
         );
       } else {
         const errMsg = data?.description || 'Unknown error';
         window.app.showToast(
-          (isEn ? '❌ Telegram API Error: ' : '❌ Ошибка Telegram API: ') + errMsg,
+          (isEn ? 'Telegram API Error: ' : 'Ошибка Telegram API: ') + errMsg,
           'error'
         );
       }
     } catch (err) {
       window.app.showToast(
-        (isEn ? '❌ Network Error: ' : '❌ Сетевая ошибка: ') + (err.message || ''),
+        (isEn ? 'Network Error: ' : 'Сетевая ошибка: ') + (err.message || ''),
         'error'
       );
     } finally {
