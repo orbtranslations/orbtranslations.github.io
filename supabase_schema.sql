@@ -305,6 +305,48 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
+-- 7.5. Серверная функция удаления отдельной покупки и отзыва доступа
+DROP FUNCTION IF EXISTS public.delete_user_purchase(UUID, TEXT) CASCADE;
+CREATE OR REPLACE FUNCTION public.delete_user_purchase(p_user_id UUID, p_work_id TEXT)
+RETURNS JSONB AS $$
+DECLARE
+  v_count INT;
+BEGIN
+  DELETE FROM public.purchases
+  WHERE user_id = p_user_id 
+    AND (p_work_id IS NULL OR p_work_id = '' OR work_id = p_work_id);
+  
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  
+  RETURN jsonb_build_object(
+    'success', true,
+    'deleted_count', v_count,
+    'user_id', p_user_id,
+    'work_id', p_work_id
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- 7.6. Серверная функция полной очистки всех покупок пользователя
+DROP FUNCTION IF EXISTS public.clear_user_purchases(UUID) CASCADE;
+CREATE OR REPLACE FUNCTION public.clear_user_purchases(p_user_id UUID)
+RETURNS JSONB AS $$
+DECLARE
+  v_count INT;
+BEGIN
+  DELETE FROM public.purchases
+  WHERE user_id = p_user_id;
+  
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  
+  RETURN jsonb_build_object(
+    'success', true,
+    'deleted_count', v_count,
+    'user_id', p_user_id
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
 -- 8. Включение RLS (Row Level Security) для защиты таблиц
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.works ENABLE ROW LEVEL SECURITY;
@@ -327,6 +369,8 @@ DROP POLICY IF EXISTS "Users insert profiles" ON public.profiles;
 DROP POLICY IF EXISTS "Allow profile insert" ON public.profiles;
 DROP POLICY IF EXISTS "Read own purchases" ON public.purchases;
 DROP POLICY IF EXISTS "Insert own purchases" ON public.purchases;
+DROP POLICY IF EXISTS "Read purchases" ON public.purchases;
+DROP POLICY IF EXISTS "Delete purchases" ON public.purchases;
 DROP POLICY IF EXISTS "Read own orders" ON public.crypto_orders;
 DROP POLICY IF EXISTS "Read orders" ON public.crypto_orders;
 DROP POLICY IF EXISTS "Insert orders" ON public.crypto_orders;
@@ -361,9 +405,10 @@ CREATE POLICY "Users read profiles" ON public.profiles FOR SELECT USING (true);
 CREATE POLICY "Users insert profiles" ON public.profiles FOR INSERT WITH CHECK (true);
 CREATE POLICY "Users update profiles" ON public.profiles FOR UPDATE USING (auth.uid() = id OR public.is_admin()) WITH CHECK (auth.uid() = id OR public.is_admin());
 
--- 8.5. Покупки: чтение и вставка своих покупок
-CREATE POLICY "Read own purchases" ON public.purchases FOR SELECT USING (auth.uid() = user_id);
-CREATE POLICY "Insert own purchases" ON public.purchases FOR INSERT WITH CHECK (auth.uid() = user_id);
+-- 8.5. Покупки: чтение, вставка и удаление покупок (для пользователей и администраторов)
+CREATE POLICY "Read purchases" ON public.purchases FOR SELECT USING (true);
+CREATE POLICY "Insert own purchases" ON public.purchases FOR INSERT WITH CHECK (true);
+CREATE POLICY "Delete purchases" ON public.purchases FOR DELETE USING (true);
 
 -- 8.6. Заказы: пользователи могут создавать, просматривать, обновлять и удалять заказы (администраторы могут стирать сделки)
 CREATE POLICY "Read orders" ON public.crypto_orders FOR SELECT USING (true);
@@ -410,6 +455,8 @@ GRANT EXECUTE ON FUNCTION public.complete_crypto_order(TEXT, TEXT) TO anon, auth
 GRANT EXECUTE ON FUNCTION public.get_admin_users() TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.delete_crypto_order(TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.clear_user_crypto_orders(UUID) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.delete_user_purchase(UUID, TEXT) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.clear_user_purchases(UUID) TO anon, authenticated;
 
 -- 10. Очистка устаревших тестовых записей без пользователя
 DELETE FROM public.crypto_orders WHERE id IN ('TEST-1', 'TEST-UPDATE') OR user_id IS NULL;

@@ -626,6 +626,7 @@ The fate of the kingdom is now in your hands.
 
     this.data.orders.push({
       id: 'ORD-P-' + Date.now().toString().slice(-6),
+      userId: this.data.currentUser ? this.data.currentUser.id : null,
       workId,
       workTitle,
       price: workPrice,
@@ -677,6 +678,15 @@ The fate of the kingdom is now in your hands.
     } catch (e) {}
   }
 
+  removeDevicePurchase(workId) {
+    if (!workId) return;
+    try {
+      const list = this.getDevicePurchases();
+      const filtered = list.filter(id => id !== workId);
+      localStorage.setItem('orb_device_purchases', JSON.stringify(filtered));
+    } catch (e) {}
+  }
+
   setPurchasedWorks(workIds) {
     if (!Array.isArray(workIds)) return;
     if (!this.data.currentUser.purchasedWorks) {
@@ -690,12 +700,11 @@ The fate of the kingdom is now in your hands.
   }
 
   hasPurchased(workId) {
-    if (this.getRole() === 'admin') return true;
     const devicePurchases = this.getDevicePurchases();
     if (this.getRole() === 'guest') {
-      return devicePurchases.includes(workId) || (this.data.currentUser.purchasedWorks || []).includes(workId);
+      return devicePurchases.includes(workId) || (this.data.currentUser?.purchasedWorks || []).includes(workId);
     }
-    const userPurchased = (this.data.currentUser.purchasedWorks || []).includes(workId);
+    const userPurchased = (this.data.currentUser?.purchasedWorks || []).includes(workId);
     return userPurchased || devicePurchases.includes(workId);
   }
 
@@ -1680,12 +1689,12 @@ The fate of the kingdom is now in your hands.
   }
 
   /**
-   * Загрузка всех сделок конкретного пользователя
+   * Загрузка всех сделок конкретного пользователя (крипто-пополнения и покупки переводов)
    */
   async getUserOrders(userId) {
     const orders = [];
 
-    // 1. Из таблицы crypto_orders в Supabase
+    // 1. Пополнения из таблицы crypto_orders в Supabase
     if (window.supabaseClient && userId) {
       try {
         const { data, error } = await window.supabaseClient
@@ -1716,7 +1725,8 @@ The fate of the kingdom is now in your hands.
               network,
               txHash: ord.tx_hash || '',
               explorerUrl,
-              status: ord.status || 'pending'
+              status: ord.status || 'pending',
+              type: 'deposit'
             });
           });
         }
@@ -1725,7 +1735,45 @@ The fate of the kingdom is now in your hands.
       }
     }
 
-    // 2. Дополняем из локальных сессий (если пользователь совпадает)
+    // 2. Покупки работ из таблицы purchases в Supabase
+    if (window.supabaseClient && userId && !userId.startsWith('usr_') && userId !== 'guest') {
+      try {
+        const { data: pData, error: pError } = await window.supabaseClient
+          .from('purchases')
+          .select('*')
+          .eq('user_id', userId)
+          .order('purchased_at', { ascending: false });
+
+        if (!pError && Array.isArray(pData)) {
+          pData.forEach(p => {
+            const work = this.getWorkById(p.work_id);
+            const workTitle = (work && typeof work.title === 'object')
+              ? { ru: work.title.ru || work.title.en || '', en: work.title.en || work.title.ru || '' }
+              : (work ? { ru: work.title, en: work.titleEn || work.originalTitle || work.title } : { ru: p.work_id, en: p.work_id });
+            const price = Number(p.price_paid || (work ? work.price : 1));
+            const ordId = `ORD-P-${p.id || p.work_id}`;
+            orders.push({
+              id: ordId,
+              dbId: p.id,
+              type: 'purchase',
+              workId: p.work_id,
+              workTitle,
+              date: p.purchased_at || p.created_at || new Date().toISOString(),
+              amountUsdt: price,
+              orbs: -price,
+              network: 'Orb Balance',
+              txHash: '',
+              explorerUrl: '',
+              status: 'completed'
+            });
+          });
+        }
+      } catch (pe) {
+        console.warn('Ошибка загрузки покупок пользователя из Supabase:', pe);
+      }
+    }
+
+    // 3. Дополняем из локальных сессий (если пользователь совпадает)
     const localOrders = this.getCryptoSessionsList();
     if (localOrders.length > 0) {
       localOrders.forEach(s => {
@@ -1740,18 +1788,83 @@ The fate of the kingdom is now in your hands.
             network: s.network,
             txHash: s.txHash || '',
             explorerUrl: '',
-            status: s.status || 'pending'
+            status: s.status || 'pending',
+            type: 'deposit'
           });
         }
       });
     }
+
+    // 4. Дополняем покупками из локального массива this.data.orders
+    if (this.data.orders && Array.isArray(this.data.orders)) {
+      this.data.orders.forEach(ord => {
+        if (ord && ord.type === 'purchase') {
+          const belongs = (!ord.userId && this.data.currentUser && this.data.currentUser.id === userId) || (ord.userId === userId);
+          if (belongs) {
+            const alreadyExists = orders.some(o => o.id === ord.id || (o.workId && o.workId === ord.workId));
+            if (!alreadyExists) {
+              const work = this.getWorkById(ord.workId);
+              const workTitle = ord.workTitle || ((work && typeof work.title === 'object')
+                ? { ru: work.title.ru || work.title.en || '', en: work.title.en || work.title.ru || '' }
+                : (work ? { ru: work.title, en: work.titleEn || work.originalTitle || work.title } : { ru: ord.workId, en: ord.workId }));
+              const price = Number(ord.price || (work ? work.price : 1));
+              orders.push({
+                id: ord.id,
+                type: 'purchase',
+                workId: ord.workId,
+                workTitle,
+                date: ord.date || new Date().toISOString(),
+                amountUsdt: price,
+                orbs: -price,
+                network: 'Orb Balance',
+                txHash: '',
+                explorerUrl: '',
+                status: 'completed'
+              });
+            }
+          }
+        }
+      });
+    }
+
+    // 5. Резервная проверка купленных работ пользователя (если запись о сделке отсутствовала)
+    let userPurchasedWorks = [];
+    if (this.data.currentUser && this.data.currentUser.id === userId) {
+      userPurchasedWorks = [...(this.data.currentUser.purchasedWorks || [])];
+    } else if (this.data.registeredUsers) {
+      const reg = this.data.registeredUsers.find(u => u.id === userId);
+      if (reg && reg.purchasedWorks) userPurchasedWorks = [...reg.purchasedWorks];
+    }
+    userPurchasedWorks.forEach(wId => {
+      const alreadyExists = orders.some(o => o.workId === wId || o.id === `ORD-P-${wId}`);
+      if (!alreadyExists) {
+        const work = this.getWorkById(wId);
+        const workTitle = (work && typeof work.title === 'object')
+          ? { ru: work.title.ru || work.title.en || '', en: work.title.en || work.title.ru || '' }
+          : (work ? { ru: work.title, en: work.titleEn || work.originalTitle || work.title } : { ru: wId, en: wId });
+        const price = Number(work ? work.price : 1);
+        orders.push({
+          id: `ORD-P-${wId}`,
+          type: 'purchase',
+          workId: wId,
+          workTitle,
+          date: new Date().toISOString(),
+          amountUsdt: price,
+          orbs: -price,
+          network: 'Orb Balance',
+          txHash: '',
+          explorerUrl: '',
+          status: 'completed'
+        });
+      }
+    });
 
     orders.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
     return orders;
   }
 
   /**
-   * Выборочное удаление отдельной сделки
+   * Выборочное удаление отдельной сделки пополнения (crypto_orders)
    */
   async deleteCryptoOrder(orderId) {
     if (!orderId) return { success: false, message: 'ID заказа не указан' };
@@ -1803,46 +1916,180 @@ The fate of the kingdom is now in your hands.
   }
 
   /**
-   * Полная очистка всей истории сделок пользователя
+   * Аннулирование покупки работы у пользователя с закрытием доступа
    */
-  async clearUserOrders(userId) {
-    if (!userId) return { success: false, message: 'ID пользователя не указан' };
+  async revokeUserPurchase(userId, workId, orderId) {
+    if (!userId && !orderId && !workId) return { success: false, message: 'Параметры не указаны' };
 
-    // 1. Удаление всех записей из Supabase crypto_orders
-    if (window.supabaseClient) {
-      let clearedViaRpc = false;
-      try {
-        const { data, error } = await window.supabaseClient.rpc('clear_user_crypto_orders', { p_user_id: userId });
-        if (!error && data && data.success) {
-          clearedViaRpc = true;
-        }
-      } catch (_) {
-        // RPC еще не создан
+    // Если workId не передан явно, попробуем извлечь его из orderId или массива orders
+    if (!workId && orderId) {
+      if (orderId.startsWith('ORD-P-')) {
+        workId = orderId.replace('ORD-P-', '');
       }
-
-      if (!clearedViaRpc) {
-        const { error } = await window.supabaseClient
-          .from('crypto_orders')
-          .delete()
-          .eq('user_id', userId);
-
-        if (error) {
-          console.warn('Ошибка полной очистки crypto_orders в Supabase:', error);
-          throw new Error(error.message || 'Ошибка очистки сделок из Supabase');
-        }
+      if (!workId || workId.length > 25) {
+        const ord = (this.data.orders || []).find(o => o.id === orderId);
+        if (ord && ord.workId) workId = ord.workId;
       }
     }
 
-    // 2. Очистка локальных сессий текущего пользователя
+    // 1. Удаление записи из Supabase таблицы purchases
+    if (window.supabaseClient && userId && !userId.startsWith('usr_') && userId !== 'guest') {
+      try {
+        let deletedViaRpc = false;
+        try {
+          const { data, error } = await window.supabaseClient.rpc('delete_user_purchase', {
+            p_user_id: userId,
+            p_work_id: workId || ''
+          });
+          if (!error && data && data.success) {
+            deletedViaRpc = true;
+          }
+        } catch (_) {}
+
+        if (!deletedViaRpc && workId) {
+          const { error } = await window.supabaseClient
+            .from('purchases')
+            .delete()
+            .eq('user_id', userId)
+            .eq('work_id', workId);
+          if (error) {
+            console.warn('Ошибка удаления покупки из Supabase purchases:', error);
+          }
+        }
+      } catch (err) {
+        console.warn('Исключение при удалении покупки в Supabase:', err);
+      }
+    }
+
+    // 2. Отзыв прав доступа в локальном хранилище и текущей сессии
     let changed = false;
-    if (this.data.currentUser && this.data.currentUser.id === userId) {
-      this.data.cryptoSessions = [];
-      this.data.orders = [];
+    const isCurrent = (this.data.currentUser && (this.data.currentUser.id === userId || !userId));
+
+    // 2.1. Если это текущий пользователь
+    if (isCurrent && workId) {
+      if (this.data.currentUser.purchasedWorks) {
+        const origLen = this.data.currentUser.purchasedWorks.length;
+        this.data.currentUser.purchasedWorks = this.data.currentUser.purchasedWorks.filter(id => id !== workId);
+        if (this.data.currentUser.purchasedWorks.length !== origLen) changed = true;
+      }
+    }
+
+    // 2.2. Удаляем из registeredUsers
+    if (this.data.registeredUsers && Array.isArray(this.data.registeredUsers)) {
+      const regUser = this.data.registeredUsers.find(u => u.id === userId);
+      if (regUser && Array.isArray(regUser.purchasedWorks) && workId) {
+        const origLen = regUser.purchasedWorks.length;
+        regUser.purchasedWorks = regUser.purchasedWorks.filter(id => id !== workId);
+        if (regUser.purchasedWorks.length !== origLen) changed = true;
+      }
+    }
+
+    // 2.3. Удаляем из покупок устройства (localStorage)
+    if (workId) {
+      this.removeDevicePurchase(workId);
+      try {
+        localStorage.removeItem(`orb_progress_${workId}`);
+      } catch (_) {}
       changed = true;
+    }
+
+    // 2.4. Удаляем заказ из orders
+    if (this.data.orders) {
+      const origLen = this.data.orders.length;
+      this.data.orders = this.data.orders.filter(o => {
+        if (orderId && o.id === orderId) return false;
+        if (workId && o.type === 'purchase' && o.workId === workId) {
+          if (!o.userId || o.userId === userId || isCurrent) return false;
+        }
+        return true;
+      });
+      if (this.data.orders.length !== origLen) changed = true;
     }
 
     if (changed) {
       this.saveToStorage();
+    }
+
+    // 3. Немедленно обновляем интерфейс каталога и истории
+    if (typeof window !== 'undefined' && window.app) {
+      if (typeof window.app.renderStorefront === 'function') window.app.renderStorefront();
+      if (typeof window.app.renderPurchases === 'function') window.app.renderPurchases();
+      if (typeof window.app.renderDepositHistory === 'function') window.app.renderDepositHistory();
+    }
+
+    return { success: true, workId, orderId };
+  }
+
+  /**
+   * Полная очистка всей истории сделок пользователя (и пополнений, и покупок с закрытием доступа)
+   */
+  async clearUserOrders(userId) {
+    if (!userId) return { success: false, message: 'ID пользователя не указан' };
+
+    // 1. Удаление всех записей из Supabase crypto_orders и purchases
+    if (window.supabaseClient && !userId.startsWith('usr_') && userId !== 'guest') {
+      try {
+        await window.supabaseClient.rpc('clear_user_crypto_orders', { p_user_id: userId });
+      } catch (_) {
+        try {
+          await window.supabaseClient.from('crypto_orders').delete().eq('user_id', userId);
+        } catch (_) {}
+      }
+
+      try {
+        await window.supabaseClient.rpc('clear_user_purchases', { p_user_id: userId });
+      } catch (_) {
+        try {
+          await window.supabaseClient.from('purchases').delete().eq('user_id', userId);
+        } catch (_) {}
+      }
+    }
+
+    // 2. Очистка локальных сессий, заказов и закрытие доступа к купленным работам
+    let changed = false;
+    const isCurrent = (this.data.currentUser && this.data.currentUser.id === userId);
+
+    if (isCurrent) {
+      this.data.cryptoSessions = [];
+      const purchased = [...(this.data.currentUser.purchasedWorks || [])];
+      purchased.forEach(wId => {
+        this.removeDevicePurchase(wId);
+        try { localStorage.removeItem(`orb_progress_${wId}`); } catch (_) {}
+      });
+      this.data.currentUser.purchasedWorks = [];
+      this.data.orders = (this.data.orders || []).filter(o => o.userId && o.userId !== userId);
+      changed = true;
+    }
+
+    if (this.data.registeredUsers) {
+      const regUser = this.data.registeredUsers.find(u => u.id === userId);
+      if (regUser) {
+        if (Array.isArray(regUser.purchasedWorks)) {
+          regUser.purchasedWorks.forEach(wId => {
+            this.removeDevicePurchase(wId);
+            try { localStorage.removeItem(`orb_progress_${wId}`); } catch (_) {}
+          });
+          regUser.purchasedWorks = [];
+        }
+        changed = true;
+      }
+    }
+
+    if (this.data.orders) {
+      const origLen = this.data.orders.length;
+      this.data.orders = this.data.orders.filter(o => o.userId !== userId);
+      if (this.data.orders.length !== origLen) changed = true;
+    }
+
+    if (changed) {
+      this.saveToStorage();
+    }
+
+    // 3. Обновляем интерфейс
+    if (typeof window !== 'undefined' && window.app) {
+      if (typeof window.app.renderStorefront === 'function') window.app.renderStorefront();
+      if (typeof window.app.renderPurchases === 'function') window.app.renderPurchases();
+      if (typeof window.app.renderDepositHistory === 'function') window.app.renderDepositHistory();
     }
 
     return { success: true, userId };

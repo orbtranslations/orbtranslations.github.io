@@ -698,6 +698,8 @@ class AdminService {
         tr.style.borderBottom = '1px solid var(--border-color)';
         tr.style.transition = 'background 0.2s ease';
 
+        const isPurchase = ord.type === 'purchase' || ord.orbs < 0 || String(ord.id).startsWith('ORD-P-');
+
         // Форматирование даты
         let dateStr = '—';
         if (ord.date) {
@@ -713,20 +715,28 @@ class AdminService {
         }
 
         // Сеть и значок
-        const net = ord.network || 'USDT';
-        let netBadge = 'badge-glass';
-        let netIcon = '🔴';
-        if (net.includes('Polygon') || net.includes('POL')) {
-          netBadge = 'badge-info';
-          netIcon = '🟣';
-        } else if (net.includes('BTC') || net.includes('Bitcoin')) {
-          netBadge = 'badge-gold';
-          netIcon = '🟠';
+        let netHtml = '';
+        if (isPurchase) {
+          netHtml = `<span class="badge" style="background: rgba(168, 85, 247, 0.15); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.3); font-size: 0.72rem; padding: 2px 7px;">🪙 ${isEn ? 'Orb Balance' : 'Баланс Орб'}</span>`;
+        } else {
+          const net = ord.network || 'USDT';
+          let netBadge = 'badge-glass';
+          let netIcon = '🔴';
+          if (net.includes('Polygon') || net.includes('POL')) {
+            netBadge = 'badge-info';
+            netIcon = '🟣';
+          } else if (net.includes('BTC') || net.includes('Bitcoin')) {
+            netBadge = 'badge-gold';
+            netIcon = '🟠';
+          }
+          netHtml = `<span class="badge ${netBadge}" style="font-size: 0.72rem;">${netIcon} ${net}</span>`;
         }
 
         // Статус
         let statusBadge = '';
-        if (ord.status === 'completed' || ord.status === 'success') {
+        if (isPurchase) {
+          statusBadge = `<span class="badge badge-success" style="font-size: 0.75rem;">${isEn ? '✅ Debited' : '✅ Списано'}</span>`;
+        } else if (ord.status === 'completed' || ord.status === 'success') {
           statusBadge = `<span class="badge badge-success" style="font-size: 0.75rem;">${isEn ? '✅ Completed' : '✅ Завершено'}</span>`;
         } else if (ord.status === 'cancelled' || ord.status === 'expired') {
           statusBadge = `<span class="badge badge-glass" style="font-size: 0.75rem; color: #ff7675;">${isEn ? '✕ Cancelled' : '✕ Отменена'}</span>`;
@@ -736,9 +746,35 @@ class AdminService {
           statusBadge = `<span class="badge badge-warning" style="font-size: 0.75rem;">${isEn ? '⏳ Pending' : '⏳ Ожидание'}</span>`;
         }
 
-        // Ссылка на хэш
+        // Ссылка на хэш или название работы
         let txHtml = '<span style="color: var(--text-muted);">—</span>';
-        if (ord.txHash) {
+        if (isPurchase) {
+          const work = (this.store && ord.workId) ? this.store.getWorkById(ord.workId) : null;
+          let workTitle = '';
+          if (work && window.i18n) {
+            workTitle = window.i18n.getWorkTitle(work);
+          }
+          if (!workTitle) {
+            if (typeof ord.workTitle === 'object' && ord.workTitle !== null) {
+              workTitle = isEn ? (ord.workTitle.en || ord.workTitle.ru) : (ord.workTitle.ru || ord.workTitle.en);
+            } else if (typeof ord.workTitle === 'string' && ord.workTitle) {
+              workTitle = ord.workTitle;
+            }
+          }
+          if (!workTitle) {
+            workTitle = ord.workId || (isEn ? 'Novel Translation' : 'Перевод визуальной новеллы');
+          }
+          txHtml = `
+            <div style="display: flex; flex-direction: column; gap: 2px; max-width: 250px;">
+              <span style="color: #60a5fa; font-weight: 600; font-size: 0.8rem; line-height: 1.25; word-break: break-word;" title="${workTitle}">
+                📖 ${workTitle}
+              </span>
+              <span style="color: var(--text-muted); font-size: 0.7rem;">
+                ${isEn ? 'Access to full translation' : 'Полный доступ к переводу'}
+              </span>
+            </div>
+          `;
+        } else if (ord.txHash) {
           const shortHash = ord.txHash.slice(0, 8) + '...' + ord.txHash.slice(-6);
           if (ord.explorerUrl) {
             txHtml = `<a href="${ord.explorerUrl}" target="_blank" rel="noopener noreferrer" style="color: var(--accent-secondary); font-family: monospace; text-decoration: underline; font-size: 0.78rem;">${shortHash} ↗</a>`;
@@ -747,18 +783,34 @@ class AdminService {
           }
         }
 
+        // Сумма и Орбы
+        const amountStr = isPurchase
+          ? `<span style="color: var(--text-secondary); font-weight: 600;">$${Math.abs(Number(ord.amountUsdt || 0)).toFixed(2)}</span>`
+          : `<span style="font-weight: 600;">${ord.amountUsdt || '0'}</span>`;
+
+        const orbsStr = isPurchase
+          ? `<span style="color: #f87171; font-weight: 700;">-${Math.abs(Math.floor(Number(ord.orbs || 0)))} 🪙</span>`
+          : `<span style="color: var(--accent-gold); font-weight: 700;">+${ord.orbs || '0'} 🪙</span>`;
+
+        const typeBadge = isPurchase
+          ? `<span class="badge" style="background: rgba(236, 72, 153, 0.15); color: #f472b6; border: 1px solid rgba(236, 72, 153, 0.3); font-size: 0.68rem; padding: 1px 6px; margin-top: 2px; display: inline-block;">${isEn ? '📚 Purchase' : '📚 Покупка'}</span>`
+          : '';
+
         tr.innerHTML = `
           <td style="padding: 0.65rem 0.6rem; color: var(--text-secondary); white-space: nowrap;">${dateStr}</td>
-          <td style="padding: 0.65rem 0.6rem; font-family: monospace; font-size: 0.75rem; color: var(--accent-secondary); white-space: nowrap;">#${ord.id}</td>
-          <td style="padding: 0.65rem 0.6rem; white-space: nowrap;">
-            <span class="badge ${netBadge}" style="font-size: 0.72rem;">${netIcon} ${net}</span>
+          <td style="padding: 0.65rem 0.6rem; font-family: monospace; font-size: 0.75rem; color: var(--accent-secondary); white-space: nowrap;">
+            <div>#${ord.id}</div>
+            ${typeBadge}
           </td>
-          <td style="padding: 0.65rem 0.6rem; font-weight: 600; white-space: nowrap;">${ord.amountUsdt || '0'}</td>
-          <td style="padding: 0.65rem 0.6rem; color: var(--accent-gold); font-weight: 700; white-space: nowrap;">+${ord.orbs || '0'} 🪙</td>
+          <td style="padding: 0.65rem 0.6rem; white-space: nowrap;">
+            ${netHtml}
+          </td>
+          <td style="padding: 0.65rem 0.6rem; white-space: nowrap;">${amountStr}</td>
+          <td style="padding: 0.65rem 0.6rem; white-space: nowrap;">${orbsStr}</td>
           <td style="padding: 0.65rem 0.6rem; white-space: nowrap;">${txHtml}</td>
           <td style="padding: 0.65rem 0.6rem; white-space: nowrap;">${statusBadge}</td>
           <td style="padding: 0.65rem 0.6rem; text-align: center; white-space: nowrap;">
-            <button type="button" class="btn btn-secondary btn-small" style="color: #ff6b6b; padding: 2px 7px; font-size: 0.75rem;" onclick="window.admin.handleDeleteSingleDeal('${ord.id}', '${userId}')" title="${isEn ? 'Delete deal' : 'Удалить сделку'}">
+            <button type="button" class="btn btn-secondary btn-small" style="color: #ff6b6b; padding: 2px 7px; font-size: 0.75rem;" onclick="window.admin.handleDeleteSingleDeal('${ord.id}', '${userId}', '${ord.workId || ''}')" title="${isPurchase ? (isEn ? 'Delete purchase & revoke access' : 'Аннулировать покупку и закрыть доступ') : (isEn ? 'Delete deal' : 'Удалить сделку')}">
               🗑️
             </button>
           </td>
@@ -772,16 +824,29 @@ class AdminService {
   }
 
   /**
-   * Выборочное удаление одной сделки
+   * Выборочное удаление одной сделки (с закрытием доступа при покупке)
    */
-  async handleDeleteSingleDeal(orderId, userId) {
+  async handleDeleteSingleDeal(orderId, userId, workId = '') {
     const isEn = window.i18n && window.i18n.getLang() === 'en';
-    const confirmMsg = isEn ? 'Delete this deal from history?' : 'Удалить эту сделку из истории?';
+    const isPurchase = String(orderId).startsWith('ORD-P-') || Boolean(workId);
+    const confirmMsg = isPurchase
+      ? (isEn
+          ? 'Delete this purchase deal? This will REVOKE user access to the translation and require repurchasing.'
+          : 'Удалить эту сделку о покупке? Это ЗАКРОЕТ полный доступ к работе для пользователя, и её снова нужно будет купить.')
+      : (isEn ? 'Delete this deal from history?' : 'Удалить эту сделку из истории?');
     if (!confirm(confirmMsg)) return;
 
     try {
-      await this.store.deleteCryptoOrder(orderId);
-      window.app.showToast(isEn ? 'Deal removed from history' : 'Сделка удалена из истории', 'info');
+      if (isPurchase) {
+        await this.store.revokeUserPurchase(userId, workId, orderId);
+        window.app.showToast(
+          isEn ? 'Purchase deal deleted & translation access revoked' : 'Сделка покупки удалена, доступ к переводу закрыт',
+          'info'
+        );
+      } else {
+        await this.store.deleteCryptoOrder(orderId);
+        window.app.showToast(isEn ? 'Deal removed from history' : 'Сделка удалена из истории', 'info');
+      }
       await this.renderUserDealsTable(userId);
     } catch (err) {
       console.error('Ошибка удаления сделки:', err);
@@ -790,20 +855,23 @@ class AdminService {
   }
 
   /**
-   * Полное стирание всей истории сделок пользователя
+   * Полное стирание всей истории сделок пользователя (и пополнений, и покупок с закрытием доступа)
    */
   async handleClearAllUserDeals() {
     if (!this.activeDealsUserId) return;
 
     const isEn = window.i18n && window.i18n.getLang() === 'en';
     const confirmMsg = isEn 
-      ? 'Are you sure you want to permanently delete ALL deals for this user?' 
-      : 'Вы уверены, что хотите безвозвратно удалить ВСЮ историю сделок этого пользователя?';
+      ? 'Are you sure you want to permanently delete ALL deals and REVOKE all purchased access for this user?' 
+      : 'Вы уверены, что хотите безвозвратно удалить ВСЮ историю сделок и ЗАКРЫТЬ доступ ко всем купленным работам этого пользователя?';
     if (!confirm(confirmMsg)) return;
 
     try {
       await this.store.clearUserOrders(this.activeDealsUserId);
-      window.app.showToast(isEn ? 'User deal history cleared' : 'Вся история сделок пользователя стёрта', 'info');
+      window.app.showToast(
+        isEn ? 'All user deals deleted & purchased access revoked' : 'Вся история сделок стёрта, доступ к купленным работам закрыт',
+        'info'
+      );
       await this.renderUserDealsTable(this.activeDealsUserId);
     } catch (err) {
       console.error('Ошибка очистки сделок:', err);
