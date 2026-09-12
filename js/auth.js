@@ -80,27 +80,49 @@ class AuthManager {
   async syncUserFromSupabase(sbUser) {
     this.supabaseUser = sbUser;
     try {
-      // Получаем профиль из таблицы public.profiles
-      const { data: profile } = await window.supabaseClient
+      const isAdminEmail = (sbUser.email || '').toLowerCase() === 'ismayilovelchin1984@gmail.com';
+      const defaultName = isAdminEmail 
+        ? 'GraveAdmin' 
+        : (sbUser.user_metadata?.name || (sbUser.email ? sbUser.email.split('@')[0] : 'User'));
+      const defaultRole = isAdminEmail ? 'admin' : 'user';
+
+      // 1. Получаем профиль из таблицы public.profiles
+      let { data: profile } = await window.supabaseClient
         .from('profiles')
         .select('*')
         .eq('id', sbUser.id)
-        .single();
+        .maybeSingle();
+
+      // 2. Если профиля еще нет в profiles — создаем его немедленно
+      if (!profile) {
+        try {
+          const { data: insertedProfile } = await window.supabaseClient
+            .from('profiles')
+            .upsert({
+              id: sbUser.id,
+              email: sbUser.email,
+              name: defaultName,
+              orbs: 0.00,
+              role: defaultRole
+            }, { onConflict: 'id' })
+            .select('*')
+            .maybeSingle();
+          if (insertedProfile) profile = insertedProfile;
+        } catch (insertErr) {
+          console.warn('Автоматическое создание профиля в profiles:', insertErr);
+        }
+      }
 
       const user = this.store.getCurrentUser();
       user.id = sbUser.id;
       user.email = sbUser.email;
-
-      const isAdminEmail = (sbUser.email || '').toLowerCase() === 'ismayilovelchin1984@gmail.com';
-      user.name = isAdminEmail 
-        ? 'GraveAdmin' 
-        : ((profile && profile.name) || sbUser.user_metadata?.name || sbUser.email.split('@')[0]);
+      user.name = (profile && profile.name) || defaultName;
 
       if (profile && profile.orbs !== undefined) {
         user.orbs = Number(profile.orbs);
       }
       
-      const role = isAdminEmail ? 'admin' : ((profile && profile.role) || 'user');
+      const role = isAdminEmail ? 'admin' : ((profile && profile.role) || defaultRole);
       this.store.setRole(role);
 
       // Если в базе еще не была проставлена роль admin для главного email
@@ -111,6 +133,15 @@ class AuthManager {
           .eq('id', sbUser.id)
           .then(() => {});
       }
+
+      // Запоминаем пользователя в локальном хранилище
+      this.store.recordRegisteredUser({
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: role,
+        orbs: user.orbs
+      });
 
       this.store.saveToStorage();
       this.notify();
@@ -191,10 +222,34 @@ class AuthManager {
     });
 
     if (error) throw error;
-    if (data.user) {
+    if (data && data.user) {
+      const displayName = name || data.user.user_metadata?.name || email.split('@')[0];
+      // Сразу создаем запись в таблице profiles
+      try {
+        await window.supabaseClient
+          .from('profiles')
+          .upsert({
+            id: data.user.id,
+            email: data.user.email,
+            name: displayName,
+            orbs: 0.00,
+            role: 'user'
+          }, { onConflict: 'id' });
+      } catch (upsertErr) {
+        console.warn('Создание записи профиля при регистрации:', upsertErr);
+      }
+
+      this.store.recordRegisteredUser({
+        id: data.user.id,
+        email: data.user.email,
+        name: displayName,
+        role: 'user',
+        orbs: 0.00
+      });
+
       await this.syncUserFromSupabase(data.user);
     }
-    return { success: true, user: data.user };
+    return { success: true, user: data ? data.user : null };
   }
 
   // Вход в Supabase Auth
@@ -251,8 +306,17 @@ class AuthManager {
   // Симуляция быстрой регистрации (для локального офлайн-тестирования)
   registerDemoUser(name, email) {
     const user = this.store.getCurrentUser();
+    user.id = 'usr_' + Date.now().toString(36);
     user.name = name || 'Иван Переводчик';
     user.email = email || 'reader@studio.com';
+    user.orbs = 0;
+    this.store.recordRegisteredUser({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: 'user',
+      orbs: 0
+    });
     this.store.saveToStorage();
     this.setRole('user');
   }

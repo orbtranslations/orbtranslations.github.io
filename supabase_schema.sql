@@ -112,6 +112,30 @@ CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
+-- 6.1. Автоматическая синхронизация всех пользователей из auth.users в public.profiles (подтягивает тех, кто уже зарегистрировался)
+INSERT INTO public.profiles (id, email, name, orbs, role, created_at)
+SELECT 
+  u.id, 
+  u.email, 
+  CASE 
+    WHEN LOWER(u.email) = 'ismayilovelchin1984@gmail.com' THEN 'GraveAdmin'
+    ELSE COALESCE(u.raw_user_meta_data->>'name', split_part(u.email, '@', 1))
+  END, 
+  0.00, 
+  CASE 
+    WHEN LOWER(u.email) = 'ismayilovelchin1984@gmail.com' THEN 'admin' 
+    ELSE 'user' 
+  END,
+  COALESCE(u.created_at, NOW())
+FROM auth.users u
+ON CONFLICT (id) DO UPDATE
+SET 
+  email = EXCLUDED.email,
+  name = CASE 
+    WHEN LOWER(EXCLUDED.email) = 'ismayilovelchin1984@gmail.com' THEN 'GraveAdmin' 
+    ELSE COALESCE(profiles.name, EXCLUDED.name) 
+  END;
+
 -- Назначение роли администратора для GraveAdmin (если профиль уже был создан)
 UPDATE public.profiles 
 SET role = 'admin', name = 'GraveAdmin' 
@@ -138,8 +162,8 @@ BEGIN
   END IF;
 
   -- Проверка уникальности tx_hash
-  IF p_tx_hash IS NOT NULL AND EXISTS (SELECT 1 FROM public.crypto_orders WHERE tx_hash = p_tx_hash AND id <> p_order_id) THEN
-    RETURN jsonb_build_object('success', false, 'message', 'Этот хэш транзакции уже использован для другого заказа');
+  IF EXISTS (SELECT 1 FROM public.crypto_orders WHERE tx_hash = p_tx_hash AND id != p_order_id) THEN
+    RETURN jsonb_build_object('success', false, 'message', 'Данный tx_hash уже привязан к другому заказу');
   END IF;
 
   -- Обновление статуса заказа
@@ -165,7 +189,7 @@ BEGIN
     'new_balance', v_new_balance
   );
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
 -- 7.1. Вспомогательная функция проверки роли администратора (SECURITY DEFINER исключает рекурсию RLS)
 CREATE OR REPLACE FUNCTION public.is_admin()
@@ -176,7 +200,44 @@ BEGIN
     WHERE id = auth.uid() AND role = 'admin'
   );
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- 7.2. Серверная функция для панели администратора (гарантирует синхронизацию auth.users и profiles)
+CREATE OR REPLACE FUNCTION public.get_admin_users()
+RETURNS TABLE (
+  id UUID,
+  email TEXT,
+  name TEXT,
+  orbs NUMERIC,
+  role TEXT,
+  created_at TIMESTAMPTZ
+) AS $$
+BEGIN
+  -- Автоматически синхронизируем любых пользователей из auth.users в public.profiles
+  INSERT INTO public.profiles (id, email, name, orbs, role, created_at)
+  SELECT 
+    u.id, 
+    u.email, 
+    CASE 
+      WHEN LOWER(u.email) = 'ismayilovelchin1984@gmail.com' THEN 'GraveAdmin'
+      ELSE COALESCE(u.raw_user_meta_data->>'name', split_part(u.email, '@', 1))
+    END, 
+    0.00, 
+    CASE 
+      WHEN LOWER(u.email) = 'ismayilovelchin1984@gmail.com' THEN 'admin' 
+      ELSE 'user' 
+    END,
+    COALESCE(u.created_at, NOW())
+  FROM auth.users u
+  ON CONFLICT (id) DO UPDATE
+  SET email = EXCLUDED.email;
+
+  RETURN QUERY
+  SELECT p.id, p.email, p.name, p.orbs, p.role, p.created_at
+  FROM public.profiles p
+  ORDER BY p.created_at DESC;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
 -- 8. Включение RLS (Row Level Security) для защиты таблиц
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
@@ -192,6 +253,8 @@ DROP POLICY IF EXISTS "Read own profile" ON public.profiles;
 DROP POLICY IF EXISTS "Update own profile" ON public.profiles;
 DROP POLICY IF EXISTS "Users read profiles" ON public.profiles;
 DROP POLICY IF EXISTS "Users update profiles" ON public.profiles;
+DROP POLICY IF EXISTS "Users insert profiles" ON public.profiles;
+DROP POLICY IF EXISTS "Allow profile insert" ON public.profiles;
 DROP POLICY IF EXISTS "Read own purchases" ON public.purchases;
 DROP POLICY IF EXISTS "Insert own purchases" ON public.purchases;
 DROP POLICY IF EXISTS "Read own orders" ON public.crypto_orders;
@@ -204,8 +267,9 @@ DROP POLICY IF EXISTS "Delete orders" ON public.crypto_orders;
 CREATE POLICY "Public read works" ON public.works FOR SELECT USING (true);
 CREATE POLICY "Public read wallet_settings" ON public.wallet_settings FOR SELECT USING (true);
 
--- Профили: пользователи видят и обновляют свой профиль, а администраторы — любые профили (для изменения баланса)
-CREATE POLICY "Users read profiles" ON public.profiles FOR SELECT USING (auth.uid() = id OR public.is_admin());
+-- Профили: чтение и вставка доступны всем пользователям, а обновление баланса — владельцу или администратору
+CREATE POLICY "Users read profiles" ON public.profiles FOR SELECT USING (true);
+CREATE POLICY "Users insert profiles" ON public.profiles FOR INSERT WITH CHECK (true);
 CREATE POLICY "Users update profiles" ON public.profiles FOR UPDATE USING (auth.uid() = id OR public.is_admin()) WITH CHECK (auth.uid() = id OR public.is_admin());
 
 -- Покупки: чтение и вставка своих покупок
@@ -227,3 +291,4 @@ GRANT ALL ON TABLE public.crypto_orders TO anon, authenticated;
 GRANT SELECT ON TABLE public.wallet_settings TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.is_admin() TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.complete_crypto_order(TEXT, TEXT) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.get_admin_users() TO anon, authenticated;

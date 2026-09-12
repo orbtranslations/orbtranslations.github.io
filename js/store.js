@@ -997,19 +997,35 @@ The fate of the kingdom is now in your hands.
 
   /**
    * Получение списка всех зарегистрированных пользователей платформы
+  /**
+   * Локальная регистрация пользователя в хранилище браузера (для истории и fallback)
+   */
+  recordRegisteredUser(user) {
+    if (!user || !user.id || user.id === 'guest') return;
+    if (!this.data.registeredUsers) {
+      this.data.registeredUsers = [];
+    }
+    const idx = this.data.registeredUsers.findIndex(u => u.id === user.id);
+    if (idx !== -1) {
+      this.data.registeredUsers[idx] = { ...this.data.registeredUsers[idx], ...user };
+    } else {
+      this.data.registeredUsers.unshift(user);
+    }
+    this.saveToStorage();
+  }
+
+  /**
+   * Получение списка всех зарегистрированных пользователей
    */
   async getRegisteredUsers() {
     let users = [];
 
     if (window.supabaseClient) {
+      // 1. Попытка вызвать серверную функцию get_admin_users (гарантирует синхронизацию auth.users и profiles)
       try {
-        const { data, error } = await window.supabaseClient
-          .from('profiles')
-          .select('*')
-          .order('created_at', { ascending: false });
-
-        if (!error && Array.isArray(data)) {
-          users = data.map(p => ({
+        const { data: rpcUsers, error: rpcError } = await window.supabaseClient.rpc('get_admin_users');
+        if (!rpcError && Array.isArray(rpcUsers) && rpcUsers.length > 0) {
+          users = rpcUsers.map(p => ({
             id: p.id,
             email: p.email || '—',
             name: p.name || (p.email ? p.email.split('@')[0] : 'User'),
@@ -1019,20 +1035,54 @@ The fate of the kingdom is now in your hands.
           }));
         }
       } catch (e) {
-        console.warn('Ошибка загрузки пользователей из Supabase:', e);
+        console.warn('RPC get_admin_users недоступен:', e);
+      }
+
+      // 2. Fallback: прямой запрос к profiles
+      if (users.length === 0) {
+        try {
+          const { data, error } = await window.supabaseClient
+            .from('profiles')
+            .select('*')
+            .order('created_at', { ascending: false });
+
+          if (!error && Array.isArray(data) && data.length > 0) {
+            users = data.map(p => ({
+              id: p.id,
+              email: p.email || '—',
+              name: p.name || (p.email ? p.email.split('@')[0] : 'User'),
+              orbs: Number(p.orbs || 0),
+              role: p.role || 'user',
+              createdAt: p.created_at || null
+            }));
+          }
+        } catch (e) {
+          console.warn('Ошибка загрузки пользователей из profiles:', e);
+        }
       }
     }
 
-    // Если список пуст или Supabase недоступен, гарантируем присутствие хотя бы текущего пользователя (если не гость)
-    if (users.length === 0 && this.data.currentUser && this.data.currentUser.id && this.data.currentUser.id !== 'guest') {
-      users.push({
-        id: this.data.currentUser.id,
-        email: this.data.currentUser.email || '—',
-        name: this.data.currentUser.name || 'Admin',
-        orbs: Number(this.data.currentUser.orbs || 0),
-        role: this.getRole() || 'admin',
-        createdAt: new Date().toISOString()
+    // 3. Подмешиваем локально сохраненных зарегистрированных пользователей
+    if (this.data.registeredUsers && Array.isArray(this.data.registeredUsers)) {
+      this.data.registeredUsers.forEach(localUser => {
+        if (!users.some(u => u.id === localUser.id)) {
+          users.push(localUser);
+        }
       });
+    }
+
+    // 4. Если текущий пользователь авторизован и не гость, гарантируем его присутствие
+    if (this.data.currentUser && this.data.currentUser.id && this.data.currentUser.id !== 'guest') {
+      if (!users.some(u => u.id === this.data.currentUser.id)) {
+        users.unshift({
+          id: this.data.currentUser.id,
+          email: this.data.currentUser.email || '—',
+          name: this.data.currentUser.name || 'Admin',
+          orbs: Number(this.data.currentUser.orbs || 0),
+          role: this.getRole() || 'admin',
+          createdAt: new Date().toISOString()
+        });
+      }
     }
 
     return users;
