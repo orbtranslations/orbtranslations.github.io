@@ -810,7 +810,7 @@ class AdminService {
           <td style="padding: 0.65rem 0.6rem; white-space: nowrap;">${txHtml}</td>
           <td style="padding: 0.65rem 0.6rem; white-space: nowrap;">${statusBadge}</td>
           <td style="padding: 0.65rem 0.6rem; text-align: center; white-space: nowrap;">
-            <button type="button" class="btn btn-secondary btn-small" style="color: #ff6b6b; padding: 2px 7px; font-size: 0.75rem;" onclick="window.admin.handleDeleteSingleDeal('${ord.id}', '${userId}', '${ord.workId || ''}')" title="${isPurchase ? (isEn ? 'Delete purchase & revoke access' : 'Аннулировать покупку и закрыть доступ') : (isEn ? 'Delete deal' : 'Удалить сделку')}">
+            <button type="button" class="btn btn-secondary btn-small" style="color: #ff6b6b; padding: 2px 7px; font-size: 0.75rem;" onclick="window.admin.handleDeleteSingleDeal('${ord.id}', '${userId}', '${ord.workId || ''}', '${ord.dbId || ''}')" title="${isPurchase ? (isEn ? 'Delete purchase & revoke access' : 'Аннулировать покупку и закрыть доступ') : (isEn ? 'Delete deal' : 'Удалить сделку')}">
               🗑️
             </button>
           </td>
@@ -826,7 +826,7 @@ class AdminService {
   /**
    * Выборочное удаление одной сделки (с закрытием доступа при покупке)
    */
-  async handleDeleteSingleDeal(orderId, userId, workId = '') {
+  async handleDeleteSingleDeal(orderId, userId, workId = '', dbId = '') {
     const isEn = window.i18n && window.i18n.getLang() === 'en';
     const isPurchase = String(orderId).startsWith('ORD-P-') || Boolean(workId);
     const confirmMsg = isPurchase
@@ -838,7 +838,7 @@ class AdminService {
 
     try {
       if (isPurchase) {
-        await this.store.revokeUserPurchase(userId, workId, orderId);
+        await this.store.revokeUserPurchase(userId, workId, orderId, dbId);
         window.app.showToast(
           isEn ? 'Purchase deal deleted & translation access revoked' : 'Сделка покупки удалена, доступ к переводу закрыт',
           'info'

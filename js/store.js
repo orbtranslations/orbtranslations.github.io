@@ -620,6 +620,11 @@ The fate of the kingdom is now in your hands.
     }
     this.addDevicePurchase(workId);
 
+    // Если работа ранее была в отозванных — снимаем статус отзыва при повторной покупке
+    if (this.data.currentUser && this.data.currentUser.id) {
+      this.removeRevokedPurchase(this.data.currentUser.id, workId);
+    }
+
     const workTitle = (work && typeof work.title === 'object')
       ? { ru: work.title.ru || work.title.en || '', en: work.title.en || work.title.ru || '' }
       : (work ? { ru: work.title, en: work.titleEn || work.originalTitle || work.title } : { ru: workId, en: workId });
@@ -687,20 +692,89 @@ The fate of the kingdom is now in your hands.
     } catch (e) {}
   }
 
+  getRevokedPurchases() {
+    try {
+      const raw = localStorage.getItem('orb_revoked_purchases');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch (e) {}
+    return this.data.revokedPurchases || [];
+  }
+
+  addRevokedPurchase(userId, workId = '', orderId = '', dbId = '', all = false) {
+    const list = this.getRevokedPurchases();
+    list.push({
+      userId: String(userId || ''),
+      workId: String(workId || ''),
+      orderId: String(orderId || ''),
+      dbId: dbId ? String(dbId) : '',
+      all: Boolean(all),
+      revokedAt: new Date().toISOString()
+    });
+    this.data.revokedPurchases = list;
+    try {
+      localStorage.setItem('orb_revoked_purchases', JSON.stringify(list));
+    } catch (e) {}
+  }
+
+  removeRevokedPurchase(userId, workId) {
+    const list = this.getRevokedPurchases();
+    const filtered = list.filter(r => !(r.userId === String(userId) && (r.workId === String(workId) || r.all)));
+    this.data.revokedPurchases = filtered;
+    try {
+      localStorage.setItem('orb_revoked_purchases', JSON.stringify(filtered));
+    } catch (e) {}
+  }
+
+  isPurchaseRevoked(userId, workId = '', orderId = '', dbId = '') {
+    const list = this.getRevokedPurchases();
+    if (!list || list.length === 0) return false;
+    const uStr = String(userId || '');
+    const wStr = String(workId || '');
+    const oStr = String(orderId || '');
+    const dStr = dbId ? String(dbId) : '';
+
+    return list.some(r => {
+      // 1. Если для пользователя отозваны все покупки
+      if (r.userId && r.userId === uStr && r.all) return true;
+      // 2. Если совпадает работа
+      if (wStr && r.workId && r.workId === wStr) {
+        if (!r.userId || r.userId === uStr) return true;
+      }
+      // 3. Если совпадает dbId
+      if (dStr && r.dbId && r.dbId === dStr) return true;
+      // 4. Если совпадает orderId
+      if (oStr && r.orderId && r.orderId === oStr) return true;
+      return false;
+    });
+  }
+
   setPurchasedWorks(workIds) {
     if (!Array.isArray(workIds)) return;
+    const currentUid = this.data.currentUser ? this.data.currentUser.id : '';
+    const validWorkIds = workIds.filter(id => !this.isPurchaseRevoked(currentUid, id));
     if (!this.data.currentUser.purchasedWorks) {
       this.data.currentUser.purchasedWorks = [];
     }
-    const deviceList = this.getDevicePurchases();
-    const merged = Array.from(new Set([...this.data.currentUser.purchasedWorks, ...workIds, ...deviceList]));
+    const deviceList = this.getDevicePurchases().filter(id => !this.isPurchaseRevoked(currentUid, id));
+    const merged = Array.from(new Set([
+      ...(this.data.currentUser.purchasedWorks || []).filter(id => !this.isPurchaseRevoked(currentUid, id)),
+      ...validWorkIds,
+      ...deviceList
+    ]));
     this.data.currentUser.purchasedWorks = merged;
     merged.forEach(id => this.addDevicePurchase(id));
     this.saveToStorage();
   }
 
   hasPurchased(workId) {
-    const devicePurchases = this.getDevicePurchases();
+    const currentUid = this.data.currentUser ? this.data.currentUser.id : 'guest';
+    if (this.isPurchaseRevoked(currentUid, workId)) {
+      return false;
+    }
+    const devicePurchases = this.getDevicePurchases().filter(id => !this.isPurchaseRevoked(currentUid, id));
     if (this.getRole() === 'guest') {
       return devicePurchases.includes(workId) || (this.data.currentUser?.purchasedWorks || []).includes(workId);
     }
@@ -1526,11 +1600,14 @@ The fate of the kingdom is now in your hands.
 
           if (!pErr && Array.isArray(dbPurchases)) {
             dbPurchases.forEach(p => {
+              const ordId = `ORD-P-${p.id || p.work_id}`;
+              if (this.isPurchaseRevoked(currentUser.id, p.work_id, ordId, p.id)) {
+                return;
+              }
               const work = this.getWorkById(p.work_id);
               const workTitle = (work && typeof work.title === 'object')
                 ? { ru: work.title.ru || work.title.en || '', en: work.title.en || work.title.ru || '' }
                 : (work ? { ru: work.title, en: work.titleEn || work.originalTitle || work.title } : { ru: p.work_id, en: p.work_id });
-              const ordId = `ORD-P-${p.id || p.work_id}`;
               const existingIndex = list.findIndex(item => item.type === 'purchase' && (item.id === ordId || item.workId === p.work_id));
               const purchaseItem = {
                 id: ordId,
@@ -1746,12 +1823,17 @@ The fate of the kingdom is now in your hands.
 
         if (!pError && Array.isArray(pData)) {
           pData.forEach(p => {
+            const ordId = `ORD-P-${p.id || p.work_id}`;
+            // Если покупка была отозвана админом — исключаем из отображения
+            if (this.isPurchaseRevoked(userId, p.work_id, ordId, p.id)) {
+              return;
+            }
+
             const work = this.getWorkById(p.work_id);
             const workTitle = (work && typeof work.title === 'object')
               ? { ru: work.title.ru || work.title.en || '', en: work.title.en || work.title.ru || '' }
               : (work ? { ru: work.title, en: work.titleEn || work.originalTitle || work.title } : { ru: p.work_id, en: p.work_id });
             const price = Number(p.price_paid || (work ? work.price : 1));
-            const ordId = `ORD-P-${p.id || p.work_id}`;
             orders.push({
               id: ordId,
               dbId: p.id,
@@ -1801,6 +1883,9 @@ The fate of the kingdom is now in your hands.
         if (ord && ord.type === 'purchase') {
           const belongs = (!ord.userId && this.data.currentUser && this.data.currentUser.id === userId) || (ord.userId === userId);
           if (belongs) {
+            if (this.isPurchaseRevoked(userId, ord.workId, ord.id)) {
+              return;
+            }
             const alreadyExists = orders.some(o => o.id === ord.id || (o.workId && o.workId === ord.workId));
             if (!alreadyExists) {
               const work = this.getWorkById(ord.workId);
@@ -1836,6 +1921,9 @@ The fate of the kingdom is now in your hands.
       if (reg && reg.purchasedWorks) userPurchasedWorks = [...reg.purchasedWorks];
     }
     userPurchasedWorks.forEach(wId => {
+      if (this.isPurchaseRevoked(userId, wId, `ORD-P-${wId}`)) {
+        return;
+      }
       const alreadyExists = orders.some(o => o.workId === wId || o.id === `ORD-P-${wId}`);
       if (!alreadyExists) {
         const work = this.getWorkById(wId);
@@ -1918,47 +2006,57 @@ The fate of the kingdom is now in your hands.
   /**
    * Аннулирование покупки работы у пользователя с закрытием доступа
    */
-  async revokeUserPurchase(userId, workId, orderId) {
-    if (!userId && !orderId && !workId) return { success: false, message: 'Параметры не указаны' };
+  async revokeUserPurchase(userId, workId, orderId, dbId = '') {
+    if (!userId && !orderId && !workId && !dbId) return { success: false, message: 'Параметры не указаны' };
 
-    // Если workId не передан явно, попробуем извлечь его из orderId или массива orders
+    // Если workId не передан явно, пробуем извлечь его
     if (!workId && orderId) {
       if (orderId.startsWith('ORD-P-')) {
-        workId = orderId.replace('ORD-P-', '');
+        const suffix = orderId.replace('ORD-P-', '');
+        if (suffix.startsWith('work-')) {
+          workId = suffix;
+        }
       }
-      if (!workId || workId.length > 25) {
+      if (!workId) {
         const ord = (this.data.orders || []).find(o => o.id === orderId);
         if (ord && ord.workId) workId = ord.workId;
       }
     }
 
-    // 1. Удаление записи из Supabase таблицы purchases
-    if (window.supabaseClient && userId && !userId.startsWith('usr_') && userId !== 'guest') {
-      try {
-        let deletedViaRpc = false;
-        try {
-          const { data, error } = await window.supabaseClient.rpc('delete_user_purchase', {
-            p_user_id: userId,
-            p_work_id: workId || ''
-          });
-          if (!error && data && data.success) {
-            deletedViaRpc = true;
-          }
-        } catch (_) {}
+    // 0. Запоминаем факт отзыва в локальном хранилище, чтобы скрыть сделку и закрыть доступ немедленно
+    this.addRevokedPurchase(userId, workId, orderId, dbId);
 
-        if (!deletedViaRpc && workId) {
-          const { error } = await window.supabaseClient
+    // 1. Удаление записи из Supabase таблицы purchases
+    if (window.supabaseClient && userId && !String(userId).startsWith('usr_') && userId !== 'guest') {
+      // 1.1. Прямое удаление по dbId (первичный ключ id в public.purchases)
+      if (dbId) {
+        try {
+          await window.supabaseClient
+            .from('purchases')
+            .delete()
+            .eq('id', dbId);
+        } catch (_) {}
+      }
+
+      // 1.2. Прямое удаление по user_id + work_id
+      if (workId) {
+        try {
+          await window.supabaseClient
             .from('purchases')
             .delete()
             .eq('user_id', userId)
             .eq('work_id', workId);
-          if (error) {
-            console.warn('Ошибка удаления покупки из Supabase purchases:', error);
-          }
-        }
-      } catch (err) {
-        console.warn('Исключение при удалении покупки в Supabase:', err);
+        } catch (_) {}
       }
+
+      // 1.3. Серверная хранимая функция delete_user_purchase (с безопасным поиском)
+      try {
+        await window.supabaseClient.rpc('delete_user_purchase', {
+          p_user_id: String(userId),
+          p_work_id: String(workId || ''),
+          p_order_id: String(dbId || '')
+        });
+      } catch (_) {}
     }
 
     // 2. Отзыв прав доступа в локальном хранилище и текущей сессии
@@ -2017,7 +2115,7 @@ The fate of the kingdom is now in your hands.
       if (typeof window.app.renderDepositHistory === 'function') window.app.renderDepositHistory();
     }
 
-    return { success: true, workId, orderId };
+    return { success: true, workId, orderId, dbId };
   }
 
   /**
@@ -2026,8 +2124,11 @@ The fate of the kingdom is now in your hands.
   async clearUserOrders(userId) {
     if (!userId) return { success: false, message: 'ID пользователя не указан' };
 
+    // 0. Запоминаем отзыв всех покупок пользователя
+    this.addRevokedPurchase(userId, '', '', '', true);
+
     // 1. Удаление всех записей из Supabase crypto_orders и purchases
-    if (window.supabaseClient && !userId.startsWith('usr_') && userId !== 'guest') {
+    if (window.supabaseClient && !String(userId).startsWith('usr_') && userId !== 'guest') {
       try {
         await window.supabaseClient.rpc('clear_user_crypto_orders', { p_user_id: userId });
       } catch (_) {
@@ -2037,7 +2138,7 @@ The fate of the kingdom is now in your hands.
       }
 
       try {
-        await window.supabaseClient.rpc('clear_user_purchases', { p_user_id: userId });
+        await window.supabaseClient.rpc('clear_user_purchases', { p_user_id: String(userId) });
       } catch (_) {
         try {
           await window.supabaseClient.from('purchases').delete().eq('user_id', userId);

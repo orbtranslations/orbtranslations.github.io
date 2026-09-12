@@ -307,16 +307,36 @@ $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
 -- 7.5. Серверная функция удаления отдельной покупки и отзыва доступа
 DROP FUNCTION IF EXISTS public.delete_user_purchase(UUID, TEXT) CASCADE;
-CREATE OR REPLACE FUNCTION public.delete_user_purchase(p_user_id UUID, p_work_id TEXT)
+DROP FUNCTION IF EXISTS public.delete_user_purchase(TEXT, TEXT) CASCADE;
+DROP FUNCTION IF EXISTS public.delete_user_purchase(TEXT, TEXT, TEXT) CASCADE;
+
+CREATE OR REPLACE FUNCTION public.delete_user_purchase(
+  p_user_id TEXT,
+  p_work_id TEXT DEFAULT NULL,
+  p_order_id TEXT DEFAULT NULL
+)
 RETURNS JSONB AS $$
 DECLARE
-  v_count INT;
+  v_count INT := 0;
+  v_uid UUID;
 BEGIN
-  DELETE FROM public.purchases
-  WHERE user_id = p_user_id 
-    AND (p_work_id IS NULL OR p_work_id = '' OR work_id = p_work_id);
-  
-  GET DIAGNOSTICS v_count = ROW_COUNT;
+  BEGIN
+    v_uid := p_user_id::UUID;
+  EXCEPTION WHEN OTHERS THEN
+    v_uid := NULL;
+  END;
+
+  IF p_order_id IS NOT NULL AND p_order_id ~ '^[0-9]+$' THEN
+    DELETE FROM public.purchases WHERE id = p_order_id::BIGINT;
+    GET DIAGNOSTICS v_count = ROW_COUNT;
+  ELSIF v_uid IS NOT NULL THEN
+    IF p_work_id IS NOT NULL AND p_work_id <> '' THEN
+      DELETE FROM public.purchases WHERE user_id = v_uid AND work_id = p_work_id;
+    ELSE
+      DELETE FROM public.purchases WHERE user_id = v_uid;
+    END IF;
+    GET DIAGNOSTICS v_count = ROW_COUNT;
+  END IF;
   
   RETURN jsonb_build_object(
     'success', true,
@@ -327,23 +347,47 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
+-- Перегрузка для совместимости с прямым вызовом по UUID
+CREATE OR REPLACE FUNCTION public.delete_user_purchase(p_user_id UUID, p_work_id TEXT)
+RETURNS JSONB AS $$
+BEGIN
+  RETURN public.delete_user_purchase(p_user_id::TEXT, p_work_id, NULL);
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
 -- 7.6. Серверная функция полной очистки всех покупок пользователя
 DROP FUNCTION IF EXISTS public.clear_user_purchases(UUID) CASCADE;
-CREATE OR REPLACE FUNCTION public.clear_user_purchases(p_user_id UUID)
+DROP FUNCTION IF EXISTS public.clear_user_purchases(TEXT) CASCADE;
+
+CREATE OR REPLACE FUNCTION public.clear_user_purchases(p_user_id TEXT)
 RETURNS JSONB AS $$
 DECLARE
-  v_count INT;
+  v_count INT := 0;
+  v_uid UUID;
 BEGIN
-  DELETE FROM public.purchases
-  WHERE user_id = p_user_id;
-  
-  GET DIAGNOSTICS v_count = ROW_COUNT;
-  
+  BEGIN
+    v_uid := p_user_id::UUID;
+  EXCEPTION WHEN OTHERS THEN
+    v_uid := NULL;
+  END;
+
+  IF v_uid IS NOT NULL THEN
+    DELETE FROM public.purchases WHERE user_id = v_uid;
+    GET DIAGNOSTICS v_count = ROW_COUNT;
+  END IF;
+
   RETURN jsonb_build_object(
     'success', true,
     'deleted_count', v_count,
     'user_id', p_user_id
   );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+CREATE OR REPLACE FUNCTION public.clear_user_purchases(p_user_id UUID)
+RETURNS JSONB AS $$
+BEGIN
+  RETURN public.clear_user_purchases(p_user_id::TEXT);
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
@@ -455,7 +499,9 @@ GRANT EXECUTE ON FUNCTION public.complete_crypto_order(TEXT, TEXT) TO anon, auth
 GRANT EXECUTE ON FUNCTION public.get_admin_users() TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.delete_crypto_order(TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.clear_user_crypto_orders(UUID) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.delete_user_purchase(TEXT, TEXT, TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.delete_user_purchase(UUID, TEXT) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.clear_user_purchases(TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.clear_user_purchases(UUID) TO anon, authenticated;
 
 -- 10. Очистка устаревших тестовых записей без пользователя
