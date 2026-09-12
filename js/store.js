@@ -118,16 +118,17 @@ class Store {
   static STORAGE_KEY = 'orb_marketplace_data_v3';
 
   constructor() {
-    // 1. Быстрая синхронная загрузка из localStorage для мгновенной отрисовки UI
+    // 1. Быстрая синхронная загрузка кэша из localStorage для мгновенной отрисовки UI
     this.data = this.loadFromStorage();
-    if (!this.data || !this.data.works || this.data.works.length === 0) {
+    if (!this.data) {
       this.data = this.getDefaultInitialData();
       this.saveToStorage();
     } else {
+      if (!Array.isArray(this.data.works)) this.data.works = [];
       this.migrateXpubSettings();
     }
 
-    // 2. Асинхронная подгрузка из IndexedDB (восстанавливает полные тяжелые скрипты и изменения)
+    // 2. Асинхронная синхронизация с Supabase (SSOT) и обогащение скриптами из IndexedDB
     this.initPromise = this.initAsyncStorage();
   }
 
@@ -193,89 +194,34 @@ class Store {
         this.data.orders = this.data.orders.filter(o => o && o.id !== 'TEST-1' && o.id !== 'TEST-UPDATE');
       }
 
-      this.migrateDemoImages();
       this.saveToStorage();
-    }
-  }
-
-  migrateDemoImages() {
-    if (!this.data || !this.data.works) return;
-    const defaultDemo = [
-      { page: 1, url: 'https://img.dlsite.jp/modpub/images2/work/doujin/RJ233000/RJ232738_img_main.webp' },
-      { page: 2, url: 'https://img.dlsite.jp/modpub/images2/work/doujin/RJ233000/RJ232738_img_smp1.webp' },
-      { page: 3, url: 'https://img.dlsite.jp/modpub/images2/work/doujin/RJ233000/RJ232738_img_smp2.webp' },
-      { page: 4, url: 'https://img.dlsite.jp/modpub/images2/work/doujin/RJ233000/RJ232738_img_smp3.webp' },
-      { page: 5, url: 'https://img.dlsite.jp/modpub/images2/work/doujin/RJ233000/RJ232738_img_smp4.webp' },
-      { page: 6, url: 'https://img.dlsite.jp/modpub/images2/work/doujin/RJ233000/RJ232738_img_smp5.webp' },
-      { page: 11, url: 'https://img.dlsite.jp/modpub/images2/work/doujin/RJ233000/RJ232738_img_smp6.webp' }
-    ];
-
-    const w1 = this.data.works.find(w => w.id === 'work-001') || this.data.works[0];
-    if (w1) {
-      // Восстанавливаем оригинальные названия, описание, обложку и превью, если они были стерты
-      const hasValidTitle = w1.title && typeof w1.title === 'object' ? (w1.title.ru || w1.title.en) : (w1.title && w1.title.trim());
-      if (!hasValidTitle) {
-        w1.title = { ru: 'Breast Sandwich Beach', en: 'Breast Sandwich Beach' };
-      }
-      const hasValidDesc = w1.description && typeof w1.description === 'object' ? (w1.description.ru || w1.description.en) : (w1.description && w1.description.trim());
-      if (!hasValidDesc) {
-        w1.description = {
-          ru: 'Художественный перевод новеллы Breast Sandwich Beach. Полная адаптация диалоговых окон, реплик и оверлеев.',
-          en: 'Official translation of Breast Sandwich Beach with full dialogue and character overlay adaptation.'
-        };
-      }
-      if (!w1.coverUrl || w1.coverUrl === 'assets/demo/cover-1.svg') {
-        w1.coverUrl = 'https://img.dlsite.jp/modpub/images2/work/doujin/RJ233000/RJ232738_img_main.webp';
-      }
-      if (!w1.author || w1.author === 'Glaive Team') {
-        w1.author = 'Grave';
-      }
-      if (!w1.tags || w1.tags.length === 0 || w1.tags[0] === 'Визуальная новелла') {
-        w1.tags = ['CG', 'Kaiman'];
-      }
-      if (!w1.previewPagesCount || w1.previewPagesCount === 3) {
-        w1.previewPagesCount = 6;
-      }
-      if (!w1.demoImages || !Array.isArray(w1.demoImages) || w1.demoImages.length === 0) {
-        w1.demoImages = defaultDemo;
-      }
-      this.saveToStorage();
-      if (window.supabaseClient) {
-        setTimeout(() => {
-          this.saveWorkToSupabase(w1, w1.fullScriptText);
-        }, 1200);
-      }
     }
   }
 
   async initAsyncStorage() {
     try {
+      // 1. Загрузка каталога из Supabase (Single Source of Truth)
+      await this.syncWithSupabase();
+
+      // 2. Локальное обогащение полными скриптами из IndexedDB (для создателя/покупателя)
       const idbData = await IDBStorage.get('main_store');
-      if (idbData && idbData.works && idbData.works.length > 0) {
-        // Объединяем полные скрипты из IndexedDB с текущими данными в памяти
+      if (idbData && Array.isArray(idbData.works)) {
         idbData.works.forEach(idbWork => {
-          const memWork = this.data.works.find(w => w.id === idbWork.id);
+          const memWork = (this.data.works || []).find(w => w.id === idbWork.id);
           if (memWork) {
-            // Если в памяти был заглушечный или пустой скрипт, берем полный из IDB
             if (idbWork.sampleScriptText && (!memWork.sampleScriptText || memWork.sampleScriptText.startsWith('[STORED_IN_IDB'))) {
               memWork.sampleScriptText = idbWork.sampleScriptText;
             }
-          } else {
-            this.data.works.push(idbWork);
+            if (idbWork.fullScriptText) {
+              memWork.fullScriptText = idbWork.fullScriptText;
+            }
           }
         });
+      }
 
-        this.migrateXpubSettings();
-
-        // 3. Синхронизация с облачной базой данных Supabase
-        await this.syncWithSupabase();
-
-        if (window.app) {
-          window.app.renderStorefront();
-          if (window.admin) window.admin.renderWorksTable();
-        }
-      } else {
-        await this.syncWithSupabase();
+      if (window.app) {
+        window.app.renderStorefront();
+        if (window.admin) window.admin.renderWorksTable();
       }
     } catch (e) {
       console.warn('Ошибка при инициализации IndexedDB / Supabase:', e);
@@ -286,48 +232,27 @@ class Store {
     if (!window.supabaseClient) return;
 
     try {
-      // 1. Загрузка каталога работ из Supabase public.works
+      // 1. Загрузка каталога работ из Supabase public.works (SSOT)
       const { data: dbWorks, error: worksErr } = await window.supabaseClient
         .from('works')
         .select('*')
         .order('created_at', { ascending: false });
 
-      if (!worksErr && dbWorks && dbWorks.length > 0) {
+      if (!worksErr && dbWorks && Array.isArray(dbWorks)) {
         const mappedWorks = dbWorks.map(w => {
           const existing = (this.data.works || []).find(ew => ew.id === w.id);
 
-          // Надежное сохранение названий: если из базы пришли пустые строки, сохраняем существующие
-          const existingTitleRu = existing ? (typeof existing.title === 'object' ? (existing.title.ru || existing.title.en) : existing.title) : '';
-          const existingTitleEn = existing ? (typeof existing.title === 'object' ? (existing.title.en || existing.title.ru) : existing.titleEn) : '';
-          const titleRu = (w.title_ru && w.title_ru.trim()) || existingTitleRu || 'Breast Sandwich Beach';
-          const titleEn = (w.title_en && w.title_en.trim()) || existingTitleEn || titleRu;
+          const titleRu = (w.title_ru && w.title_ru.trim()) || (w.title_en && w.title_en.trim()) || '';
+          const titleEn = (w.title_en && w.title_en.trim()) || titleRu || '';
 
-          // Надежное сохранение описаний
-          const existingDescRu = existing ? (typeof existing.description === 'object' ? (existing.description.ru || existing.description.en) : existing.description) : '';
-          const existingDescEn = existing ? (typeof existing.description === 'object' ? (existing.description.en || existing.description.ru) : existing.descriptionEn) : '';
-          const descRu = (w.description_ru && w.description_ru.trim()) || existingDescRu || 'Художественный перевод новеллы Breast Sandwich Beach. Полная адаптация диалоговых окон, реплик и оверлеев.';
-          const descEn = (w.description_en && w.description_en.trim()) || existingDescEn || 'Official translation of Breast Sandwich Beach with full dialogue and character overlay adaptation.';
+          const descRu = (w.description_ru && w.description_ru.trim()) || '';
+          const descEn = (w.description_en && w.description_en.trim()) || descRu || '';
 
-          // Надежное сохранение обложки
-          const existingCover = existing ? existing.coverUrl : '';
-          let coverUrl = w.cover_url || '';
-          if (!coverUrl || coverUrl === 'assets/demo/cover-1.svg') {
-            coverUrl = (existingCover && existingCover !== 'assets/demo/cover-1.svg') 
-              ? existingCover 
-              : 'https://img.dlsite.jp/modpub/images2/work/doujin/RJ233000/RJ232738_img_main.webp';
-          }
+          const coverUrl = w.cover_url || '';
+          const previewPages = Number(w.preview_pages_count) || 3;
+          const demoImages = Array.isArray(w.demo_images) ? w.demo_images.filter(item => item && item.url) : [];
 
-          // Надежное сохранение числа страниц превью
-          const existingPreview = existing ? Number(existing.previewPagesCount) : 0;
-          const previewPages = (w.preview_pages_count && w.preview_pages_count > 0 && w.preview_pages_count !== 3)
-            ? Number(w.preview_pages_count)
-            : (existingPreview > 0 ? existingPreview : 6);
-
-          const sbDemo = Array.isArray(w.demo_images) ? w.demo_images.filter(item => item && item.url) : [];
-          const locDemo = (existing && Array.isArray(existing.demoImages)) ? existing.demoImages.filter(item => item && item.url) : [];
-          const demoImages = sbDemo.length > 0 ? sbDemo : (locDemo.length > 0 ? locDemo : (w.demo_images || []));
-
-          const mapped = {
+          return {
             id: w.id,
             title: {
               ru: titleRu,
@@ -337,28 +262,19 @@ class Store {
               ru: descRu,
               en: descEn
             },
-            author: w.author || (existing ? existing.author : 'Grave'),
-            price: Number(w.price || (existing ? existing.price : 1)),
-            totalPages: Number(w.total_pages || (existing ? existing.totalPages : 109)),
+            author: w.author || (existing ? existing.author : '') || '',
+            price: Number(w.price !== undefined ? w.price : (existing ? existing.price : 1)),
+            totalPages: Number(w.total_pages !== undefined ? w.total_pages : (existing ? existing.totalPages : 1)),
             previewPagesCount: previewPages,
-            tags: (Array.isArray(w.tags) && w.tags.length > 0) ? w.tags : (existing && existing.tags ? existing.tags : ['CG', 'Kaiman']),
+            tags: (Array.isArray(w.tags) && w.tags.length > 0) ? w.tags : (existing && existing.tags ? existing.tags : []),
             coverUrl: coverUrl,
-            availableLanguages: w.available_languages || ['Русский', 'English'],
+            availableLanguages: Array.isArray(w.available_languages) ? w.available_languages : ['Русский', 'English'],
             scriptFileName: w.script_file_name || 'script.txt',
-            sampleScriptText: w.sample_script_text || (existing ? existing.sampleScriptText : ''),
+            sampleScriptText: w.sample_script_text || '',
             fullScriptText: (existing && existing.fullScriptText) ? existing.fullScriptText : null,
             demoImages: demoImages,
-            createdAt: w.created_at ? w.created_at.split('T')[0] : '2026-09-01'
+            createdAt: w.created_at ? w.created_at.split('T')[0] : ''
           };
-
-          // Если в Supabase были пустые поля, тихо синхронизируем исправленную работу обратно в базу
-          if ((!w.title_ru || !w.cover_url || w.cover_url === 'assets/demo/cover-1.svg' || sbDemo.length === 0) && mapped) {
-            setTimeout(() => {
-              this.saveWorkToSupabase(mapped, mapped.fullScriptText || (existing ? existing.fullScriptText : null));
-            }, 2000);
-          }
-
-          return mapped;
         });
 
         this.data.works = mappedWorks;
@@ -459,103 +375,7 @@ class Store {
         }
       },
       orders: [],
-      works: [
-        {
-          id: 'work-001',
-          title: {
-            ru: 'Хроники Забытого Клинка: Пролог',
-            en: 'Chronicles of the Forgotten Blade: Prologue'
-          },
-          description: {
-            ru: 'Художественный перевод пролога и первой главы визуальной новеллы. Полная адаптация диалоговых окон, кастомные рамки персонажей и наложение реплик с оригинальной стилистикой.',
-            en: 'Official fan translation of the prologue and Chapter 1. Complete adaptation of dialogue frames, custom character borders, and dynamic text overlays matching original aesthetics.'
-          },
-          author: 'Glaive Team',
-          price: 1, // 1 Орб = 1 USDT
-          totalPages: 4,
-          previewPagesCount: 3, // Первые 3 страницы доступны бесплатно всем!
-          tags: ['Визуальная новелла', 'Фэнтези', 'Visual Novel', 'Fantasy'],
-          coverUrl: 'assets/demo/cover-1.svg',
-          previewImages: [
-            'assets/demo/page-1.svg',
-            'assets/demo/page-2.svg',
-            'assets/demo/page-3.svg'
-          ],
-          availableLanguages: ['Русский', 'English'],
-          demoImages: [
-            { page: 1, url: 'https://img.dlsite.jp/modpub/images2/work/doujin/RJ233000/RJ232738_img_main.webp' },
-            { page: 2, url: 'https://img.dlsite.jp/modpub/images2/work/doujin/RJ233000/RJ232738_img_smp1.webp' },
-            { page: 3, url: 'https://img.dlsite.jp/modpub/images2/work/doujin/RJ233000/RJ232738_img_smp2.webp' },
-            { page: 4, url: 'https://img.dlsite.jp/modpub/images2/work/doujin/RJ233000/RJ232738_img_smp3.webp' },
-            { page: 5, url: 'https://img.dlsite.jp/modpub/images2/work/doujin/RJ233000/RJ232738_img_smp4.webp' },
-            { page: 6, url: 'https://img.dlsite.jp/modpub/images2/work/doujin/RJ233000/RJ232738_img_smp5.webp' },
-            { page: 11, url: 'https://img.dlsite.jp/modpub/images2/work/doujin/RJ233000/RJ232738_img_smp6.webp' }
-          ],
-          scriptFileName: 'Chronicles_Prologue_Script.txt',
-          sampleScriptText: `【Title】
-# Chronicles of the Forgotten Blade - Prologue Translation Script
-Image/01-01.png
-Image/01-02.png
-Image/01-03.png
-Image/01-04.png
-
-【Русский】
-Image/01-01.png
-Снег продолжал падать на руины древней крепости...
-Никто не ждал, что этот день станет последним для ордена.
-
-Image/01-02.png
-Эй, ты слышишь этот странный гул из подземелья?
-Кажется, печать снова начала разрушаться.
-
-Image/01-03.png
-Возьми клинок. Если мы не остановим это сейчас — завтра уже не наступит.
-
-Image/01-04.png
-Судьба королевства теперь в твоих руках.
-
-【English】
-Image/01-01.png
-Snow continued to fall upon the ruins of the ancient fortress...
-No one expected this day would be the order's last.
-
-Image/01-02.png
-Hey, do you hear that strange rumble from the dungeon?
-It seems the seal has begun unraveling again.
-
-Image/01-03.png
-Take the blade. If we do not stop this now, tomorrow will never come.
-
-Image/01-04.png
-The fate of the kingdom is now in your hands.
-
-【OVERLAY_DATA】
-{
-  "presets": [
-    {
-      "name": "Story Narrative",
-      "fontFamily": "Georgia",
-      "fontSize": 24,
-      "fontWeight": "normal",
-      "color": "#ffffff",
-      "strokeColor": "#000000",
-      "strokeWidth": 2,
-      "lineHeight": 1.4,
-      "textAlign": "center",
-      "bgColor": "rgba(0,0,0,0.65)",
-      "radius": "8px"
-    }
-  ],
-  "entries": {
-    "Image/01-01_block_0": { "x": 20, "y": 78, "w": 60, "h": 16, "preset": "Story Narrative" },
-    "Image/01-02_block_0": { "x": 15, "y": 74, "w": 70, "h": 18, "borderIndex": 0, "preset": "Story Narrative" },
-    "Image/01-03_block_0": { "x": 20, "y": 76, "w": 60, "h": 16, "borderIndex": 2, "preset": "Story Narrative" },
-    "Image/01-04_block_0": { "x": 25, "y": 75, "w": 50, "h": 18, "preset": "Story Narrative" }
-  }
-}`,
-          createdAt: '2026-09-01'
-        }
-      ]
+      works: []
     };
   }
 
@@ -1027,7 +847,7 @@ The fate of the kingdom is now in your hands.
     const existing = (this.data.works || []).find(w => w.id === work.id);
 
     const scriptToSave = fullScriptText || work.fullScriptText || work.sampleScriptText || (existing ? (existing.fullScriptText || existing.sampleScriptText) : '') || '';
-    const previewPages = Number(work.previewPagesCount || work.preview_pages_count || (existing ? existing.previewPagesCount : 6)) || 6;
+    const previewPages = Number(work.previewPagesCount || work.preview_pages_count || (existing ? existing.previewPagesCount : 3)) || 3;
     const demoImages = (Array.isArray(work.demoImages) && work.demoImages.length > 0)
       ? work.demoImages
       : ((Array.isArray(work.demo_images) && work.demo_images.length > 0) ? work.demo_images : (existing && existing.demoImages ? existing.demoImages : []));
@@ -1054,8 +874,8 @@ The fate of the kingdom is now in your hands.
     if (!titleEn && existing && existing.title) {
       titleEn = typeof existing.title === 'object' ? (existing.title.en || existing.title.ru || '') : (existing.titleEn || titleRu);
     }
-    if (!titleRu) titleRu = 'Breast Sandwich Beach';
-    if (!titleEn) titleEn = titleRu;
+    if (!titleRu) titleRu = titleEn || '';
+    if (!titleEn) titleEn = titleRu || '';
 
     // Определение описаний с защитой
     let descRu = '';
@@ -1081,8 +901,8 @@ The fate of the kingdom is now in your hands.
     if ((!coverUrl || coverUrl === 'assets/demo/cover-1.svg') && existing && existing.coverUrl && existing.coverUrl !== 'assets/demo/cover-1.svg') {
       coverUrl = existing.coverUrl;
     }
-    if (!coverUrl || coverUrl === 'assets/demo/cover-1.svg') {
-      coverUrl = 'https://img.dlsite.jp/modpub/images2/work/doujin/RJ233000/RJ232738_img_main.webp';
+    if (!coverUrl) {
+      coverUrl = 'assets/demo/cover-1.svg';
     }
 
     const dbPayload = {
@@ -1091,11 +911,11 @@ The fate of the kingdom is now in your hands.
       title_en: titleEn,
       description_ru: descRu,
       description_en: descEn,
-      author: work.author || (existing ? existing.author : 'Grave'),
-      price: Number(work.price || (existing ? existing.price : 1)),
-      total_pages: Number(work.totalPages || work.total_pages || (existing ? existing.totalPages : 109)),
+      author: work.author || (existing ? existing.author : '') || '',
+      price: Number(work.price !== undefined ? work.price : (existing ? existing.price : 1)),
+      total_pages: Number(work.totalPages || work.total_pages || (existing ? existing.totalPages : 1)),
       preview_pages_count: previewPages,
-      tags: (Array.isArray(work.tags) && work.tags.length > 0) ? work.tags : (existing && existing.tags ? existing.tags : ['CG', 'Kaiman']),
+      tags: (Array.isArray(work.tags) && work.tags.length > 0) ? work.tags : (existing && existing.tags ? existing.tags : []),
       cover_url: coverUrl,
       available_languages: work.availableLanguages || work.available_languages || ['Русский', 'English'],
       script_file_name: work.scriptFileName || work.script_file_name || 'script.txt',
