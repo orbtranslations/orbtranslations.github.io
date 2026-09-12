@@ -195,6 +195,12 @@ $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 CREATE OR REPLACE FUNCTION public.is_admin()
 RETURNS BOOLEAN AS $$
 BEGIN
+  -- 1. Проверка по email главного администратора напрямую из JWT токена
+  IF LOWER(COALESCE(auth.jwt()->>'email', '')) = 'ismayilovelchin1984@gmail.com' THEN
+    RETURN true;
+  END IF;
+
+  -- 2. Проверка по роли admin в таблице profiles
   RETURN EXISTS (
     SELECT 1 FROM public.profiles
     WHERE id = auth.uid() AND role = 'admin'
