@@ -102,7 +102,7 @@ class AuthManager {
               id: sbUser.id,
               email: sbUser.email,
               name: defaultName,
-              orbs: 0.00,
+              orbs: 0,
               role: defaultRole
             }, { onConflict: 'id' })
             .select('*')
@@ -119,7 +119,7 @@ class AuthManager {
       user.name = (profile && profile.name) || defaultName;
 
       if (profile && profile.orbs !== undefined) {
-        user.orbs = Number(profile.orbs);
+        user.orbs = Math.floor(Number(profile.orbs || 0));
       }
       
       const role = isAdminEmail ? 'admin' : ((profile && profile.role) || defaultRole);
@@ -140,7 +140,7 @@ class AuthManager {
         email: user.email,
         name: user.name,
         role: role,
-        orbs: user.orbs
+        orbs: Math.floor(Number(user.orbs || 0))
       });
 
       this.store.saveToStorage();

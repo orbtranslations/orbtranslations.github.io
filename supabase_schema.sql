@@ -141,7 +141,12 @@ UPDATE public.profiles
 SET role = 'admin', name = 'GraveAdmin' 
 WHERE LOWER(email) = 'ismayilovelchin1984@gmail.com';
 
+-- Гарантия неделимости орбов: приведение всех текущих балансов в БД к строго целым числам
+UPDATE public.profiles 
+SET orbs = FLOOR(orbs);
+
 -- 7. Безопасная серверная функция для завершения крипто-заказа
+DROP FUNCTION IF EXISTS public.complete_crypto_order(TEXT, TEXT) CASCADE;
 CREATE OR REPLACE FUNCTION public.complete_crypto_order(
   p_order_id TEXT,
   p_tx_hash TEXT
@@ -173,10 +178,10 @@ BEGIN
       completed_at = NOW()
   WHERE id = p_order_id;
 
-  -- Начисление баланса Орбов
+  -- Начисление баланса Орбов (всегда строго целое число)
   IF v_order.user_id IS NOT NULL THEN
     UPDATE public.profiles
-    SET orbs = orbs + v_order.orbs_amount,
+    SET orbs = FLOOR(orbs + v_order.orbs_amount),
         updated_at = NOW()
     WHERE id = v_order.user_id
     RETURNING orbs INTO v_new_balance;
@@ -191,7 +196,11 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
+-- Сброс зависимой политики перед пересозданием is_admin
+DROP POLICY IF EXISTS "Users update profiles" ON public.profiles;
+
 -- 7.1. Вспомогательная функция проверки роли администратора (SECURITY DEFINER исключает рекурсию RLS)
+DROP FUNCTION IF EXISTS public.is_admin() CASCADE;
 CREATE OR REPLACE FUNCTION public.is_admin()
 RETURNS BOOLEAN AS $$
 BEGIN
@@ -209,17 +218,12 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
 -- 7.2. Серверная функция для панели администратора (гарантирует синхронизацию auth.users и profiles)
+DROP FUNCTION IF EXISTS public.get_admin_users() CASCADE;
+DROP FUNCTION IF EXISTS get_admin_users() CASCADE;
 CREATE OR REPLACE FUNCTION public.get_admin_users()
-RETURNS TABLE (
-  id UUID,
-  email TEXT,
-  name TEXT,
-  orbs NUMERIC,
-  role TEXT,
-  created_at TIMESTAMPTZ
-) AS $$
+RETURNS SETOF public.profiles AS $$
 BEGIN
-  -- Автоматически синхронизируем любых пользователей из auth.users в public.profiles
+  -- Автоматически синхронизируем пользователей из auth.users в public.profiles
   INSERT INTO public.profiles (id, email, name, orbs, role, created_at)
   SELECT 
     u.id, 
@@ -228,24 +232,26 @@ BEGIN
       WHEN LOWER(u.email) = 'ismayilovelchin1984@gmail.com' THEN 'GraveAdmin'
       ELSE COALESCE(u.raw_user_meta_data->>'name', split_part(u.email, '@', 1))
     END, 
-    0.00, 
+    0, 
     CASE 
       WHEN LOWER(u.email) = 'ismayilovelchin1984@gmail.com' THEN 'admin' 
       ELSE 'user' 
     END,
     COALESCE(u.created_at, NOW())
   FROM auth.users u
+  WHERE u.email IS NOT NULL
   ON CONFLICT (id) DO UPDATE
   SET email = EXCLUDED.email;
 
   RETURN QUERY
-  SELECT p.id, p.email, p.name, p.orbs, p.role, p.created_at
-  FROM public.profiles p
-  ORDER BY p.created_at DESC;
+  SELECT *
+  FROM public.profiles
+  ORDER BY created_at DESC;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, auth;
 
 -- 7.3. Серверная функция удаления отдельной сделки (SECURITY DEFINER)
+DROP FUNCTION IF EXISTS public.delete_crypto_order(TEXT) CASCADE;
 CREATE OR REPLACE FUNCTION public.delete_crypto_order(p_order_id TEXT)
 RETURNS JSONB AS $$
 DECLARE
@@ -265,6 +271,7 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
 -- 7.4. Серверная функция полной очистки сделок конкретного пользователя
+DROP FUNCTION IF EXISTS public.clear_user_crypto_orders(UUID) CASCADE;
 CREATE OR REPLACE FUNCTION public.clear_user_crypto_orders(p_user_id UUID)
 RETURNS JSONB AS $$
 DECLARE
@@ -338,3 +345,7 @@ GRANT EXECUTE ON FUNCTION public.complete_crypto_order(TEXT, TEXT) TO anon, auth
 GRANT EXECUTE ON FUNCTION public.get_admin_users() TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.delete_crypto_order(TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.clear_user_crypto_orders(UUID) TO anon, authenticated;
+
+-- 10. Очистка устаревших тестовых записей без пользователя
+DELETE FROM public.crypto_orders WHERE id IN ('TEST-1', 'TEST-UPDATE') OR user_id IS NULL;
+

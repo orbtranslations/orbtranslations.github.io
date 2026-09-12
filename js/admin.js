@@ -578,7 +578,7 @@ class AdminService {
           </td>
           <td style="padding: 0.85rem 1rem;">
             <div style="display: flex; align-items: center; gap: 8px;">
-              <input type="number" id="admin-user-orbs-${safeId}" class="input-styled" min="0" step="0.5" value="${orbs}" style="width: 95px; padding: 0.35rem 0.6rem; font-size: 0.85rem; font-weight: 600; text-align: right; color: var(--accent-gold);">
+              <input type="number" id="admin-user-orbs-${safeId}" class="input-styled" min="0" step="1" value="${Math.floor(orbs)}" oninput="this.value = this.value.replace(/[^0-9]/g, '')" style="width: 95px; padding: 0.35rem 0.6rem; font-size: 0.85rem; font-weight: 600; text-align: right; color: var(--accent-gold);">
               <span style="font-size: 0.82rem; color: var(--text-muted);">🪙</span>
               <button type="button" class="btn btn-secondary btn-small" onclick="window.admin.handleUserBalanceSave('${safeId}')" style="padding: 0.35rem 0.65rem; font-size: 0.8rem;" title="${isEn ? 'Save balance' : 'Сохранить баланс'}">
                 💾
@@ -607,12 +607,17 @@ class AdminService {
     if (!input) return;
 
     const isEn = window.i18n && window.i18n.getLang() === 'en';
-    const val = parseFloat(input.value);
+    const rawVal = input.value.trim();
+    const num = Number(rawVal);
 
-    if (isNaN(val) || val < 0) {
-      window.app.showToast(isEn ? 'Please enter a valid positive number' : 'Введите корректное неотрицательное число', 'error');
+    if (isNaN(num) || num < 0 || !Number.isInteger(num)) {
+      window.app.showToast(isEn ? 'Orbs cannot be divided! Please enter a whole positive integer (e.g. 10, 50, 100).' : 'Орбы не делятся! Укажите целое неотрицательное число (например, 10, 50, 100).', 'error');
+      input.value = Math.max(0, Math.floor(num || 0));
       return;
     }
+
+    const val = Math.floor(num);
+    input.value = val;
 
     try {
       await this.store.updateUserOrbs(userId, val);

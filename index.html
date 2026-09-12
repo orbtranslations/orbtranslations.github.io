@@ -56,10 +56,10 @@
         </div>
 
         <!-- User Balance of Orbs -->
-        <div class="currency-pill" id="header-balance-pill" title="Orbs Balance (1 Orb = 1 USDT)" data-i18n-title="header_balance_title">
+        <div class="currency-pill" id="header-balance-pill" title="Orbs Balance (1 Orb = 1 USDT). Click to top up" data-i18n-title="header_balance_title" onclick="window.app.showTopupModal()" style="cursor: pointer;">
           <span class="currency-icon">🪙</span>
-          <span class="currency-amount" id="header-orbs-count">0.00</span>
-          <button class="currency-add-btn" id="header-topup-btn" title="Deposit Orbs via USDT / BTC" data-i18n-title="header_topup_title">+</button>
+          <span class="currency-amount" id="header-orbs-count">0</span>
+          <button class="currency-add-btn" id="header-topup-btn" title="Deposit Orbs via USDT / BTC" data-i18n-title="header_topup_title" onclick="event.stopPropagation(); window.app.showTopupModal();">+</button>
         </div>
 
         <!-- User Profile / Login -->
@@ -209,7 +209,7 @@
               </div>
               <div>
                 <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;" data-i18n="admin_price">Price in Orbs (1 Orb = 1 USDT) *</label>
-                <input type="number" id="admin-work-price" class="input-styled" min="1" step="0.5" value="1" required>
+                <input type="number" id="admin-work-price" class="input-styled" min="1" step="1" value="1" oninput="this.value = this.value.replace(/[^0-9]/g, '')" required>
               </div>
             </div>
 
@@ -531,7 +531,7 @@
           <div class="form-grid-2" style="margin-bottom: 0.75rem;">
             <div>
               <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;" data-i18n="modal_topup_amount">Количество Орбов</label>
-              <input type="number" id="topup-amount-input" class="input-styled" min="1" max="500" value="5" oninput="window.app.onTopupConfigChange()">
+              <input type="number" id="topup-amount-input" class="input-styled" min="1" max="500" step="1" value="5" oninput="this.value = this.value.replace(/[^0-9]/g, ''); window.app.onTopupConfigChange()">
             </div>
             <div>
               <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;" data-i18n="modal_topup_network">Способ оплаты / Валюта</label>
@@ -875,15 +875,15 @@
        Application JavaScript Modules
        ======================================================================== -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="js/supabase-client.js?v=3.2.2"></script>
-  <script src="js/store.js?v=3.2.2"></script>
-  <script src="js/i18n.js?v=3.2.2"></script>
-  <script src="js/script-parser.js?v=3.2.2"></script>
-  <script src="js/auth.js?v=3.2.2"></script>
-  <script src="js/qrcode.min.js?v=3.2.2"></script>
-  <script src="js/crypto-pay.js?v=3.2.2"></script>
-  <script src="js/reader.js?v=3.2.2"></script>
-  <script src="js/admin.js?v=3.2.2"></script>
-  <script src="js/app.js?v=3.2.2"></script>
+  <script src="js/supabase-client.js?v=3.2.6"></script>
+  <script src="js/store.js?v=3.2.6"></script>
+  <script src="js/i18n.js?v=3.2.6"></script>
+  <script src="js/script-parser.js?v=3.2.6"></script>
+  <script src="js/auth.js?v=3.2.6"></script>
+  <script src="js/qrcode.min.js?v=3.2.6"></script>
+  <script src="js/crypto-pay.js?v=3.2.6"></script>
+  <script src="js/reader.js?v=3.2.6"></script>
+  <script src="js/admin.js?v=3.2.6"></script>
+  <script src="js/app.js?v=3.2.6"></script>
 </body>
 </html>

@@ -55,7 +55,13 @@ class App {
     // Кнопка пополнения Орбов в шапке
     const topupBtn = document.getElementById('header-topup-btn');
     if (topupBtn) {
-      topupBtn.addEventListener('click', () => this.showTopupModal());
+      topupBtn.addEventListener('click', (e) => {
+        if (e) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+        this.showTopupModal();
+      });
     }
 
     // Переключатели языка сайта (RU / EN)
@@ -189,12 +195,14 @@ class App {
         balancePill.style.display = 'flex';
         balancePill.style.cursor = 'pointer';
         balancePill.onclick = (e) => {
-          if (e.target && e.target.id === 'header-topup-btn') return;
-          this.showDepositHistoryModal();
+          if (e) {
+            e.preventDefault();
+          }
+          this.showTopupModal();
         };
         const orbVal = document.getElementById('header-orbs-count');
         if (orbVal) {
-          orbVal.textContent = userOrbs.toFixed(2);
+          orbVal.textContent = Math.floor(userOrbs);
         }
       }
     }
@@ -488,7 +496,7 @@ class App {
             <td style="padding: 0.65rem 0.6rem; white-space: nowrap; font-weight: 600; font-family: monospace; color: #fff; font-size: 0.82rem;">${item.id || '—'}</td>
             <td style="padding: 0.65rem 0.6rem; white-space: nowrap;"><span class="badge ${networkBadgeClass}" style="font-size: 0.72rem; padding: 2px 7px;">${item.network || 'USDT'}</span></td>
             <td style="padding: 0.65rem 0.6rem; white-space: nowrap; font-weight: 600; font-size: 0.82rem; ${isCancelled ? 'color: var(--text-muted);' : ''}">${amountVal} ${isBtc ? 'BTC' : 'USDT'}</td>
-            <td style="padding: 0.65rem 0.6rem; white-space: nowrap; font-size: 0.82rem; ${isCancelled ? 'color: var(--text-muted);' : 'color: #fbbf24; font-weight: 700;'}">+${orbsVal.toFixed(2)} 🪙</td>
+            <td style="padding: 0.65rem 0.6rem; white-space: nowrap; font-size: 0.82rem; ${isCancelled ? 'color: var(--text-muted);' : 'color: #fbbf24; font-weight: 700;'}">+${Math.floor(orbsVal)} 🪙</td>
             <td style="padding: 0.65rem 0.6rem; white-space: nowrap; font-size: 0.82rem;">${txHashCell}</td>
             <td style="padding: 0.65rem 0.6rem; white-space: nowrap;"><span style="font-size: 0.76rem;">${statusBadge}</span></td>
             <td style="padding: 0.65rem 0.6rem; white-space: nowrap; text-align: center;">${actionCell}</td>
@@ -658,7 +666,7 @@ class App {
       this.switchToTopupStep(2);
     } else {
       const amountInput = document.getElementById('topup-amount-input');
-      if (amountInput) amountInput.value = Math.max(1, defaultAmount);
+      if (amountInput) amountInput.value = Math.floor(Math.max(1, defaultAmount));
       this.switchToTopupStep(1);
       this.onTopupConfigChange();
     }
@@ -692,7 +700,7 @@ class App {
   setTopupAmount(amount) {
     const input = document.getElementById('topup-amount-input');
     if (input) {
-      input.value = Math.max(1, Number(amount) || 1);
+      input.value = Math.floor(Math.max(1, Number(amount) || 1));
       this.onTopupConfigChange();
     }
   }
@@ -707,7 +715,8 @@ class App {
     const previewRate = document.getElementById('topup-preview-rate');
     const previewPayable = document.getElementById('topup-preview-payable');
 
-    const orbsAmount = Math.max(1, Number(amountInput ? amountInput.value : 5) || 5);
+    const orbsAmount = Math.floor(Math.max(1, Number(amountInput ? amountInput.value : 5) || 5));
+    if (amountInput) amountInput.value = orbsAmount;
     const network = networkSelect ? networkSelect.value : 'USDT (TRC-20)';
     const isEn = window.i18n && window.i18n.getLang() === 'en';
 
@@ -724,7 +733,7 @@ class App {
           previewRate.textContent = `1 BTC ≈ $${Math.round(rate).toLocaleString()} USD (${isEn ? 'Live' : 'Биржа'})`;
         }
         if (previewPayable) {
-          previewPayable.textContent = `~${estBtc} BTC (~$${orbsAmount.toFixed(2)})`;
+          previewPayable.textContent = `~${estBtc} BTC (~$${Math.floor(orbsAmount)})`;
         }
       } catch (e) {
         if (previewRate) previewRate.textContent = '1 BTC ≈ $65,000 USD (est.)';
@@ -735,7 +744,7 @@ class App {
         previewRate.textContent = '1 USDT = $1.00 USD';
       }
       if (previewPayable) {
-        previewPayable.textContent = `${orbsAmount.toFixed(2)} USDT`;
+        previewPayable.textContent = `${Math.floor(orbsAmount)} USDT`;
       }
     }
   }
@@ -747,7 +756,8 @@ class App {
     const amountInput = document.getElementById('topup-amount-input');
     const networkSelect = document.getElementById('topup-network-select');
     const proceedBtn = document.getElementById('topup-proceed-btn');
-    const orbsAmount = Math.max(1, Number(amountInput ? amountInput.value : 5) || 5);
+    const orbsAmount = Math.floor(Math.max(1, Number(amountInput ? amountInput.value : 5) || 5));
+    if (amountInput) amountInput.value = orbsAmount;
     const network = networkSelect ? networkSelect.value : 'USDT (TRC-20)';
     const isEn = window.i18n && window.i18n.getLang() === 'en';
 

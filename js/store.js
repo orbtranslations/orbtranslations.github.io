@@ -130,9 +130,20 @@ class Store {
         this.data.currentRole = 'guest';
       }
 
-      // По умолчанию для гостей и при отсутствии явного выбора — английский язык
-      if (!localStorage.getItem('orb_preferred_lang') && (!this.data.currentUser || this.data.currentUser.id === 'guest')) {
-        this.data.siteLang = 'en';
+      // Очистка старых тестовых сделок из локального кэша и нормализация структуры
+      if (this.data.cryptoSessions) {
+        if (Array.isArray(this.data.cryptoSessions)) {
+          this.data.cryptoSessions = this.data.cryptoSessions.filter(s => s && s.orderId !== 'TEST-1' && s.orderId !== 'TEST-UPDATE');
+        } else if (typeof this.data.cryptoSessions === 'object') {
+          this.data.cryptoSessions = Object.values(this.data.cryptoSessions).filter(s => s && s.orderId !== 'TEST-1' && s.orderId !== 'TEST-UPDATE');
+        } else {
+          this.data.cryptoSessions = [];
+        }
+      } else {
+        this.data.cryptoSessions = [];
+      }
+      if (this.data.orders && Array.isArray(this.data.orders)) {
+        this.data.orders = this.data.orders.filter(o => o && o.id !== 'TEST-1' && o.id !== 'TEST-UPDATE');
       }
 
       this.saveToStorage();
@@ -247,6 +258,14 @@ class Store {
           if (window.app) window.app.renderStorefront();
         }
       }
+
+      // 4. Очистка устаревших тестовых записей без пользователя
+      window.supabaseClient
+        .from('crypto_orders')
+        .delete()
+        .in('id', ['TEST-1', 'TEST-UPDATE'])
+        .then(() => {})
+        .catch(() => {});
     } catch (err) {
       console.warn('Синхронизация с Supabase ожидает настройки таблиц:', err);
     }
@@ -259,7 +278,7 @@ class Store {
         id: 'guest',
         name: 'Guest',
         email: '',
-        orbs: 0.0,
+        orbs: 0,
         purchasedWorks: []
       },
       currentRole: 'guest', // 'guest' | 'user' | 'admin'
@@ -368,13 +387,39 @@ The fate of the kingdom is now in your hands.
 
   loadFromStorage() {
     try {
+      let parsed = null;
       const raw = localStorage.getItem(Store.STORAGE_KEY);
-      if (raw) return JSON.parse(raw);
+      if (raw) {
+        parsed = JSON.parse(raw);
+      } else {
+        const oldRaw = localStorage.getItem('orb_marketplace_data_v2');
+        if (oldRaw) parsed = JSON.parse(oldRaw);
+      }
 
-      // Fallback на предыдущую версию ключа, если пользователь уже заходил
-      const oldRaw = localStorage.getItem('orb_marketplace_data_v2');
-      if (oldRaw) return JSON.parse(oldRaw);
+      if (parsed) {
+        // Гарантируем, что cryptoSessions ВСЕГДА является массивом
+        if (parsed.cryptoSessions) {
+          if (!Array.isArray(parsed.cryptoSessions)) {
+            parsed.cryptoSessions = Object.values(parsed.cryptoSessions).filter(Boolean);
+          }
+        } else {
+          parsed.cryptoSessions = [];
+        }
 
+        // Орбы ВСЕГДА строго целые числа (не делятся)
+        if (parsed.currentUser && parsed.currentUser.orbs !== undefined) {
+          parsed.currentUser.orbs = Math.floor(Number(parsed.currentUser.orbs || 0));
+        }
+        if (Array.isArray(parsed.registeredUsers)) {
+          parsed.registeredUsers.forEach(u => {
+            if (u && u.orbs !== undefined) {
+              u.orbs = Math.floor(Number(u.orbs || 0));
+            }
+          });
+        }
+
+        return parsed;
+      }
       return null;
     } catch (e) {
       console.error('Ошибка загрузки Store из localStorage:', e);
@@ -441,7 +486,7 @@ The fate of the kingdom is now in your hands.
   // Пользователь и Баланс
   getCurrentUser() {
     if (!this.data.currentUser) {
-      this.data.currentUser = { id: 'guest', name: 'Guest', email: '', orbs: 0.0, purchasedWorks: [] };
+      this.data.currentUser = { id: 'guest', name: 'Guest', email: '', orbs: 0, purchasedWorks: [] };
     }
     if (this.data.currentUser.id === 'guest') {
       const isEn = (window.i18n ? window.i18n.getLang() : (this.data.siteLang || 'en')) === 'en';
@@ -451,10 +496,10 @@ The fate of the kingdom is now in your hands.
   }
 
   addOrbs(amount, txInfo = {}) {
-    this.data.currentUser.orbs = Math.round((this.data.currentUser.orbs + Number(amount)) * 100) / 100;
+    this.data.currentUser.orbs = Math.floor(this.data.currentUser.orbs + Number(amount));
     this.data.orders.push({
       id: 'ord_' + Date.now(),
-      amount: Number(amount),
+      amount: Math.floor(Number(amount)),
       date: new Date().toISOString(),
       type: 'topup',
       txInfo
@@ -482,15 +527,18 @@ The fate of the kingdom is now in your hands.
       return { success: true, message: 'Работа уже приобретена' };
     }
 
-    if (this.data.currentUser.orbs < work.price) {
+    const currentOrbs = Math.floor(Number(this.data.currentUser.orbs || 0));
+    const workPrice = Math.floor(Number(work.price || 1));
+
+    if (currentOrbs < workPrice) {
       return {
         success: false,
-        needOrbs: Math.round((work.price - this.data.currentUser.orbs) * 100) / 100,
+        needOrbs: Math.max(0, workPrice - currentOrbs),
         message: 'Недостаточно Орбов для покупки'
       };
     }
 
-    this.data.currentUser.orbs = Math.round((this.data.currentUser.orbs - work.price) * 100) / 100;
+    this.data.currentUser.orbs = Math.max(0, currentOrbs - workPrice);
     this.data.currentUser.purchasedWorks.push(workId);
     this.data.orders.push({
       id: 'ord_' + Date.now(),
@@ -648,15 +696,24 @@ The fate of the kingdom is now in your hands.
     return idx;
   }
 
+  getCryptoSessionsList() {
+    if (!this.data || !this.data.cryptoSessions) return [];
+    if (Array.isArray(this.data.cryptoSessions)) return this.data.cryptoSessions.filter(Boolean);
+    if (typeof this.data.cryptoSessions === 'object') {
+      return Object.values(this.data.cryptoSessions).filter(Boolean);
+    }
+    return [];
+  }
+
   /**
    * Сохранение сессии крипто-заказа (pending, awaiting_confirmations, completed, cancelled)
    */
   saveCryptoSession(session) {
     if (!session || !session.orderId) return;
-    if (!this.data.cryptoSessions) {
-      this.data.cryptoSessions = [];
+    if (!Array.isArray(this.data.cryptoSessions)) {
+      this.data.cryptoSessions = this.getCryptoSessionsList();
     }
-    const idx = this.data.cryptoSessions.findIndex(s => s.orderId === session.orderId);
+    const idx = this.data.cryptoSessions.findIndex(s => s && s.orderId === session.orderId);
     if (idx >= 0) {
       this.data.cryptoSessions[idx] = { ...this.data.cryptoSessions[idx], ...session };
     } else {
@@ -675,7 +732,7 @@ The fate of the kingdom is now in your hands.
           user_id: userId,
           network: session.network,
           deposit_address: session.address,
-          orbs_amount: session.orbsAmount,
+          orbs_amount: Math.floor(session.orbsAmount || 0),
           expected_amount: session.expectedAmount,
           status: session.status,
           tx_hash: session.status === 'cancelled' ? null : (session.txHash || null),
@@ -687,8 +744,8 @@ The fate of the kingdom is now in your hands.
   }
 
   getCryptoSession(orderId) {
-    if (!this.data.cryptoSessions) return null;
-    return this.data.cryptoSessions.find(s => s.orderId === orderId) || null;
+    const sessions = this.getCryptoSessionsList();
+    return sessions.find(s => s && s.orderId === orderId) || null;
   }
 
   /**
@@ -719,10 +776,12 @@ The fate of the kingdom is now in your hands.
   }
 
   getActiveCryptoSession() {
-    if (!this.data.cryptoSessions) return null;
+    const sessions = this.getCryptoSessionsList();
+    if (sessions.length === 0) return null;
     const now = Date.now();
     let changed = false;
-    for (const s of this.data.cryptoSessions) {
+    for (const s of sessions) {
+      if (!s) continue;
       const createdAtMs = s.createdAt ? new Date(s.createdAt).getTime() : 0;
       const expiresAtMs = s.expiresAt || (createdAtMs ? createdAtMs + 30 * 60 * 1000 : 0);
       const awaitingExpMs = s.awaitingExpiresAt || (createdAtMs ? createdAtMs + 45 * 60 * 1000 : 0);
@@ -758,6 +817,7 @@ The fate of the kingdom is now in your hands.
       }
     }
     if (changed) {
+      this.data.cryptoSessions = sessions;
       this.saveToStorage();
     }
     return null;
@@ -819,8 +879,9 @@ The fate of the kingdom is now in your hands.
 
     // 2. Сессии из data.cryptoSessions (включая pending, awaiting_confirmations, cancelled)
     let sessionsChanged = false;
-    if (this.data.cryptoSessions && Array.isArray(this.data.cryptoSessions)) {
-      this.data.cryptoSessions.forEach(s => {
+    const localSessions = this.getCryptoSessionsList();
+    if (localSessions.length > 0) {
+      localSessions.forEach(s => {
         const isBtc = (s.network || '').includes('BTC');
         let explorerUrl = '';
         if (s.txHash && s.status !== 'cancelled') {
@@ -896,9 +957,12 @@ The fate of the kingdom is now in your hands.
           .select('*')
           .order('created_at', { ascending: false });
 
-        // Если не админ, фильтруем по текущему пользователю
-        if (this.getRole() !== 'admin' && currentUser && currentUser.id && !currentUser.id.startsWith('usr_') && currentUser.id !== 'guest') {
+        // Персональная история пополнений всегда привязана к текущему пользователю (включая админа)
+        if (currentUser && currentUser.id && !currentUser.id.startsWith('usr_') && currentUser.id !== 'guest') {
           query = query.eq('user_id', currentUser.id);
+        } else {
+          // Для неавторизованных гостей не выводим чужие транзакции из базы
+          query = query.eq('user_id', '00000000-0000-0000-0000-000000000000');
         }
 
         const { data: dbOrders, error } = await query;
@@ -1021,44 +1085,42 @@ The fate of the kingdom is now in your hands.
     let users = [];
 
     if (window.supabaseClient) {
-      // 1. Попытка вызвать серверную функцию get_admin_users (гарантирует синхронизацию auth.users и profiles)
+      // 1. Прямой запрос к таблице profiles (быстро, надежно и без вызова RPC)
       try {
-        const { data: rpcUsers, error: rpcError } = await window.supabaseClient.rpc('get_admin_users');
-        if (!rpcError && Array.isArray(rpcUsers) && rpcUsers.length > 0) {
-          users = rpcUsers.map(p => ({
+        const { data, error } = await window.supabaseClient
+          .from('profiles')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (!error && Array.isArray(data) && data.length > 0) {
+          users = data.map(p => ({
             id: p.id,
             email: p.email || '—',
             name: p.name || (p.email ? p.email.split('@')[0] : 'User'),
-            orbs: Number(p.orbs || 0),
+            orbs: Math.floor(Number(p.orbs || 0)),
             role: p.role || 'user',
             createdAt: p.created_at || null
           }));
         }
       } catch (e) {
-        console.warn('RPC get_admin_users недоступен:', e);
+        console.warn('Ошибка загрузки пользователей из profiles:', e);
       }
 
-      // 2. Fallback: прямой запрос к profiles
+      // 2. Если профили ещё не созданы, пробуем вызвать серверную функцию get_admin_users
       if (users.length === 0) {
         try {
-          const { data, error } = await window.supabaseClient
-            .from('profiles')
-            .select('*')
-            .order('created_at', { ascending: false });
-
-          if (!error && Array.isArray(data) && data.length > 0) {
-            users = data.map(p => ({
+          const { data: rpcUsers, error: rpcError } = await window.supabaseClient.rpc('get_admin_users');
+          if (!rpcError && Array.isArray(rpcUsers) && rpcUsers.length > 0) {
+            users = rpcUsers.map(p => ({
               id: p.id,
               email: p.email || '—',
               name: p.name || (p.email ? p.email.split('@')[0] : 'User'),
-              orbs: Number(p.orbs || 0),
+              orbs: Math.floor(Number(p.orbs || 0)),
               role: p.role || 'user',
               createdAt: p.created_at || null
             }));
           }
-        } catch (e) {
-          console.warn('Ошибка загрузки пользователей из profiles:', e);
-        }
+        } catch (_) {}
       }
     }
 
@@ -1078,7 +1140,7 @@ The fate of the kingdom is now in your hands.
           id: this.data.currentUser.id,
           email: this.data.currentUser.email || '—',
           name: this.data.currentUser.name || 'Admin',
-          orbs: Number(this.data.currentUser.orbs || 0),
+          orbs: Math.floor(Number(this.data.currentUser.orbs || 0)),
           role: this.getRole() || 'admin',
           createdAt: new Date().toISOString()
         });
@@ -1092,7 +1154,7 @@ The fate of the kingdom is now in your hands.
    * Изменение баланса Орбов пользователя (для панели администратора)
    */
   async updateUserOrbs(userId, newOrbs) {
-    const val = Math.max(0, Math.round((Number(newOrbs) || 0) * 100) / 100);
+    const val = Math.max(0, Math.floor(Number(newOrbs) || 0));
 
     // 1. Обновляем в Supabase
     if (window.supabaseClient && userId && !userId.startsWith('usr_')) {
@@ -1162,8 +1224,9 @@ The fate of the kingdom is now in your hands.
     }
 
     // 2. Дополняем из локальных сессий (если пользователь совпадает)
-    if (this.data.cryptoSessions) {
-      Object.values(this.data.cryptoSessions).forEach(s => {
+    const localOrders = this.getCryptoSessionsList();
+    if (localOrders.length > 0) {
+      localOrders.forEach(s => {
         if (!s || !s.orderId) return;
         const belongsToUser = (this.data.currentUser && this.data.currentUser.id === userId);
         if (belongsToUser && !orders.some(o => o.id === s.orderId)) {
@@ -1218,13 +1281,15 @@ The fate of the kingdom is now in your hands.
 
     // 2. Удаление из локального хранилища
     let changed = false;
-    if (this.data.cryptoSessions && this.data.cryptoSessions[orderId]) {
-      delete this.data.cryptoSessions[orderId];
+    const currentSessions = this.getCryptoSessionsList();
+    const filteredSessions = currentSessions.filter(s => s && s.orderId !== orderId);
+    if (filteredSessions.length !== currentSessions.length) {
+      this.data.cryptoSessions = filteredSessions;
       changed = true;
     }
     if (this.data.orders) {
       const origLen = this.data.orders.length;
-      this.data.orders = this.data.orders.filter(o => o.id !== orderId);
+      this.data.orders = this.data.orders.filter(o => o && o.id !== orderId);
       if (this.data.orders.length !== origLen) changed = true;
     }
 
@@ -1269,7 +1334,7 @@ The fate of the kingdom is now in your hands.
     // 2. Очистка локальных сессий текущего пользователя
     let changed = false;
     if (this.data.currentUser && this.data.currentUser.id === userId) {
-      this.data.cryptoSessions = {};
+      this.data.cryptoSessions = [];
       this.data.orders = [];
       changed = true;
     }

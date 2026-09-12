@@ -44,8 +44,8 @@ class I18nManager {
         header_logout_btn: '🚪 Выйти',
         header_logout_title: 'Выйти из аккаунта',
         header_lang_switch_title: 'Выбор языка интерфейса / Select site language',
-        header_balance_title: 'Баланс Орбов (1 Орб = 1 USDT)',
-        header_topup_title: 'Пополнить Орбы через USDT / BTC',
+        header_balance_title: 'Баланс Орбов (1 Орб = 1 USDT). Нажмите для пополнения',
+        header_topup_title: 'Пополнить баланс Орбов через USDT / BTC',
         header_user_title: 'Пользователь',
 
         // Hero Banner
@@ -317,7 +317,7 @@ class I18nManager {
         header_logout_btn: '🚪 Sign Out',
         header_logout_title: 'Sign out of your account',
         header_lang_switch_title: 'Select site language / Выбор языка интерфейса',
-        header_balance_title: 'Orbs Balance (1 Orb = 1 USDT)',
+        header_balance_title: 'Orbs Balance (1 Orb = 1 USDT). Click to top up',
         header_topup_title: 'Deposit Orbs via USDT / BTC',
         header_user_title: 'User',
 

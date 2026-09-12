@@ -116,10 +116,10 @@ class CryptoPaymentService {
    * Создание новой платежной сессии с фиксацией курса на 30 минут
    */
   async createInvoice(orbsAmount, network = 'USDT (TRC-20)') {
-    const amount = Number(orbsAmount);
+    const amount = Math.floor(Number(orbsAmount));
     if (!amount || amount <= 0) {
       const isEn = window.i18n && window.i18n.getLang() === 'en';
-      throw new Error(isEn ? 'Please enter a valid amount of Orbs' : 'Укажите корректное количество Орбов');
+      throw new Error(isEn ? 'Please enter a valid whole amount of Orbs' : 'Укажите целое положительное количество Орбов');
     }
 
     const orderIndex = this.store.getNextOrderIndex();
