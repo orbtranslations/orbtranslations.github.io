@@ -1193,7 +1193,17 @@ The fate of the kingdom is now in your hands.
 
     // 1. Удаление из Supabase
     if (window.supabaseClient) {
+      let deletedViaRpc = false;
       try {
+        const { data, error } = await window.supabaseClient.rpc('delete_crypto_order', { p_order_id: orderId });
+        if (!error && data && data.success) {
+          deletedViaRpc = true;
+        }
+      } catch (_) {
+        // RPC еще не создан
+      }
+
+      if (!deletedViaRpc) {
         const { error } = await window.supabaseClient
           .from('crypto_orders')
           .delete()
@@ -1201,9 +1211,8 @@ The fate of the kingdom is now in your hands.
 
         if (error) {
           console.warn('Ошибка удаления из Supabase crypto_orders:', error);
+          throw new Error(error.message || 'Ошибка удаления заказа из Supabase');
         }
-      } catch (e) {
-        console.warn('Ошибка вызова delete в Supabase:', e);
       }
     }
 
@@ -1234,7 +1243,17 @@ The fate of the kingdom is now in your hands.
 
     // 1. Удаление всех записей из Supabase crypto_orders
     if (window.supabaseClient) {
+      let clearedViaRpc = false;
       try {
+        const { data, error } = await window.supabaseClient.rpc('clear_user_crypto_orders', { p_user_id: userId });
+        if (!error && data && data.success) {
+          clearedViaRpc = true;
+        }
+      } catch (_) {
+        // RPC еще не создан
+      }
+
+      if (!clearedViaRpc) {
         const { error } = await window.supabaseClient
           .from('crypto_orders')
           .delete()
@@ -1242,15 +1261,20 @@ The fate of the kingdom is now in your hands.
 
         if (error) {
           console.warn('Ошибка полной очистки crypto_orders в Supabase:', error);
+          throw new Error(error.message || 'Ошибка очистки сделок из Supabase');
         }
-      } catch (e) {
-        console.warn('Ошибка вызова clearUserOrders в Supabase:', e);
       }
     }
 
     // 2. Очистка локальных сессий текущего пользователя
+    let changed = false;
     if (this.data.currentUser && this.data.currentUser.id === userId) {
       this.data.cryptoSessions = {};
+      this.data.orders = [];
+      changed = true;
+    }
+
+    if (changed) {
       this.saveToStorage();
     }
 

@@ -245,6 +245,44 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
+-- 7.3. Серверная функция удаления отдельной сделки (SECURITY DEFINER)
+CREATE OR REPLACE FUNCTION public.delete_crypto_order(p_order_id TEXT)
+RETURNS JSONB AS $$
+DECLARE
+  v_count INT;
+BEGIN
+  DELETE FROM public.crypto_orders
+  WHERE id = p_order_id;
+  
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  
+  RETURN jsonb_build_object(
+    'success', true,
+    'deleted_count', v_count,
+    'order_id', p_order_id
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- 7.4. Серверная функция полной очистки сделок конкретного пользователя
+CREATE OR REPLACE FUNCTION public.clear_user_crypto_orders(p_user_id UUID)
+RETURNS JSONB AS $$
+DECLARE
+  v_count INT;
+BEGIN
+  DELETE FROM public.crypto_orders
+  WHERE user_id = p_user_id;
+  
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  
+  RETURN jsonb_build_object(
+    'success', true,
+    'deleted_count', v_count,
+    'user_id', p_user_id
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
 -- 8. Включение RLS (Row Level Security) для защиты таблиц
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.works ENABLE ROW LEVEL SECURITY;
@@ -298,3 +336,5 @@ GRANT SELECT ON TABLE public.wallet_settings TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.is_admin() TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.complete_crypto_order(TEXT, TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.get_admin_users() TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.delete_crypto_order(TEXT) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.clear_user_crypto_orders(UUID) TO anon, authenticated;
