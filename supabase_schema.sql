@@ -38,6 +38,19 @@ CREATE TABLE IF NOT EXISTS public.works (
 -- Миграция для добавления demo_images в существующую таблицу
 ALTER TABLE public.works ADD COLUMN IF NOT EXISTS demo_images JSONB DEFAULT '[]'::jsonb;
 
+-- Обновление демо-ссылок для первой работы
+UPDATE public.works
+SET demo_images = '[
+  {"page": 1, "url": "https://img.dlsite.jp/modpub/images2/work/doujin/RJ233000/RJ232738_img_main.webp"},
+  {"page": 2, "url": "https://img.dlsite.jp/modpub/images2/work/doujin/RJ233000/RJ232738_img_smp1.webp"},
+  {"page": 3, "url": "https://img.dlsite.jp/modpub/images2/work/doujin/RJ233000/RJ232738_img_smp2.webp"},
+  {"page": 4, "url": "https://img.dlsite.jp/modpub/images2/work/doujin/RJ233000/RJ232738_img_smp3.webp"},
+  {"page": 5, "url": "https://img.dlsite.jp/modpub/images2/work/doujin/RJ233000/RJ232738_img_smp4.webp"},
+  {"page": 6, "url": "https://img.dlsite.jp/modpub/images2/work/doujin/RJ233000/RJ232738_img_smp5.webp"},
+  {"page": 11, "url": "https://img.dlsite.jp/modpub/images2/work/doujin/RJ233000/RJ232738_img_smp6.webp"}
+]'::jsonb
+WHERE id = 'work-001' AND (demo_images IS NULL OR demo_images = '[]'::jsonb);
+
 -- 2.1. Защищенная таблица полных скриптов перевода (доступна только покупателям и администраторам)
 CREATE TABLE IF NOT EXISTS public.work_scripts (
   work_id TEXT PRIMARY KEY REFERENCES public.works(id) ON DELETE CASCADE,

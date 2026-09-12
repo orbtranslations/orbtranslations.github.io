@@ -193,7 +193,32 @@ class Store {
         this.data.orders = this.data.orders.filter(o => o && o.id !== 'TEST-1' && o.id !== 'TEST-UPDATE');
       }
 
+      this.migrateDemoImages();
       this.saveToStorage();
+    }
+  }
+
+  migrateDemoImages() {
+    if (!this.data || !this.data.works) return;
+    const defaultDemo = [
+      { page: 1, url: 'https://img.dlsite.jp/modpub/images2/work/doujin/RJ233000/RJ232738_img_main.webp' },
+      { page: 2, url: 'https://img.dlsite.jp/modpub/images2/work/doujin/RJ233000/RJ232738_img_smp1.webp' },
+      { page: 3, url: 'https://img.dlsite.jp/modpub/images2/work/doujin/RJ233000/RJ232738_img_smp2.webp' },
+      { page: 4, url: 'https://img.dlsite.jp/modpub/images2/work/doujin/RJ233000/RJ232738_img_smp3.webp' },
+      { page: 5, url: 'https://img.dlsite.jp/modpub/images2/work/doujin/RJ233000/RJ232738_img_smp4.webp' },
+      { page: 6, url: 'https://img.dlsite.jp/modpub/images2/work/doujin/RJ233000/RJ232738_img_smp5.webp' },
+      { page: 11, url: 'https://img.dlsite.jp/modpub/images2/work/doujin/RJ233000/RJ232738_img_smp6.webp' }
+    ];
+
+    const w1 = this.data.works.find(w => w.id === 'work-001');
+    if (w1 && (!w1.demoImages || !Array.isArray(w1.demoImages) || w1.demoImages.length === 0)) {
+      w1.demoImages = defaultDemo;
+      this.saveToStorage();
+      if (window.supabaseClient) {
+        setTimeout(() => {
+          this.saveWorkToSupabase(w1, w1.fullScriptText);
+        }, 1500);
+      }
     }
   }
 
@@ -404,6 +429,15 @@ class Store {
             'assets/demo/page-3.svg'
           ],
           availableLanguages: ['Русский', 'English'],
+          demoImages: [
+            { page: 1, url: 'https://img.dlsite.jp/modpub/images2/work/doujin/RJ233000/RJ232738_img_main.webp' },
+            { page: 2, url: 'https://img.dlsite.jp/modpub/images2/work/doujin/RJ233000/RJ232738_img_smp1.webp' },
+            { page: 3, url: 'https://img.dlsite.jp/modpub/images2/work/doujin/RJ233000/RJ232738_img_smp2.webp' },
+            { page: 4, url: 'https://img.dlsite.jp/modpub/images2/work/doujin/RJ233000/RJ232738_img_smp3.webp' },
+            { page: 5, url: 'https://img.dlsite.jp/modpub/images2/work/doujin/RJ233000/RJ232738_img_smp4.webp' },
+            { page: 6, url: 'https://img.dlsite.jp/modpub/images2/work/doujin/RJ233000/RJ232738_img_smp5.webp' },
+            { page: 11, url: 'https://img.dlsite.jp/modpub/images2/work/doujin/RJ233000/RJ232738_img_smp6.webp' }
+          ],
           scriptFileName: 'Chronicles_Prologue_Script.txt',
           sampleScriptText: `【Title】
 # Chronicles of the Forgotten Blade - Prologue Translation Script
