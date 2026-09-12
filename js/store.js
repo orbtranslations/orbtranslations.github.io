@@ -297,7 +297,7 @@ class Store {
 
       // 3. Загрузка покупок текущего пользователя
       const currentUserId = this.data.currentUser.id;
-      if (currentUserId && !currentUserId.startsWith('usr_')) {
+      if (currentUserId && currentUserId !== 'guest' && !currentUserId.startsWith('usr_')) {
         const { data: userPurchases } = await window.supabaseClient
           .from('purchases')
           .select('id, work_id, price_paid, purchased_at')
@@ -650,7 +650,7 @@ The fate of the kingdom is now in your hands.
     this.saveToStorage();
 
     // Синхронизация покупки и баланса с Supabase
-    if (window.supabaseClient && this.data.currentUser.id && !this.data.currentUser.id.startsWith('usr_')) {
+    if (window.supabaseClient && this.data.currentUser.id && this.data.currentUser.id !== 'guest' && !this.data.currentUser.id.startsWith('usr_')) {
       window.supabaseClient
         .from('purchases')
         .insert({
