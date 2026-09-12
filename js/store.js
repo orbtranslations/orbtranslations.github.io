@@ -128,7 +128,7 @@ class Store {
     }
 
     // 2. Асинхронная подгрузка из IndexedDB (восстанавливает полные тяжелые скрипты и изменения)
-    this.initAsyncStorage();
+    this.initPromise = this.initAsyncStorage();
   }
 
   migrateXpubSettings() {
@@ -888,6 +888,71 @@ The fate of the kingdom is now in your hands.
     }
 
     return null;
+  }
+
+  /**
+   * Получение скрипта превью для работы:
+   * Гарантирует, что данные загружены из IDB / Supabase и не содержат заглушку [STORED_IN_IDB]
+   */
+  async getSampleScript(workId) {
+    let work = this.getWorkById(workId);
+    if (work && work.sampleScriptText && !work.sampleScriptText.startsWith('[STORED_IN_IDB')) {
+      return work.sampleScriptText;
+    }
+
+    // 1. Ожидаем завершения асинхронной инициализации хранилища
+    if (this.initPromise) {
+      try {
+        await this.initPromise;
+      } catch (e) {
+        console.warn('Ошибка ожидания initPromise в getSampleScript:', e);
+      }
+      work = this.getWorkById(workId);
+      if (work && work.sampleScriptText && !work.sampleScriptText.startsWith('[STORED_IN_IDB')) {
+        return work.sampleScriptText;
+      }
+    }
+
+    // 2. Прямая проверка в IndexedDB
+    if (typeof IDBStorage !== 'undefined') {
+      try {
+        const idbData = await IDBStorage.get('main_store');
+        if (idbData && Array.isArray(idbData.works)) {
+          const idbWork = idbData.works.find(w => w && w.id === workId);
+          if (idbWork && idbWork.sampleScriptText && !idbWork.sampleScriptText.startsWith('[STORED_IN_IDB')) {
+            if (work) work.sampleScriptText = idbWork.sampleScriptText;
+            return idbWork.sampleScriptText;
+          }
+        }
+      } catch (e) {
+        console.warn('Ошибка прямого чтения sampleScriptText из IDB:', e);
+      }
+    }
+
+    // 3. Прямая загрузка из Supabase public.works
+    if (window.supabaseClient) {
+      try {
+        const { data, error } = await window.supabaseClient
+          .from('works')
+          .select('sample_script_text')
+          .eq('id', workId)
+          .maybeSingle();
+
+        if (!error && data && data.sample_script_text) {
+          if (work) {
+            work.sampleScriptText = data.sample_script_text;
+            this.saveToStorage();
+          }
+          return data.sample_script_text;
+        }
+      } catch (e) {
+        console.warn('Ошибка запроса sample_script_text из Supabase:', e);
+      }
+    }
+
+    return (work && work.sampleScriptText && !work.sampleScriptText.startsWith('[STORED_IN_IDB'))
+      ? work.sampleScriptText
+      : '';
   }
 
   // Настройки кошельков и приёма платежей

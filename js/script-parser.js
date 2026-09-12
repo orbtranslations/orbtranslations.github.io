@@ -497,9 +497,18 @@ class ScriptParser {
 
       // 1. Заголовок и технические строки папок
       out.push(parsed.titleMarker || 'Title');
-      if (parsed.techHeaderLines && parsed.techHeaderLines.length > 0) {
-        parsed.techHeaderLines.forEach(l => out.push(l));
+      const techLines = (parsed.techHeaderLines && parsed.techHeaderLines.length > 0)
+        ? [...parsed.techHeaderLines]
+        : [];
+      if (parsed.allowedSubfolders && parsed.allowedSubfolders.length > 0) {
+        parsed.allowedSubfolders.forEach(sub => {
+          const formatted = sub.replace(/[\\/]+$/, '') + '\\';
+          if (!techLines.some(l => l.trim().toLowerCase() === formatted.toLowerCase())) {
+            techLines.push(formatted);
+          }
+        });
       }
+      techLines.forEach(l => out.push(l));
       if (parsed.titleContent && parsed.titleContent.length > 0) {
         parsed.titleContent.forEach(l => out.push(l));
       }
@@ -512,6 +521,7 @@ class ScriptParser {
 
         const entries = parsed.entries[lang] || [];
         const sliceEntries = entries.slice(0, limit);
+        let activeSubfolder = '';
 
         sliceEntries.forEach(entry => {
           // Регистрируем ключ для фильтрации OVERLAY_DATA
@@ -526,6 +536,12 @@ class ScriptParser {
           if (entry.targetKey) keptKeys.add(entry.targetKey);
           if (targetNorm) keptKeys.add(targetNorm);
           if (pureTarget) keptKeys.add(pureTarget);
+
+          // Проверяем смену подпапки для гарантии её сохранения при парсинге превью
+          if (entry.subfolder && entry.subfolder !== activeSubfolder) {
+            out.push(`${entry.subfolder}\\`);
+            activeSubfolder = entry.subfolder;
+          }
 
           // Записываем заголовок записи
           if (entry.rawLine) {

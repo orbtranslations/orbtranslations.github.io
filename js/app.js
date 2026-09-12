@@ -1933,15 +1933,19 @@ class App {
       const rememberCheckbox = document.getElementById('archive-remember-checkbox');
       const shouldRemember = rememberCheckbox ? rememberCheckbox.checked : true;
       if (shouldRemember && window.reader.currentWork && typeof IDBStorage !== 'undefined') {
+        const currentArchive = window.reader.workArchives[window.reader.currentWork.id];
+        const sourceFiles = (currentArchive && currentArchive.rawFiles) ? currentArchive.rawFiles : [];
         const fileList = [];
-        for (let i = 0; i < Math.min(files.length, 300); i++) {
-          const f = files[i];
-          fileList.push({
-            name: f.name,
-            path: f.webkitRelativePath || f.name,
-            type: f.type,
-            blob: f
-          });
+        for (let i = 0; i < Math.min(sourceFiles.length, 300); i++) {
+          const item = sourceFiles[i];
+          if (item.file) {
+            fileList.push({
+              name: item.name,
+              path: item.path,
+              type: item.file.type,
+              blob: item.file
+            });
+          }
         }
         await IDBStorage.saveClientArchive(window.reader.currentWork.id, {
           type: 'files',

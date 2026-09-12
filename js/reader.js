@@ -283,12 +283,23 @@ class ReaderService {
    * Открытие бесплатного превью работы с автоматической проверкой сохраненного архива/папки
    */
   async openPreview(workId) {
-    const work = this.store.getWorkById(workId);
+    let work = this.store.getWorkById(workId);
+    if (!work && this.store.initPromise) {
+      try { await this.store.initPromise; } catch (e) {}
+      work = this.store.getWorkById(workId);
+    }
     if (!work) return;
 
     this.currentWork = work;
     this.isFullMode = false;
-    this.parseWorkScript(work);
+
+    // Гарантированно получаем готовый скрипт превью (разворачивая [STORED_IN_IDB] при необходимости)
+    const sampleScript = await this.store.getSampleScript(workId);
+    if (sampleScript && !sampleScript.startsWith('[STORED_IN_IDB')) {
+      this.parseWorkScript(work, sampleScript);
+    } else {
+      this.parseWorkScript(work);
+    }
 
     const availableLangs = (this.parsedScript && this.parsedScript.languages && this.parsedScript.languages.length > 0)
       ? this.parsedScript.languages
@@ -326,7 +337,11 @@ class ReaderService {
    * Открытие купленной работы в полном режиме с автоматической проверкой сохраненного архива/папки
    */
   async openFullTranslationModal(workId) {
-    const work = this.store.getWorkById(workId);
+    let work = this.store.getWorkById(workId);
+    if (!work && this.store.initPromise) {
+      try { await this.store.initPromise; } catch (e) {}
+      work = this.store.getWorkById(workId);
+    }
     if (!work) return;
 
     const isEn = window.i18n && window.i18n.getLang() === 'en';
@@ -346,15 +361,12 @@ class ReaderService {
     this.isFullMode = true;
 
     // Безопасная загрузка закрытого скрипта из Supabase work_scripts (защищено RLS)
-    let fullScript = work.fullScriptText || '';
-    if (!fullScript || fullScript.startsWith('[STORED_IN_IDB')) {
-      fullScript = await this.store.getFullScript(workId);
-    }
-
-    if (fullScript) {
+    let fullScript = await this.store.getFullScript(workId);
+    if (fullScript && !fullScript.startsWith('[STORED_IN_IDB')) {
       this.parseWorkScript(work, fullScript);
     } else {
-      this.parseWorkScript(work);
+      const sampleScript = await this.store.getSampleScript(workId);
+      this.parseWorkScript(work, sampleScript);
     }
 
     const availableLangs = (this.parsedScript && this.parsedScript.languages && this.parsedScript.languages.length > 0)
@@ -554,11 +566,35 @@ class ReaderService {
       }
     });
     const imageExtensions = ['.png', '.jpg', '.jpeg', '.webp', '.bmp'];
+    const RAW_DIR_BLACKLIST = ['imagem', 'raw', 'raws', 'original', 'originals', 'orig', 'jp', 'japanese', 'src'];
 
     // Разрешенные папки из скрипта (например: ["image", "キャラ紹介"])
     const allowed = (this.parsedScript && this.parsedScript.allowedSubfolders && this.parsedScript.allowedSubfolders.length > 0)
-      ? this.parsedScript.allowedSubfolders.map(s => s.toLowerCase().replace(/\\/g, '/').trim())
+      ? this.parsedScript.allowedSubfolders.map(s => s.toLowerCase().replace(/\\/g, '/').replace(/^\/+|\/+$/g, '').trim())
       : null;
+
+    // Определяем наличие общей корневой папки-обертки в ZIP (например "挟乳海岸/Image/00-00.jpg")
+    let hasRootWrapper = false;
+    let detectedRootPrefix = '';
+    if (allowed && allowed.length > 0) {
+      let inspected = 0;
+      loadedZip.forEach((relativePath, zipEntry) => {
+        if (zipEntry.dir || inspected > 50) return;
+        inspected++;
+        const p = relativePath.toLowerCase().replace(/\\/g, '/');
+        const segs = p.split('/').filter(Boolean);
+        if (segs.length >= 2) {
+          if (allowed.includes(segs[0])) {
+            hasRootWrapper = false;
+            detectedRootPrefix = '';
+            inspected = 999;
+          } else if (segs.length >= 3 && allowed.includes(segs[1])) {
+            hasRootWrapper = true;
+            detectedRootPrefix = segs[0];
+          }
+        }
+      });
+    }
 
     this.revokeSessionBlobs();
     this.fileMap.clear();
@@ -569,14 +605,24 @@ class ReaderService {
       const lower = relativePath.toLowerCase().replace(/\\/g, '/');
       if (!imageExtensions.some(ext => lower.endsWith(ext))) return;
 
-      const parts = lower.split('/').filter(Boolean);
-      const isRoot = parts.length === 1;
-      const firstFolder = parts.length > 1 ? parts[0] : '';
+      let parts = lower.split('/').filter(Boolean);
+      if (hasRootWrapper && parts.length > 1 && parts[0] === detectedRootPrefix) {
+        parts = parts.slice(1);
+      }
 
-      // Строгая фильтрация: берем файлы из корня ИЛИ из указанных в скрипте папок.
-      // Неизвестные папки (например "imagem") отсекаются!
-      if (allowed) {
-        const isAllowedFolder = allowed.some(a => firstFolder === a || lower.startsWith(a + '/'));
+      const isRoot = parts.length === 1;
+      const subfolder = parts.length > 1 ? parts[0] : '';
+
+      // 1. Блокировка японских исходников и сырых файлов
+      if (RAW_DIR_BLACKLIST.includes(subfolder)) {
+        if (!allowed || !allowed.includes(subfolder)) {
+          return;
+        }
+      }
+
+      // 2. Строгая фильтрация по allowedSubfolders из скрипта
+      if (allowed && allowed.length > 0) {
+        const isAllowedFolder = allowed.includes(subfolder) || allowed.some(a => subfolder.startsWith(a + '/'));
         if (!isRoot && !isAllowedFolder) {
           return;
         }
@@ -585,6 +631,7 @@ class ReaderService {
       const fileDesc = {
         name: zipEntry.name,
         path: relativePath.replace(/\\/g, '/'),
+        subfolder: subfolder,
         zipEntry: zipEntry,
         file: null
       };
@@ -605,13 +652,46 @@ class ReaderService {
   }
 
   /**
-   * Загрузка папки (через webkitdirectory) с фильтрацией разрешенных папок
+   * Загрузка папки (через webkitdirectory или File System Access API) с фильтрацией разрешенных папок
    */
   async loadUserFolder(files) {
     const imageExtensions = ['.png', '.jpg', '.jpeg', '.webp', '.bmp'];
+    const RAW_DIR_BLACKLIST = ['imagem', 'raw', 'raws', 'original', 'originals', 'orig', 'jp', 'japanese', 'src'];
+
+    // Если parsedScript еще не готов, пробуем восстановить из currentWork
+    if (!this.parsedScript && this.currentWork) {
+      const scriptText = this.currentWork.sampleScriptText || this.currentWork.fullScriptText;
+      if (scriptText && !scriptText.startsWith('[STORED_IN_IDB')) {
+        try {
+          this.parsedScript = this.parser.parse(scriptText);
+        } catch (e) {}
+      }
+    }
+
     const allowed = (this.parsedScript && this.parsedScript.allowedSubfolders && this.parsedScript.allowedSubfolders.length > 0)
-      ? this.parsedScript.allowedSubfolders.map(s => s.toLowerCase().replace(/\\/g, '/').trim())
+      ? this.parsedScript.allowedSubfolders.map(s => s.toLowerCase().replace(/\\/g, '/').replace(/^\/+|\/+$/g, '').trim())
       : null;
+
+    // Определяем наличие общей корневой папки-обертки (например "挟乳海岸/Image/00-00.jpg" при webkitdirectory)
+    let hasRootWrapper = false;
+    let detectedRootPrefix = '';
+    if (allowed && allowed.length > 0) {
+      for (let i = 0; i < Math.min(files.length, 50); i++) {
+        const p = (files[i].webkitRelativePath || files[i].name || '').replace(/\\/g, '/').toLowerCase();
+        const segs = p.split('/').filter(Boolean);
+        if (segs.length >= 2) {
+          if (allowed.includes(segs[0])) {
+            hasRootWrapper = false;
+            detectedRootPrefix = '';
+            break;
+          }
+          if (segs.length >= 3 && allowed.includes(segs[1])) {
+            hasRootWrapper = true;
+            detectedRootPrefix = segs[0];
+          }
+        }
+      }
+    }
 
     this.revokeSessionBlobs();
     this.fileMap.clear();
@@ -623,18 +703,24 @@ class ReaderService {
       const lower = relPath.toLowerCase();
       if (!imageExtensions.some(ext => lower.endsWith(ext))) continue;
 
-      const parts = lower.split('/').filter(Boolean);
-      // Если относительный путь включает имя корневой папки выбора (Folder/Image/00-00.jpg),
-      // проверяем подпапки
-      let subParts = parts;
-      if (parts.length >= 2) {
-        subParts = parts.slice(1);
+      let parts = lower.split('/').filter(Boolean);
+      if (hasRootWrapper && parts.length > 1 && parts[0] === detectedRootPrefix) {
+        parts = parts.slice(1);
       }
-      const isRoot = subParts.length === 1;
-      const firstFolder = subParts.length > 1 ? subParts[0] : '';
 
-      if (allowed) {
-        const isAllowedFolder = allowed.some(a => firstFolder === a || subParts.join('/').startsWith(a + '/'));
+      const isRoot = parts.length === 1;
+      const subfolder = parts.length > 1 ? parts[0] : '';
+
+      // 1. Блокировка японских исходников и сырых файлов
+      if (RAW_DIR_BLACKLIST.includes(subfolder)) {
+        if (!allowed || !allowed.includes(subfolder)) {
+          continue;
+        }
+      }
+
+      // 2. Строгая фильтрация по разрешенным папкам из скрипта
+      if (allowed && allowed.length > 0) {
+        const isAllowedFolder = allowed.includes(subfolder) || allowed.some(a => subfolder.startsWith(a + '/'));
         if (!isRoot && !isAllowedFolder) {
           continue;
         }
@@ -643,6 +729,7 @@ class ReaderService {
       const fileDesc = {
         name: file.name,
         path: relPath,
+        subfolder: subfolder,
         zipEntry: null,
         file: file
       };
@@ -670,16 +757,31 @@ class ReaderService {
     const pureName = fileDesc.name.split(/[\/\\]/).pop();
     const pureBase = pureName.replace(/\.[^/.]+$/, '').toLowerCase();
     const pureBaseWithExt = pureName.toLowerCase();
+    const normNoExt = norm.replace(/\.[^/.]+$/, '');
 
     this.fileMap.set(norm, fileDesc);
-    this.fileMap.set(pureBase, fileDesc);
-    this.fileMap.set(pureBaseWithExt, fileDesc);
+    this.fileMap.set(normNoExt, fileDesc);
 
-    const parts = norm.split('/');
-    if (parts.length >= 2) {
-      const sub = parts.slice(1).join('/');
-      this.fileMap.set(sub, fileDesc);
-      this.fileMap.set(sub.replace(/\.[^/.]+$/, ''), fileDesc);
+    // Варианты суффиксов путей (например "image/00-00.jpg" и "image/00-00")
+    const parts = norm.split('/').filter(Boolean);
+    for (let i = 1; i < parts.length; i++) {
+      const subPath = parts.slice(i).join('/');
+      this.fileMap.set(subPath, fileDesc);
+      this.fileMap.set(subPath.replace(/\.[^/.]+$/, ''), fileDesc);
+    }
+
+    // Для чистого имени файла (без пути) приоритет отдается разрешенным папкам скрипта
+    const allowed = (this.parsedScript && this.parsedScript.allowedSubfolders)
+      ? this.parsedScript.allowedSubfolders.map(s => s.toLowerCase().trim())
+      : null;
+    const fileSub = (fileDesc.subfolder || '').toLowerCase();
+    const isPrimary = !allowed || (fileSub && allowed.includes(fileSub));
+
+    if (!this.fileMap.has(pureBase) || isPrimary) {
+      this.fileMap.set(pureBase, fileDesc);
+    }
+    if (!this.fileMap.has(pureBaseWithExt) || isPrimary) {
+      this.fileMap.set(pureBaseWithExt, fileDesc);
     }
   }
 
@@ -691,24 +793,47 @@ class ReaderService {
     const cleanTarget = targetKey.replace(/\\/g, '/').trim();
     const cleanTargetLower = cleanTarget.toLowerCase();
     const baseTarget = cleanTarget.split(/[\/\\]/).pop().replace(/\.[^/.]+$/, '').toLowerCase();
-    const subLower = (subfolder || '').replace(/\\/g, '/').toLowerCase().trim();
+    const subLower = (subfolder || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '').toLowerCase().trim();
 
     // 1. Точное совпадение с subfolder/target
     if (subLower) {
       const combined = `${subLower}/${baseTarget}`;
       if (this.fileMap.has(combined)) return this.fileMap.get(combined);
+      if (this.fileMap.has(combined + '.jpg')) return this.fileMap.get(combined + '.jpg');
+      if (this.fileMap.has(combined + '.png')) return this.fileMap.get(combined + '.png');
+      if (this.fileMap.has(combined + '.webp')) return this.fileMap.get(combined + '.webp');
+
       for (const [k, v] of this.fileMap.entries()) {
-        if (k.endsWith(combined) || k.endsWith(combined + '.jpg') || k.endsWith(combined + '.png')) {
+        if (k === combined || k.endsWith('/' + combined) ||
+            k === combined + '.jpg' || k.endsWith('/' + combined + '.jpg') ||
+            k === combined + '.png' || k.endsWith('/' + combined + '.png') ||
+            k === combined + '.webp' || k.endsWith('/' + combined + '.webp')) {
           return v;
         }
       }
     }
 
-    // 2. Прямое совпадение targetKey или baseTarget
+    // 2. Прямое совпадение targetKey
     if (this.fileMap.has(cleanTargetLower)) return this.fileMap.get(cleanTargetLower);
+    const cleanTargetNoExt = cleanTargetLower.replace(/\.[^/.]+$/, '');
+    if (this.fileMap.has(cleanTargetNoExt)) return this.fileMap.get(cleanTargetNoExt);
+
+    // 3. Если указана subfolder, ищем файл, чей путь гарантированно находится в этой подпапке
+    if (subLower) {
+      for (const [k, v] of this.fileMap.entries()) {
+        const vNorm = (v.path || '').replace(/\\/g, '/').toLowerCase();
+        const vParts = vNorm.split('/').filter(Boolean);
+        const hasSub = vParts.includes(subLower);
+        const nameMatch = k.endsWith(baseTarget) || k.endsWith(baseTarget + '.jpg') || k.endsWith(baseTarget + '.png');
+        if (hasSub && nameMatch) {
+          return v;
+        }
+      }
+    }
+
+    // 4. Поиск по чистому имени baseTarget
     if (this.fileMap.has(baseTarget)) return this.fileMap.get(baseTarget);
 
-    // 3. Поиск по чистому имени файла
     for (const [k, v] of this.fileMap.entries()) {
       const kPure = k.split(/[\/\\]/).pop().replace(/\.[^/.]+$/, '');
       if (kPure === baseTarget) return v;
