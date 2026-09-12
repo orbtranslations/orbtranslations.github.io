@@ -2252,15 +2252,17 @@ The fate of the kingdom is now in your hands.
 
     if (window.supabaseClient) {
       try {
-        const { data, error } = await window.supabaseClient
+        const { error } = await window.supabaseClient
           .from('feedback_messages')
-          .insert(payload)
-          .select()
-          .single();
+          .insert(payload);
 
-        if (!error && data) {
-          savedRecord = data;
-        } else if (error) {
+        if (!error) {
+          savedRecord = {
+            id: 'fb_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6),
+            created_at: new Date().toISOString(),
+            ...payload
+          };
+        } else {
           console.warn('Supabase feedback insert warning:', error);
         }
       } catch (err) {
@@ -2388,21 +2390,24 @@ The fate of the kingdom is now in your hands.
           .single();
 
         if (!error && data) {
-          settings.telegramBotToken = data.telegram_bot_token || '';
-          settings.telegramChatId = data.telegram_chat_id || '276204182';
+          settings.telegramBotToken = (data.telegram_bot_token || '').trim();
+          settings.telegramChatId = (data.telegram_chat_id || '276204182').trim();
           settings.telegramEnabled = data.telegram_enabled !== false;
           settings.supportTelegramUsername = data.support_telegram_username || 'OrbTranslationsSupportBot';
-          this.data.siteSettings = settings;
-          this.saveToStorage();
-          return settings;
+          
+          if (settings.telegramBotToken) {
+            this.data.siteSettings = settings;
+            this.saveToStorage();
+            return settings;
+          }
         }
       } catch (err) {
         console.warn('Ошибка получения site_settings из Supabase:', err);
       }
     }
 
-    // 2. Локальный fallback
-    if (this.data.siteSettings) {
+    // 2. Локальный fallback (если в Supabase токен еще пустой или оффлайн)
+    if (this.data.siteSettings && this.data.siteSettings.telegramBotToken) {
       return { ...settings, ...this.data.siteSettings };
     }
 
@@ -2410,7 +2415,9 @@ The fate of the kingdom is now in your hands.
       const stored = localStorage.getItem('orb_site_settings');
       if (stored) {
         const parsed = JSON.parse(stored);
-        return { ...settings, ...parsed };
+        if (parsed && parsed.telegramBotToken) {
+          return { ...settings, ...parsed };
+        }
       }
     } catch (_) {}
 
@@ -2437,7 +2444,7 @@ The fate of the kingdom is now in your hands.
 
     if (window.supabaseClient) {
       try {
-        await window.supabaseClient
+        const { error } = await window.supabaseClient
           .from('site_settings')
           .upsert({
             id: 1,
@@ -2447,6 +2454,9 @@ The fate of the kingdom is now in your hands.
             support_telegram_username: updated.supportTelegramUsername || 'OrbTranslationsSupportBot',
             updated_at: new Date().toISOString()
           });
+        if (error) {
+          console.warn('Сохранение site_settings в Supabase (RLS):', error);
+        }
       } catch (err) {
         console.warn('Сохранение site_settings в Supabase:', err);
       }

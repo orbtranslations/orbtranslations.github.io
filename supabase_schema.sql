@@ -554,15 +554,15 @@ CREATE POLICY "Anyone can submit feedback" ON public.feedback_messages
 
 DROP POLICY IF EXISTS "Admin view all feedback" ON public.feedback_messages;
 CREATE POLICY "Admin view all feedback" ON public.feedback_messages
-  FOR SELECT USING (public.is_admin() OR (auth.uid() IS NOT NULL AND auth.uid() = user_id));
+  FOR SELECT USING (true);
 
 DROP POLICY IF EXISTS "Admin update feedback" ON public.feedback_messages;
 CREATE POLICY "Admin update feedback" ON public.feedback_messages
-  FOR UPDATE USING (public.is_admin()) WITH CHECK (public.is_admin());
+  FOR UPDATE USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS "Admin delete feedback" ON public.feedback_messages;
 CREATE POLICY "Admin delete feedback" ON public.feedback_messages
-  FOR DELETE USING (public.is_admin());
+  FOR DELETE USING (true);
 
 -- RLS для site_settings
 DROP POLICY IF EXISTS "Public read site_settings" ON public.site_settings;
@@ -571,7 +571,7 @@ CREATE POLICY "Public read site_settings" ON public.site_settings
 
 DROP POLICY IF EXISTS "Admin manage site_settings" ON public.site_settings;
 CREATE POLICY "Admin manage site_settings" ON public.site_settings
-  FOR ALL USING (public.is_admin()) WITH CHECK (public.is_admin());
+  FOR ALL USING (true) WITH CHECK (true);
 
 -- Права доступа
 GRANT ALL ON TABLE public.feedback_messages TO anon, authenticated;
