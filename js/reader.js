@@ -91,6 +91,26 @@ class ReaderService {
   }
 
   /**
+   * Нормализует список пресетов текста (преобразует словарь или массив в единый массив объектов)
+   */
+  normalizePresets(presets) {
+    if (!presets) return [];
+    if (Array.isArray(presets)) {
+      return presets.filter(Boolean);
+    }
+    if (typeof presets === 'object') {
+      return Object.entries(presets).map(([key, val]) => {
+        if (!val || typeof val !== 'object') return null;
+        return {
+          ...val,
+          name: val.name || key
+        };
+      }).filter(Boolean);
+    }
+    return [];
+  }
+
+  /**
    * Поиск наиболее подходящего портрета с поддержкой русских и английских алиасов
    */
   findBestPortrait(rawPortraits, charName, sceneKey, explicitName = '') {
@@ -1312,7 +1332,7 @@ class ReaderService {
     }
 
     const overlayData = (this.parsedScript && this.parsedScript.overlayData) || {};
-    const presets = overlayData.presets || [];
+    const presets = this.normalizePresets(overlayData.presets);
     const frames = overlayData.frames || {};
     const dialogData = overlayData.dialogData || {};
     const portraits = this.normalizePortraits(overlayData.portraits);
@@ -1501,34 +1521,38 @@ class ReaderService {
       // 2. Портреты согласно конфигурации зон рамки (Рамка 1: слева; Рамка 2: справа; Рамка 3: слева и справа)
       if (bCfg.portraitZones && bCfg.portraitZones.length > 0) {
         bCfg.portraitZones.forEach((pz, pIdx) => {
-          let portraitObj = null;
-          if (pIdx === 0) {
-            // Основной портрет говорящего персонажа (в Рамке 1 слева, в Рамке 2 справа)
-            portraitObj = this.findBestPortrait(portraits, charName, cleanBase, bSettings.portraitName);
-          } else if (pIdx === 1) {
-            // Второй портрет (в Рамке 3 справа)
-            portraitObj = this.findBestPortrait(portraits, '', cleanBase, bSettings.portrait2Name);
-          }
+          try {
+            let portraitObj = null;
+            if (pIdx === 0) {
+              // Основной портрет говорящего персонажа (в Рамке 1 слева, в Рамке 2 справа)
+              portraitObj = this.findBestPortrait(portraits, charName, cleanBase, bSettings.portraitName);
+            } else if (pIdx === 1) {
+              // Второй портрет (в Рамке 3 справа)
+              portraitObj = this.findBestPortrait(portraits, '', cleanBase, bSettings.portrait2Name);
+            }
 
-          if (portraitObj) {
-            const portraitSlot = document.createElement('div');
-            portraitSlot.className = `dialog-portrait-slot portrait-${pIdx + 1}`;
-            portraitSlot.style.left = `${pz.x}%`;
-            portraitSlot.style.top = `${pz.y}%`;
-            portraitSlot.style.width = `${pz.w}%`;
-            portraitSlot.style.height = `${pz.h}%`;
+            if (portraitObj) {
+              const portraitSlot = document.createElement('div');
+              portraitSlot.className = `dialog-portrait-slot portrait-${pIdx + 1}`;
+              portraitSlot.style.left = `${pz.x}%`;
+              portraitSlot.style.top = `${pz.y}%`;
+              portraitSlot.style.width = `${pz.w}%`;
+              portraitSlot.style.height = `${pz.h}%`;
 
-            const portraitImg = document.createElement('img');
-            portraitImg.alt = portraitObj.name;
+              const portraitImg = document.createElement('img');
+              portraitImg.alt = portraitObj.name;
 
-            this.getPortraitUrl(portraitObj).then(url => {
-              if (url) {
-                portraitImg.src = url;
-              }
-            });
+              this.getPortraitUrl(portraitObj).then(url => {
+                if (url) {
+                  portraitImg.src = url;
+                }
+              }).catch(e => console.warn('Ошибка загрузки портрета:', e));
 
-            portraitSlot.appendChild(portraitImg);
-            frameWrapper.appendChild(portraitSlot);
+              portraitSlot.appendChild(portraitImg);
+              frameWrapper.appendChild(portraitSlot);
+            }
+          } catch (pErr) {
+            console.warn('Ошибка рендеринга портрета:', pErr);
           }
         });
       }

@@ -565,15 +565,25 @@ class ScriptParser {
           }
         }
 
-        const filteredPortraits = {};
-        if (rawOverlay.portraits && typeof rawOverlay.portraits === 'object') {
+        let filteredPortraits;
+        if (Array.isArray(rawOverlay.portraits)) {
+          filteredPortraits = rawOverlay.portraits.filter((p, idx) => {
+            if (!p) return false;
+            const pName = p.name || '';
+            return usedPortraits.has(pName) || idx < 30;
+          });
+        } else if (rawOverlay.portraits && typeof rawOverlay.portraits === 'object') {
+          filteredPortraits = {};
           let portraitCount = 0;
           for (const [pName, pObj] of Object.entries(rawOverlay.portraits)) {
-            if (usedPortraits.has(pName) || portraitCount < 10) {
+            const effectiveName = (pObj && pObj.name) || pName;
+            if (usedPortraits.has(pName) || usedPortraits.has(effectiveName) || portraitCount < 30) {
               filteredPortraits[pName] = pObj;
               portraitCount++;
             }
           }
+        } else {
+          filteredPortraits = [];
         }
 
         const cleanOverlay = {
