@@ -1094,9 +1094,9 @@ class AdminService {
     const botToken = tokenInput ? tokenInput.value.trim() : '';
     const chatId = chatIdInput ? chatIdInput.value.trim() : '276204182';
 
-    if (!botToken || !chatId) {
+    if (!botToken || !chatId || botToken === 'ВАШ_ТОКЕН_БОТА' || !botToken.includes(':')) {
       window.app.showToast(
-        isEn ? 'Please enter Bot Token and Chat ID before testing' : 'Пожалуйста, укажите Bot Token и Chat ID перед проверкой',
+        isEn ? 'Please enter a valid Bot Token from @BotFather (e.g. 7123456789:AAFlk...)' : 'Пожалуйста, укажите настоящий Bot Token от @BotFather (например, 7123456789:AAFlk...)',
         'warning'
       );
       return;
@@ -1115,14 +1115,14 @@ class AdminService {
 ✅ Telegram-бот успешно подключен и настроен для приёма обращений пользователей.
 🕒 <i>${new Date().toLocaleString('ru-RU')}</i>`;
 
-      const resp = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+      const params = new URLSearchParams();
+      params.append('chat_id', chatId);
+      params.append('text', testMsg);
+      params.append('parse_mode', 'HTML');
+
+      const resp = await fetch(`https://api.telegram.org/bot${encodeURIComponent(botToken)}/sendMessage`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: chatId,
-          text: testMsg,
-          parse_mode: 'HTML'
-        })
+        body: params
       });
 
       const data = await resp.json();

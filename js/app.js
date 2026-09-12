@@ -2251,8 +2251,8 @@ class App {
       const botToken = (settings.telegramBotToken || '').trim();
       const chatId = (settings.telegramChatId || '276204182').trim();
 
-      if (!botToken || !chatId) {
-        console.info('Telegram notification skipped: bot token or chat ID not set');
+      if (!botToken || !chatId || botToken === 'ВАШ_ТОКЕН_БОТА' || !botToken.includes(':')) {
+        console.info('Telegram notification skipped: valid bot token or chat ID not set (token must contain digits and colon from @BotFather)');
         return false;
       }
 
@@ -2288,16 +2288,15 @@ ${escapeHtml(message)}
 
 🕒 <i>${new Date().toLocaleString('ru-RU')}</i>`;
 
-      const response = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+      // Использование URLSearchParams исключает preflight OPTIONS запрос браузера (CORS Simple Request)
+      const params = new URLSearchParams();
+      params.append('chat_id', chatId);
+      params.append('text', telegramMessage);
+      params.append('parse_mode', 'HTML');
+
+      const response = await fetch(`https://api.telegram.org/bot${encodeURIComponent(botToken)}/sendMessage`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          chat_id: chatId,
-          text: telegramMessage,
-          parse_mode: 'HTML'
-        })
+        body: params
       });
 
       const resJson = await response.json();
