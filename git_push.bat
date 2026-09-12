@@ -11,7 +11,7 @@ git add .
 
 echo.
 echo [2/3] Committing changes...
-git commit -m "feat: fix critical security vulnerabilities, add atomic buy_work and profile protection (v3.5.0)"
+git commit -m "fix: localize reader close button and header controls for EN language (v3.5.1)"
 
 echo.
 echo [3/3] Pushing to GitHub (main)...

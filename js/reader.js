@@ -2008,6 +2008,11 @@ class ReaderService {
     const titleEl = document.getElementById('reader-work-title');
     const modeBadge = document.getElementById('reader-mode-badge');
     const langSelect = document.getElementById('reader-lang-select');
+    const closeBtn = modal.querySelector('.reader-header-left button');
+
+    if (closeBtn && window.i18n) {
+      closeBtn.textContent = window.i18n.t('reader_btn_close');
+    }
 
     if (titleEl) {
       titleEl.textContent = window.i18n ? window.i18n.getWorkTitle(this.currentWork) : (this.currentWork ? this.currentWork.title : 'Читалка');
@@ -2053,7 +2058,10 @@ class ReaderService {
       layout.classList.toggle('single-view', !this.isTwoPageSpread);
     }
 
-    const spreadText = this.isTwoPageSpread ? '📖 2 экрана' : '📖 1 экран';
+    const isEn = window.i18n && window.i18n.getLang() === 'en';
+    const spreadText = this.isTwoPageSpread 
+      ? (isEn ? '📖 2 Screens' : '📖 2 экрана') 
+      : (isEn ? '📖 1 Screen' : '📖 1 экран');
     if (spreadBtn) {
       spreadBtn.textContent = spreadText;
     }
@@ -2134,7 +2142,7 @@ class ReaderService {
             : `Вы просмотрели доступные страницы превью (${previewPages} из ${totalPages} стр.). Чтобы продолжить чтение всей новеллы с наложением перевода, приобретите работу.`}
           </p>
           <div class="lock-price-badge">
-            ${isEn ? 'Price:' : 'Стоимость:'} <strong>${price} Орб</strong> (${price} USDT)
+            ${isEn ? 'Price:' : 'Стоимость:'} <strong>${price} ${isEn ? 'Orbs' : 'Орб'}</strong> (${price} USDT)
           </div>
           <div class="lock-actions">
             ${this.store.getRole() === 'guest' 
