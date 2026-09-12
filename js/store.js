@@ -269,7 +269,17 @@ class Store {
             scriptFileName: w.script_file_name || 'script.txt',
             sampleScriptText: w.sample_script_text || '',
             fullScriptText: (existing && existing.fullScriptText) ? existing.fullScriptText : null,
-            demoImages: w.demo_images || (existing ? existing.demoImages : []) || [],
+            demoImages: (() => {
+              const sbDemo = Array.isArray(w.demo_images) ? w.demo_images.filter(item => item && item.url) : [];
+              const locDemo = (existing && Array.isArray(existing.demoImages)) ? existing.demoImages.filter(item => item && item.url) : [];
+              if (locDemo.length > 0 && sbDemo.length === 0) {
+                // Если локально ссылки были, а в Supabase еще нет — сохраняем их в базу
+                setTimeout(() => {
+                  this.saveWorkToSupabase({ ...w, demoImages: locDemo }, (existing ? existing.fullScriptText : null));
+                }, 1500);
+              }
+              return sbDemo.length > 0 ? sbDemo : (locDemo.length > 0 ? locDemo : (w.demo_images || []));
+            })(),
             createdAt: w.created_at ? w.created_at.split('T')[0] : '2026-09-01'
           };
         });
