@@ -299,14 +299,37 @@ class Store {
       if (currentUserId && !currentUserId.startsWith('usr_')) {
         const { data: userPurchases } = await window.supabaseClient
           .from('purchases')
-          .select('work_id')
+          .select('id, work_id, price_paid, purchased_at')
           .eq('user_id', currentUserId);
 
-        if (userPurchases) {
+        if (userPurchases && Array.isArray(userPurchases)) {
           const ids = userPurchases.map(p => p.work_id);
           this.data.currentUser.purchasedWorks = Array.from(new Set([...this.data.currentUser.purchasedWorks, ...ids]));
+          
+          if (!Array.isArray(this.data.orders)) {
+            this.data.orders = [];
+          }
+          userPurchases.forEach(p => {
+            const alreadyInOrders = this.data.orders.some(o => o.workId === p.work_id && o.type === 'purchase');
+            if (!alreadyInOrders) {
+              const work = this.getWorkById(p.work_id);
+              const title = work ? (typeof work.title === 'object' ? (work.title.ru || work.title.en) : work.title) : p.work_id;
+              this.data.orders.push({
+                id: 'ORD-P-' + (p.id || p.work_id),
+                workId: p.work_id,
+                workTitle: title,
+                price: Number(p.price_paid || (work ? work.price : 1)),
+                date: p.purchased_at || new Date().toISOString(),
+                type: 'purchase'
+              });
+            }
+          });
+
           this.saveToStorage();
-          if (window.app) window.app.renderStorefront();
+          if (window.app) {
+            window.app.renderStorefront();
+            window.app.renderPurchases();
+          }
         }
       }
 
@@ -596,10 +619,10 @@ The fate of the kingdom is now in your hands.
     this.addDevicePurchase(workId);
 
     this.data.orders.push({
-      id: 'ord_' + Date.now(),
+      id: 'ORD-P-' + Date.now().toString().slice(-6),
       workId,
       workTitle: typeof work.title === 'object' ? (work.title.ru || work.title.en) : work.title,
-      price: work.price,
+      price: workPrice,
       date: new Date().toISOString(),
       type: 'purchase'
     });
@@ -1235,6 +1258,64 @@ The fate of the kingdom is now in your hands.
 
     list.push(...localTopups);
 
+    // 1.1. Покупки переводов (расходы Орбов) из локального хранилища store.orders
+    const localPurchases = (this.data.orders || [])
+      .filter(o => o.type === 'purchase')
+      .map(o => {
+        const work = this.getWorkById(o.workId);
+        const title = o.workTitle || (work ? (typeof work.title === 'object' ? (work.title.ru || work.title.en) : work.title) : o.workId);
+        const rawId = String(o.id || '');
+        const id = rawId.startsWith('ORD-') ? rawId : ('ORD-P-' + rawId.replace(/^ord_p_|^ord_/, ''));
+        return {
+          id,
+          type: 'purchase',
+          workId: o.workId,
+          workTitle: title,
+          date: o.date,
+          amountUsdt: Number(o.price || (work ? work.price : 1)),
+          orbs: -Number(o.price || (work ? work.price : 1)),
+          network: 'Orb Balance',
+          txHash: '',
+          explorerUrl: '',
+          status: 'completed',
+          canResume: false
+        };
+      });
+
+    localPurchases.forEach(p => {
+      const existing = list.findIndex(item => item.id === p.id || (item.type === 'purchase' && item.workId === p.workId));
+      if (existing === -1) {
+        list.push(p);
+      }
+    });
+
+    // 1.2. Привязанные покупки устройства или текущего пользователя (гарантированный fallback)
+    const allPurchasedIds = Array.from(new Set([
+      ...(this.data.currentUser?.purchasedWorks || []),
+      ...this.getDevicePurchases()
+    ]));
+    allPurchasedIds.forEach(workId => {
+      const alreadyInList = list.some(item => item.type === 'purchase' && item.workId === workId);
+      if (!alreadyInList) {
+        const work = this.getWorkById(workId);
+        const title = work ? (typeof work.title === 'object' ? (work.title.ru || work.title.en) : work.title) : workId;
+        list.push({
+          id: `ORD-P-${workId}`,
+          type: 'purchase',
+          workId: workId,
+          workTitle: title,
+          date: new Date().toISOString(),
+          amountUsdt: Number(work?.price || 1),
+          orbs: -Number(work?.price || 1),
+          network: 'Orb Balance',
+          txHash: '',
+          explorerUrl: '',
+          status: 'completed',
+          canResume: false
+        });
+      }
+    });
+
     // 2. Сессии из data.cryptoSessions (включая pending, awaiting_confirmations, cancelled)
     let sessionsChanged = false;
     const localSessions = this.getCryptoSessionsList();
@@ -1411,10 +1492,59 @@ The fate of the kingdom is now in your hands.
       } catch (e) {
         console.warn('Загрузка crypto_orders из Supabase:', e);
       }
+
+      // 4. Покупки из таблицы purchases в Supabase для авторизованного пользователя
+      try {
+        const currentUser = this.getCurrentUser();
+        if (currentUser && currentUser.id && !currentUser.id.startsWith('usr_') && currentUser.id !== 'guest') {
+          const { data: dbPurchases, error: pErr } = await window.supabaseClient
+            .from('purchases')
+            .select('id, work_id, price_paid, purchased_at')
+            .eq('user_id', currentUser.id)
+            .order('purchased_at', { ascending: false });
+
+          if (!pErr && Array.isArray(dbPurchases)) {
+            dbPurchases.forEach(p => {
+              const work = this.getWorkById(p.work_id);
+              const title = work ? (typeof work.title === 'object' ? (work.title.ru || work.title.en) : work.title) : p.work_id;
+              const ordId = `ORD-P-${p.id || p.work_id}`;
+              const existingIndex = list.findIndex(item => item.type === 'purchase' && (item.id === ordId || item.workId === p.work_id));
+              const purchaseItem = {
+                id: ordId,
+                type: 'purchase',
+                workId: p.work_id,
+                workTitle: title,
+                date: p.purchased_at || new Date().toISOString(),
+                amountUsdt: Number(p.price_paid || (work ? work.price : 1)),
+                orbs: -Number(p.price_paid || (work ? work.price : 1)),
+                network: 'Orb Balance',
+                txHash: '',
+                explorerUrl: '',
+                status: 'completed',
+                canResume: false
+              };
+              if (existingIndex === -1) {
+                list.push(purchaseItem);
+              } else {
+                list[existingIndex] = { ...list[existingIndex], ...purchaseItem };
+              }
+            });
+          }
+        }
+      } catch (pe) {
+        console.warn('Загрузка purchases из Supabase:', pe);
+      }
     }
 
     list.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
     return list;
+  }
+
+  /**
+   * Псевдоним для единой истории операций (депозиты + покупки)
+   */
+  async getTransactionHistory() {
+    return await this.getDepositHistory();
   }
 
   /**

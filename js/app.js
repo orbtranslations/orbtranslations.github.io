@@ -326,9 +326,9 @@ class App {
               <span>📄 ${totalTxt}</span>
             </div>
           </div>
-          <div class="work-card-footer">
+          <div class="work-card-footer ${isPurchased ? 'single-action' : ''}">
             ${isPurchased ? `
-              <button class="btn btn-success" style="width: 100%;" onclick="window.reader.openFullTranslationModal('${work.id}')">
+              <button class="btn btn-success" style="width: 100%; justify-content: center;" onclick="window.reader.openFullTranslationModal('${work.id}')">
                 ${readBtnTxt}
               </button>
             ` : `
@@ -421,8 +421,8 @@ class App {
                 ` : ''}
               </div>
             </div>
-            <div class="work-card-footer">
-              <button class="btn btn-accent" style="width: 100%;" onclick="window.reader.openFullTranslationModal('${work.id}')">${readBtnTxt}</button>
+            <div class="work-card-footer single-action">
+              <button class="btn btn-success" style="width: 100%; justify-content: center;" onclick="window.reader.openFullTranslationModal('${work.id}')">${readBtnTxt}</button>
             </div>
           </article>
         `;
@@ -467,7 +467,7 @@ class App {
         const emptyHtml = `
           <tr>
             <td colspan="8" style="padding: 2.5rem 1rem; text-align: center; color: var(--text-muted);">
-              ${isEn ? '🪙 Deposit history is currently empty. Top up your balance using the "+" button next to your balance.' : '🪙 История пополнений пока пуста. Пополните баланс через кнопку «+» возле баланса.'}
+              ${isEn ? '🪙 Transaction history is currently empty. Top up your balance or unlock translations.' : '🪙 История сделок пока пуста. Пополняйте баланс и открывайте доступ к переводам.'}
             </td>
           </tr>
         `;
@@ -479,31 +479,48 @@ class App {
       const rowsHtml = history.map(item => {
         const locale = isEn ? 'en-US' : 'ru-RU';
         const dateFormatted = item.date ? new Date(item.date).toLocaleString(locale, { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
-        const isBtc = (item.network || '').includes('BTC');
-        const networkBadgeClass = isBtc ? 'badge-gold' : (item.network || '').includes('Polygon') ? 'badge-accent' : 'badge-info';
+        const isPurchase = item.type === 'purchase' || item.orbs < 0;
+        const isBtc = !isPurchase && (item.network || '').includes('BTC');
+        const networkBadgeClass = isPurchase 
+          ? 'badge-purple' 
+          : (isBtc ? 'badge-gold' : (item.network || '').includes('Polygon') ? 'badge-accent' : 'badge-info');
 
         const isCancelled = item.status === 'cancelled';
         const isCompleted = item.status === 'completed';
         const isAwaiting = item.status === 'awaiting_confirmations';
         const isPending = item.status === 'pending';
 
-        // В отличие от завершенных сделок, в отмененных не сохраняются подробности
-        let txHashCell = '<span style="color: var(--text-muted);">—</span>';
-        if (!isCancelled && item.txHash) {
+        // Колонка назначения / блокчейн-транзакции
+        let txDetailsCell = '<span style="color: var(--text-muted);">—</span>';
+        if (isPurchase) {
+          const workTitle = item.workTitle || (isEn ? 'Novel Translation' : 'Перевод визуальной новеллы');
+          txDetailsCell = `
+            <div style="display: flex; flex-direction: column; gap: 2px; max-width: 280px;">
+              <span style="color: #60a5fa; font-weight: 600; font-size: 0.82rem; line-height: 1.25; word-break: break-word;" title="${workTitle}">
+                📖 ${workTitle}
+              </span>
+              <span style="color: var(--text-muted); font-size: 0.72rem;">
+                ${isEn ? 'Full translation unlocked' : 'Доступ к переводу открыт'}
+              </span>
+            </div>
+          `;
+        } else if (!isCancelled && item.txHash) {
           const shortHash = item.txHash.length > 16 ? `${item.txHash.slice(0, 8)}...${item.txHash.slice(-6)}` : item.txHash;
           const expTitle = isEn ? 'Open in blockchain explorer' : 'Открыть в блокчейн-эксплорере';
           if (item.explorerUrl) {
-            txHashCell = `<a href="${item.explorerUrl}" target="_blank" rel="noopener noreferrer" style="color: #60a5fa; text-decoration: none; font-family: monospace; display: inline-flex; align-items: center; gap: 4px;" title="${expTitle}">
+            txDetailsCell = `<a href="${item.explorerUrl}" target="_blank" rel="noopener noreferrer" style="color: #60a5fa; text-decoration: none; font-family: monospace; display: inline-flex; align-items: center; gap: 4px;" title="${expTitle}">
               ${shortHash} ↗
             </a>`;
           } else {
-            txHashCell = `<span style="font-family: monospace; color: var(--text-secondary);">${shortHash}</span>`;
+            txDetailsCell = `<span style="font-family: monospace; color: var(--text-secondary);">${shortHash}</span>`;
           }
         }
 
         // Статус
         let statusBadge = '';
-        if (isCompleted) {
+        if (isPurchase) {
+          statusBadge = `<span class="badge badge-success">${isEn ? '✅ Debited' : '✅ Списано'}</span>`;
+        } else if (isCompleted) {
           statusBadge = `<span class="badge badge-success">${isEn ? '✅ Completed' : '✅ Завершено'}</span>`;
         } else if (isAwaiting) {
           const reqConfs = item.requiredConfirmations || (window.cryptoPay ? window.cryptoPay.getRequiredConfirmations(item.orbs) : 3);
@@ -517,9 +534,15 @@ class App {
         const orbsVal = Number(item.orbs || 0);
         const amountVal = Number(item.amountUsdt || 0);
 
-        // Кнопка действия (открытие активной/ожидающей сделки)
+        // Колонка действия
         let actionCell = '<span style="color: var(--text-muted); font-size: 0.75rem;">—</span>';
-        if (item.canResume) {
+        if (isPurchase && item.workId) {
+          actionCell = `
+            <button type="button" class="btn btn-secondary btn-small" style="font-size: 0.75rem; padding: 3px 8px; display: inline-flex; align-items: center; gap: 4px;" onclick="window.reader.openFullTranslationModal('${item.workId}')" title="${isEn ? 'Open translation reader' : 'Читать перевод'}">
+              📖 ${isEn ? 'Read' : 'Читать'}
+            </button>
+          `;
+        } else if (item.canResume) {
           actionCell = `
             <button type="button" class="btn btn-resume-deal" onclick="window.app.resumeTopupSession('${item.id}')" title="${isEn ? 'Open active deal' : 'Открыть сделку'}">
               👁️ ${isEn ? 'Open' : 'Открыть'}
@@ -527,14 +550,33 @@ class App {
           `;
         }
 
+        const typeBadge = isPurchase
+          ? `<span class="badge" style="background: rgba(236, 72, 153, 0.15); color: #f472b6; border: 1px solid rgba(236, 72, 153, 0.3); font-size: 0.68rem; padding: 1px 6px; margin-top: 2px; display: inline-block;">${isEn ? '📚 Purchase' : '📚 Покупка'}</span>`
+          : `<span class="badge" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); font-size: 0.68rem; padding: 1px 6px; margin-top: 2px; display: inline-block;">${isEn ? '🪙 Deposit' : '🪙 Пополнение'}</span>`;
+
+        const methodBadge = isPurchase
+          ? `<span class="badge" style="background: rgba(168, 85, 247, 0.15); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.3); font-size: 0.72rem; padding: 2px 7px;">${isEn ? '🪙 Orb Balance' : '🪙 Баланс Орб'}</span>`
+          : `<span class="badge ${networkBadgeClass}" style="font-size: 0.72rem; padding: 2px 7px;">${item.network || 'USDT'}</span>`;
+
+        const amountCell = isPurchase
+          ? `<span style="font-weight: 600; font-size: 0.82rem; color: var(--text-secondary);">$${Math.abs(amountVal).toFixed(2)}</span>`
+          : `<span style="font-weight: 600; font-size: 0.82rem; ${isCancelled ? 'color: var(--text-muted);' : ''}">${amountVal} ${isBtc ? 'BTC' : 'USDT'}</span>`;
+
+        const orbsCell = isPurchase
+          ? `<span style="color: #f87171; font-weight: 700; font-size: 0.82rem;">-${Math.abs(Math.floor(orbsVal))} 🪙</span>`
+          : `${isCancelled ? '<span style="color: var(--text-muted); font-size: 0.82rem;">0 🪙</span>' : '<span style="color: #fbbf24; font-weight: 700; font-size: 0.82rem;">+' + Math.floor(orbsVal) + ' 🪙</span>'}`;
+
         return `
           <tr style="border-bottom: 1px solid var(--border-color); transition: background 0.2s ease;">
             <td style="padding: 0.65rem 0.6rem; white-space: nowrap; color: var(--text-secondary); font-size: 0.82rem;">${dateFormatted}</td>
-            <td style="padding: 0.65rem 0.6rem; white-space: nowrap; font-weight: 600; font-family: monospace; color: #fff; font-size: 0.82rem;">${item.id || '—'}</td>
-            <td style="padding: 0.65rem 0.6rem; white-space: nowrap;"><span class="badge ${networkBadgeClass}" style="font-size: 0.72rem; padding: 2px 7px;">${item.network || 'USDT'}</span></td>
-            <td style="padding: 0.65rem 0.6rem; white-space: nowrap; font-weight: 600; font-size: 0.82rem; ${isCancelled ? 'color: var(--text-muted);' : ''}">${amountVal} ${isBtc ? 'BTC' : 'USDT'}</td>
-            <td style="padding: 0.65rem 0.6rem; white-space: nowrap; font-size: 0.82rem; ${isCancelled ? 'color: var(--text-muted);' : 'color: #fbbf24; font-weight: 700;'}">+${Math.floor(orbsVal)} 🪙</td>
-            <td style="padding: 0.65rem 0.6rem; white-space: nowrap; font-size: 0.82rem;">${txHashCell}</td>
+            <td style="padding: 0.65rem 0.6rem; white-space: nowrap; font-size: 0.82rem;">
+              <div style="font-weight: 600; font-family: monospace; color: #fff;">${item.id || '—'}</div>
+              ${typeBadge}
+            </td>
+            <td style="padding: 0.65rem 0.6rem; white-space: nowrap;">${methodBadge}</td>
+            <td style="padding: 0.65rem 0.6rem; white-space: nowrap;">${amountCell}</td>
+            <td style="padding: 0.65rem 0.6rem; white-space: nowrap;">${orbsCell}</td>
+            <td style="padding: 0.65rem 0.6rem;">${txDetailsCell}</td>
             <td style="padding: 0.65rem 0.6rem; white-space: nowrap;"><span style="font-size: 0.76rem;">${statusBadge}</span></td>
             <td style="padding: 0.65rem 0.6rem; white-space: nowrap; text-align: center;">${actionCell}</td>
           </tr>
@@ -646,6 +688,8 @@ class App {
       this.showToast(isEn ? `Success! You unlocked "${title}"` : `Успешно! Вы приобрели перевод "${title}"`, 'success');
       this.renderUserHeader();
       this.renderStorefront();
+      this.renderPurchases();
+      this.renderDepositHistory();
 
       if (fromInsideReader && window.reader) {
         window.reader.unlockFullReading();
