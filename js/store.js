@@ -813,7 +813,7 @@ The fate of the kingdom is now in your hands.
     const fullScript = workData.sampleScriptText || '';
     const previewPagesCount = Number(workData.previewPagesCount) || 3;
     const previewSlice = (typeof ScriptParser !== 'undefined' && ScriptParser.generatePreviewSlice && fullScript)
-      ? ScriptParser.generatePreviewSlice(fullScript, previewPagesCount)
+      ? ScriptParser.generatePreviewSlice(fullScript, previewPagesCount, workData.demoImages)
       : fullScript;
 
     const work = {
@@ -866,8 +866,9 @@ The fate of the kingdom is now in your hands.
       fullScript = updatedData.sampleScriptText;
     }
 
+    const effectiveDemoImages = updatedData.demoImages !== undefined ? updatedData.demoImages : (current.demoImages || []);
     const previewSlice = (typeof ScriptParser !== 'undefined' && ScriptParser.generatePreviewSlice && fullScript)
-      ? ScriptParser.generatePreviewSlice(fullScript, previewPagesCount)
+      ? ScriptParser.generatePreviewSlice(fullScript, previewPagesCount, effectiveDemoImages)
       : (updatedData.sampleScriptText !== undefined ? updatedData.sampleScriptText : current.sampleScriptText);
 
     this.data.works[index] = {
@@ -929,7 +930,7 @@ The fate of the kingdom is now in your hands.
     const scriptToSave = fullScriptText || work.fullScriptText || work.sampleScriptText || '';
     const previewPages = Number(work.previewPagesCount) || 3;
     const previewSlice = (typeof ScriptParser !== 'undefined' && ScriptParser.generatePreviewSlice && scriptToSave)
-      ? ScriptParser.generatePreviewSlice(scriptToSave, previewPages)
+      ? ScriptParser.generatePreviewSlice(scriptToSave, previewPages, work.demoImages || [])
       : (work.sampleScriptText || scriptToSave);
 
     const titleRu = typeof work.title === 'object' ? (work.title.ru || '') : (work.title || '');

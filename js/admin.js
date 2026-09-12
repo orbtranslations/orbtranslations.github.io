@@ -455,9 +455,10 @@ class AdminService {
           <span style="font-size: 0.8rem; color: var(--text-secondary);">${w.updatedAt ? `${isEn ? 'Upd.' : 'Обн.'} ${w.updatedAt}` : (w.createdAt || (isEn ? 'Recently' : 'Недавно'))}</span>
         </td>
         <td style="padding: 0.85rem 1rem;">
-          <div style="display: flex; gap: 6px; align-items: center;">
+          <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
             <button class="btn btn-small btn-secondary" onclick="window.admin.editWork('${w.id}')" title="${isEn ? 'Edit release' : 'Редактировать работу'}">${isEn ? '✏️ Edit' : '✏️ Правка'}</button>
             <button class="btn btn-small btn-secondary" onclick="window.reader.openPreview('${w.id}')" title="${isEn ? 'Preview' : 'Проверить превью'}">${isEn ? '👁️ Preview' : '👁️ Превью'}</button>
+            ${Array.isArray(w.demoImages) && w.demoImages.some(d => d && d.url) ? `<button class="btn btn-small btn-accent" onclick="window.reader.loadDemoImagesForWork('${w.id}')" title="${isEn ? 'Open Demo Preview (Web)' : 'Открыть демо-превью (веб-ссылки)'}">🌐 ${isEn ? 'Demo' : 'Демо'} (${w.demoImages.filter(d => d && d.url).length})</button>` : ''}
             <button class="btn btn-small btn-danger" onclick="window.admin.handleDeleteWork('${w.id}')" title="${isEn ? 'Delete' : 'Удалить'}">🗑️</button>
           </div>
         </td>
@@ -969,6 +970,37 @@ class AdminService {
     });
 
     return result;
+  }
+
+  /**
+   * Мгновенный предпросмотр демо-сцен прямо из полей формы (без сохранения работы)
+   */
+  testDemoPreviewFromForm() {
+    const demoImages = this.getDemoImagesFromForm();
+    const isEn = window.i18n && window.i18n.getLang() === 'en';
+
+    if (!demoImages || demoImages.length === 0) {
+      window.app.showToast(
+        isEn ? 'Specify at least one demo image URL in the form' : 'Укажите хотя бы одну ссылку на изображение в форме',
+        'warning'
+      );
+      return;
+    }
+
+    const scriptText = (document.getElementById('admin-script-text')?.value || '').trim();
+    const titleRu = document.getElementById('admin-work-title-ru')?.value.trim() || '';
+    const titleEn = document.getElementById('admin-work-title-en')?.value.trim() || '';
+
+    const tempWork = {
+      id: this.editingWorkId || 'form-preview',
+      title: { ru: titleRu || 'Демо-превью', en: titleEn || 'Demo Preview' },
+      previewPagesCount: demoImages.length,
+      demoImages: demoImages,
+      fullScriptText: scriptText,
+      sampleScriptText: scriptText
+    };
+
+    window.reader.loadDemoImagesWithData(tempWork, demoImages, scriptText);
   }
 }
 

@@ -265,9 +265,14 @@
                 <!-- Динамические строки demo images -->
               </div>
 
-              <button type="button" class="btn btn-secondary btn-small" id="admin-add-demo-image-btn" onclick="window.admin.addDemoImageRow()">
-                <span data-i18n="admin_add_demo_image">➕ Добавить ссылку на сцену</span>
-              </button>
+              <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                <button type="button" class="btn btn-secondary btn-small" id="admin-add-demo-image-btn" onclick="window.admin.addDemoImageRow()">
+                  <span data-i18n="admin_add_demo_image">➕ Добавить ссылку на сцену</span>
+                </button>
+                <button type="button" class="btn btn-accent btn-small" id="admin-test-demo-image-btn" onclick="window.admin.testDemoPreviewFromForm()">
+                  <span data-i18n="admin_test_demo_images">👁️ Проверить демо-превью из формы</span>
+                </button>
+              </div>
             </div>
 
             <!-- Translation Script Upload -->
@@ -882,15 +887,15 @@
        Application JavaScript Modules
        ======================================================================== -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="js/supabase-client.js?v=3.3.9"></script>
-  <script src="js/store.js?v=3.3.9"></script>
-  <script src="js/i18n.js?v=3.3.9"></script>
-  <script src="js/script-parser.js?v=3.3.9"></script>
-  <script src="js/auth.js?v=3.3.9"></script>
-  <script src="js/qrcode.min.js?v=3.3.9"></script>
-  <script src="js/crypto-pay.js?v=3.3.9"></script>
-  <script src="js/reader.js?v=3.3.9"></script>
-  <script src="js/admin.js?v=3.3.9"></script>
-  <script src="js/app.js?v=3.3.9"></script>
+  <script src="js/supabase-client.js?v=3.3.11"></script>
+  <script src="js/store.js?v=3.3.11"></script>
+  <script src="js/i18n.js?v=3.3.11"></script>
+  <script src="js/script-parser.js?v=3.3.11"></script>
+  <script src="js/auth.js?v=3.3.11"></script>
+  <script src="js/qrcode.min.js?v=3.3.11"></script>
+  <script src="js/crypto-pay.js?v=3.3.11"></script>
+  <script src="js/reader.js?v=3.3.11"></script>
+  <script src="js/admin.js?v=3.3.11"></script>
+  <script src="js/app.js?v=3.3.11"></script>
 </body>
 </html>

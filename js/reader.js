@@ -39,6 +39,8 @@ class ReaderService {
     this.panStartY = 0;
     this.didPan = false;
     this._eventsSetup = false;
+    this.isDemoMode = false;
+    this.activeDemoImages = null;
   }
 
   static BORDER_CONFIGS = [
@@ -306,7 +308,14 @@ class ReaderService {
       : (work.availableLanguages || ['Русский', 'English']);
     this.currentLang = this.getPriorityLanguage(availableLangs);
 
+    // Проверяем наличие настроенных демо-изображений
+    const hasConfiguredDemoImages = Array.isArray(work.demoImages)
+      ? work.demoImages.some(item => item && item.url)
+      : (work.demoImages && typeof work.demoImages === 'object' && Object.keys(work.demoImages).length > 0);
+
     if (this.workArchives[workId]) {
+      this.isDemoMode = false;
+      this.activeDemoImages = null;
       this.rebuildPagesFromScript();
       this.currentIndex = 0;
       this.currentDialogBlockIndex = 0;
@@ -323,10 +332,18 @@ class ReaderService {
         isEn ? `⚡ Loaded saved graphics: ${name}` : `⚡ Загружена сохраненная графика: ${name}`,
         'info'
       );
+      this.isDemoMode = false;
+      this.activeDemoImages = null;
       this.rebuildPagesFromScript();
       this.currentIndex = 0;
       this.currentDialogBlockIndex = 0;
       this.renderReaderUI();
+      return;
+    }
+
+    // Если локального архива нет, но настроены интернет-ссылки для превью — сразу запускаем демо-сцены!
+    if (hasConfiguredDemoImages) {
+      await this.loadDemoImages();
       return;
     }
 
@@ -991,6 +1008,11 @@ class ReaderService {
         isLocked: isPreview && (idx >= previewLimit)
       };
     });
+
+    // Если активен режим демо-сцен, накладываем строгую фильтрацию только по заданным демо-ссылкам
+    if (this.isDemoMode) {
+      this.applyDemoPagesFilter();
+    }
   }
 
   /**
@@ -1048,17 +1070,132 @@ class ReaderService {
   /**
    * Демо-сцены: построение страниц по реальному скрипту новеллы с наложением интернет-изображений
    */
-  async loadDemoImages() {
+  /**
+   * Строгая фильтрация и привязка страниц к настроенным демо-ссылкам из интернета.
+   * Сопоставляет каждую ссылку (включая нелинейные номера, например 11) с соответствующей сценой скрипта.
+   */
+  applyDemoPagesFilter(customDemoImages = null) {
+    const work = this.currentWork;
+    const demoImages = customDemoImages || this.activeDemoImages || (work ? work.demoImages : null);
+    if (!demoImages) return;
+
+    const hasConfiguredDemoImages = Array.isArray(demoImages)
+      ? demoImages.some(item => item && item.url)
+      : (typeof demoImages === 'object' && Object.keys(demoImages).length > 0);
+
+    if (!hasConfiguredDemoImages) return;
+
+    // Получаем список сцен скрипта для выбранного языка
+    let allEntries = [];
+    if (this.parsedScript && this.parsedScript.entries) {
+      const normCodes = this.getNormalizedLangCodes(this.currentLang);
+      for (const code of normCodes) {
+        if (this.parsedScript.entries[code] && this.parsedScript.entries[code].length > 0) {
+          allEntries = this.parsedScript.entries[code];
+          break;
+        }
+      }
+      if (allEntries.length === 0) {
+        allEntries = this.parsedScript.entries['RUS']
+          || this.parsedScript.entries['Русский']
+          || this.parsedScript.entries['ENG']
+          || this.parsedScript.entries['English']
+          || Object.values(this.parsedScript.entries)[0]
+          || [];
+      }
+    }
+
+    const demoPages = [];
+    const normalizedList = [];
+
+    if (Array.isArray(demoImages)) {
+      demoImages.forEach((item, idx) => {
+        if (item && item.url && String(item.url).trim()) {
+          normalizedList.push({
+            page: item.page !== undefined ? item.page : (item.num || (idx + 1)),
+            url: String(item.url).trim()
+          });
+        }
+      });
+    } else if (typeof demoImages === 'object') {
+      Object.entries(demoImages).forEach(([k, v]) => {
+        if (v && String(v).trim()) {
+          normalizedList.push({
+            page: k,
+            url: String(v).trim()
+          });
+        }
+      });
+    }
+
+    normalizedList.forEach((item, itemIdx) => {
+      const rawPage = item.page;
+      const num = Number(rawPage);
+      let matchedEntry = null;
+
+      // 1. Поиск по 1-based номеру сцены в скрипте (например, для 11-й страницы берем 11-ю сцену allEntries[10])
+      if (!isNaN(num) && num > 0 && num <= allEntries.length) {
+        matchedEntry = allEntries[num - 1];
+      }
+
+      // 2. Если по номеру не найдено, ищем по имени/ключу сцены (Title, 01-01, 00-00 и т.д.)
+      if (!matchedEntry && rawPage) {
+        const rawStr = String(rawPage).toLowerCase().trim();
+        matchedEntry = allEntries.find(e => {
+          if (!e) return false;
+          const kLower = (e.key || '').toLowerCase();
+          const tLower = (e.targetKey || '').toLowerCase();
+          const pure = kLower.split(/[\/\\]/).pop().replace(/\.[^/.]+$/, '');
+          return kLower === rawStr || tLower === rawStr || pure === rawStr;
+        });
+      }
+
+      const pageKey = matchedEntry ? matchedEntry.key : String(rawPage || (itemIdx + 1));
+      const targetKey = matchedEntry ? (matchedEntry.targetKey || matchedEntry.key) : pageKey;
+      const pageName = matchedEntry ? (matchedEntry.filename || matchedEntry.key) : `Сцена ${rawPage || (itemIdx + 1)}`;
+
+      demoPages.push({
+        index: demoPages.length,
+        originalIndex: (!isNaN(num) && num > 0) ? (num - 1) : itemIdx,
+        key: pageKey,
+        targetKey: targetKey,
+        subfolder: matchedEntry ? (matchedEntry.subfolder || '') : '',
+        name: pageName,
+        entry: matchedEntry || { key: pageKey, text: '' },
+        rawFile: null,
+        url: item.url,
+        isLocked: false
+      });
+    });
+
+    if (demoPages.length > 0) {
+      demoPages.forEach((p, idx) => { p.index = idx; });
+      this.pages = demoPages;
+    }
+  }
+
+  /**
+   * Демо-сцены: построение страниц по реальному скрипту новеллы с наложением интернет-изображений
+   */
+  async loadDemoImages(customDemoImages = null, customScript = null) {
     const work = this.currentWork;
     if (!work) return;
 
     this.isFullMode = false;
-    const previewLimit = work.previewPagesCount || 3;
+    this.isDemoMode = true;
+    this.activeDemoImages = customDemoImages || work.demoImages || [];
 
     // 1. Получаем и парсим актуальный скрипт этой работы
-    let scriptText = work.sampleScriptText || work.fullScriptText;
-    if (!scriptText || scriptText.startsWith('[STORED_IN_IDB')) {
-      scriptText = await this.store.getSampleScript(work.id);
+    let scriptText = customScript || '';
+    if (!scriptText) {
+      if (work.fullScriptText && !work.fullScriptText.startsWith('[STORED_IN_IDB')) {
+        scriptText = work.fullScriptText;
+      } else {
+        scriptText = await this.store.getFullScript(work.id);
+      }
+      if (!scriptText || scriptText.startsWith('[STORED_IN_IDB')) {
+        scriptText = work.sampleScriptText || (await this.store.getSampleScript(work.id));
+      }
     }
     if (scriptText) {
       this.parseWorkScript(work, scriptText);
@@ -1069,28 +1206,8 @@ class ReaderService {
       : (work.availableLanguages || ['Русский', 'English']);
     this.currentLang = this.getPriorityLanguage(availableLangs);
 
-    // 2. Строим структуру страниц точно по скрипту новеллы
+    // 2. Строим структуру страниц по скрипту новеллы (с автоматическим применением applyDemoPagesFilter)
     this.rebuildPagesFromScript();
-
-    // 3. Для каждой страницы превью подставляем привязанную интернет-ссылку
-    if (this.pages && this.pages.length > 0) {
-      this.pages.forEach((p, idx) => {
-        const demoUrl = this.getDemoImageUrl(work, idx, p.key);
-        if (demoUrl) {
-          p.url = demoUrl;
-        } else {
-          // Если для этой страницы ссылка не задана, используем иллюстрацию-заглушку
-          p.url = p.url || (work.coverUrl || `assets/demo/page-${(idx % 3) + 1}.svg`);
-        }
-      });
-    } else {
-      // Резервный список, если скрипт пуст
-      this.pages = [
-        { index: 0, key: 'Title', name: 'Title', entry: { key: 'Title', text: `${work.title?.ru || work.title || 'Демо'}\nДемонстрационный режим` }, url: this.getDemoImageUrl(work, 0) || 'assets/demo/page-1.svg', isLocked: false },
-        { index: 1, key: '01_Scene', name: '01_Scene', entry: { key: '01_Scene', text: 'Демо-сцена превью' }, url: this.getDemoImageUrl(work, 1) || 'assets/demo/page-2.svg', isLocked: false },
-        { index: 2, key: 'Locked', name: 'Locked', entry: { key: 'Locked', text: 'Заблокированная страница' }, url: 'assets/demo/cover-1.svg', isLocked: true }
-      ];
-    }
 
     this.currentIndex = 0;
     this.currentDialogBlockIndex = 0;
@@ -1098,9 +1215,34 @@ class ReaderService {
 
     const isEn = window.i18n && window.i18n.getLang() === 'en';
     window.app?.showToast(
-      isEn ? '💡 Loaded interactive demo preview' : '💡 Загружено интерактивное превью с демо-сценами',
+      isEn 
+        ? `💡 Loaded interactive preview (${this.pages.length} demo scenes)` 
+        : `💡 Загружено интерактивное превью (${this.pages.length} демо-сцен)`,
       'info'
     );
+  }
+
+  /**
+   * Открыть демо-сцены для конкретной работы по ID
+   */
+  async loadDemoImagesForWork(workId) {
+    let work = this.store.getWorkById(workId);
+    if (!work && this.store.initPromise) {
+      try { await this.store.initPromise; } catch (e) {}
+      work = this.store.getWorkById(workId);
+    }
+    if (!work) return;
+    this.currentWork = work;
+    await this.loadDemoImages();
+  }
+
+  /**
+   * Прямой запуск демо-превью с произвольными данными (для тестирования прямо из формы админки без сохранения)
+   */
+  async loadDemoImagesWithData(work, demoImages, scriptText) {
+    this.currentWork = work || { id: 'preview-temp', title: 'Демо-превью' };
+    this.currentWork.demoImages = demoImages;
+    await this.loadDemoImages(demoImages, scriptText);
   }
 
   /**
@@ -1158,6 +1300,186 @@ class ReaderService {
   }
 
   /**
+   * Разрешение URL источника изображения для портрета (поддержка локальных файлов, демо-сцен и фонов)
+   */
+  async resolvePortraitSourceUrl(portrait) {
+    if (!portrait) return null;
+    if (portrait.dataURL) return portrait.dataURL;
+
+    const srcKey = (portrait.sourceImage || '').trim();
+
+    // 1. Поиск в загруженном файловом архиве/папке
+    if (srcKey && this.fileMap && this.fileMap.size > 0) {
+      const srcFile = this.resolveFileForTarget(srcKey);
+      if (srcFile) {
+        try {
+          const url = await this.resolveRawFileUrl(srcFile);
+          if (url) return url;
+        } catch (e) {
+          console.warn('Не удалось получить URL из rawFile для портрета:', e);
+        }
+      }
+    }
+
+    // 2. В режиме демо-сцен или интернет-ссылок
+    if (this.pages && this.pages.length > 0) {
+      // 2a. Ищем страницу по имени файла/сцены (например, 02-0, 03-01)
+      if (srcKey) {
+        const cleanSrc = srcKey.split(/[\/\\]/).pop().replace(/\.[^/.]+$/, '').toLowerCase();
+        const matchedPage = this.pages.find(p => {
+          if (!p || !p.url) return false;
+          const pKey = (p.key || '').split(/[\/\\]/).pop().replace(/\.[^/.]+$/, '').toLowerCase();
+          const pTarget = (p.targetKey || '').split(/[\/\\]/).pop().replace(/\.[^/.]+$/, '').toLowerCase();
+          const pName = (p.name || '').split(/[\/\\]/).pop().replace(/\.[^/.]+$/, '').toLowerCase();
+          return pKey === cleanSrc || pTarget === cleanSrc || pName === cleanSrc || pKey.includes(cleanSrc);
+        });
+        if (matchedPage && matchedPage.url) {
+          return matchedPage.url;
+        }
+      }
+
+      // 2b. Ищем в demoImages работы
+      const work = this.currentWork;
+      if (work && work.demoImages) {
+        const demoUrl = this.getDemoImageUrl(work, -1, srcKey);
+        if (demoUrl) return demoUrl;
+      }
+
+      // 2c. Проверяем текущую открытую сцену в читалке
+      const curPage = this.pages[this.currentIndex];
+      if (curPage && curPage.url) {
+        if (srcKey) {
+          const cleanSrc = srcKey.split(/[\/\\]/).pop().replace(/\.[^/.]+$/, '').toLowerCase();
+          const curClean = (curPage.key || '').split(/[\/\\]/).pop().replace(/\.[^/.]+$/, '').toLowerCase();
+          const srcScene = cleanSrc.match(/^([a-z]*\d+)/);
+          const curScene = curClean.match(/^([a-z]*\d+)/);
+          if (srcScene && curScene && srcScene[1] === curScene[1]) {
+            return curPage.url;
+          }
+        }
+        // Если сцена текущей реплики совпадает, используем фон текущей сцены
+        return curPage.url;
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Определение базового разрешения изображения, на котором производилась нарезка портрета
+   */
+  getPortraitBaseResolution(portrait, imgNaturalW, imgNaturalH) {
+    if (!portrait || !portrait.crop) return { baseW: imgNaturalW || 1280, baseH: imgNaturalH || 720 };
+    const c = portrait.crop;
+
+    if (c.baseWidth && c.baseHeight) {
+      return { baseW: c.baseWidth, baseH: c.baseHeight };
+    }
+    if (c.origW && c.origH) {
+      return { baseW: c.origW, baseH: c.origH };
+    }
+
+    if (c.unit === '%' || (c.x <= 1 && c.y <= 1 && c.w <= 1 && c.h <= 1)) {
+      return { baseW: 1, baseH: 1, isPercent: true };
+    }
+    if (c.unit === 'percent' || (c.isPercent && c.w <= 100)) {
+      return { baseW: 100, baseH: 100, isPercent: true };
+    }
+
+    // Собираем максимальные координаты среди всех портретов текущей новеллы
+    let maxCropX = c.x + c.w;
+    let maxCropY = c.y + c.h;
+
+    const allPortraits = this.normalizePortraits(
+      (this.parsedScript && this.parsedScript.overlayData && this.parsedScript.overlayData.portraits) || []
+    );
+    for (const p of allPortraits) {
+      if (p && p.crop && typeof p.crop === 'object') {
+        const pc = p.crop;
+        if (pc.unit !== '%' && !pc.isPercent && pc.w > 1) {
+          if (pc.x + pc.w > maxCropX) maxCropX = pc.x + pc.w;
+          if (pc.y + pc.h > maxCropY) maxCropY = pc.y + pc.h;
+        }
+      }
+    }
+
+    const aspect = (imgNaturalW && imgNaturalH) ? (imgNaturalW / imgNaturalH) : (16 / 9);
+
+    const standardResolutions = [
+      { w: 800, h: 600, aspect: 4/3 },
+      { w: 1024, h: 576, aspect: 16/9 },
+      { w: 1024, h: 768, aspect: 4/3 },
+      { w: 1280, h: 720, aspect: 16/9 },
+      { w: 1280, h: 800, aspect: 16/10 },
+      { w: 1280, h: 960, aspect: 4/3 },
+      { w: 1366, h: 768, aspect: 16/9 },
+      { w: 1600, h: 900, aspect: 16/9 },
+      { w: 1920, h: 1080, aspect: 16/9 },
+      { w: 1920, h: 1200, aspect: 16/10 },
+      { w: 2560, h: 1440, aspect: 16/9 },
+      { w: 3840, h: 2160, aspect: 16/9 }
+    ];
+
+    const candidates = standardResolutions.filter(r =>
+      r.w >= maxCropX && r.h >= maxCropY && Math.abs(r.aspect - aspect) < 0.15
+    );
+
+    if (candidates.length > 0) {
+      return { baseW: candidates[0].w, baseH: candidates[0].h };
+    }
+
+    const anyCandidate = standardResolutions.find(r => r.w >= maxCropX && r.h >= maxCropY);
+    if (anyCandidate) {
+      return { baseW: anyCandidate.w, baseH: anyCandidate.h };
+    }
+
+    const inferredW = Math.max(maxCropX, Math.round(maxCropY * aspect));
+    const inferredH = Math.max(maxCropY, Math.round(inferredW / aspect));
+    return { baseW: inferredW || 1280, baseH: inferredH || 720 };
+  }
+
+  /**
+   * Преобразование координат кропа в нормализованные доли (0..1) с учетом разрешения исходного изображения
+   */
+  getNormalizedCrop(crop, imgNaturalW, imgNaturalH, portrait = null) {
+    if (!crop) return { x: 0, y: 0, w: 1, h: 1 };
+
+    if (crop.unit === '%' || (crop.x <= 1 && crop.y <= 1 && crop.w <= 1 && crop.h <= 1)) {
+      return {
+        x: Math.max(0, Math.min(1, crop.x)),
+        y: Math.max(0, Math.min(1, crop.y)),
+        w: Math.max(0.01, Math.min(1 - Math.max(0, crop.x), crop.w)),
+        h: Math.max(0.01, Math.min(1 - Math.max(0, crop.y), crop.h))
+      };
+    }
+
+    if (crop.unit === 'percent' || (crop.isPercent && crop.w <= 100)) {
+      const nx = crop.x / 100;
+      const ny = crop.y / 100;
+      const nw = crop.w / 100;
+      const nh = crop.h / 100;
+      return {
+        x: Math.max(0, Math.min(1, nx)),
+        y: Math.max(0, Math.min(1, ny)),
+        w: Math.max(0.01, Math.min(1 - nx, nw)),
+        h: Math.max(0.01, Math.min(1 - ny, nh))
+      };
+    }
+
+    // Координаты в пикселях: находим базовое разрешение
+    const base = this.getPortraitBaseResolution(portrait || { crop }, imgNaturalW, imgNaturalH);
+    const baseW = base.baseW || imgNaturalW || 1280;
+    const baseH = base.baseH || imgNaturalH || 720;
+
+    const nx = Math.max(0, Math.min(1, crop.x / baseW));
+    const ny = Math.max(0, Math.min(1, crop.y / baseH));
+    const nw = Math.max(0.01, Math.min(1 - nx, crop.w / baseW));
+    const nh = Math.max(0.01, Math.min(1 - ny, crop.h / baseH));
+
+    return { x: nx, y: ny, w: nw, h: nh };
+  }
+
+  /**
    * Динамическая нарезка портрета персонажа с холста сцены
    */
   async getPortraitUrl(portrait) {
@@ -1169,13 +1491,11 @@ class ReaderService {
       return this.portraitCache.get(cacheKey);
     }
 
-    const srcKey = portrait.sourceImage || '';
-    const srcFile = this.resolveFileForTarget(srcKey);
-    if (!srcFile || !portrait.crop) return null;
+    const srcUrl = await this.resolvePortraitSourceUrl(portrait);
+    if (!srcUrl || !portrait.crop) return null;
 
     try {
-      const srcUrl = await this.resolveRawFileUrl(srcFile);
-      const dataUrl = await this.cropImageToDataUrl(srcUrl, portrait.crop);
+      const dataUrl = await this.cropImageToDataUrl(srcUrl, portrait.crop, portrait);
       if (dataUrl) {
         this.portraitCache.set(cacheKey, dataUrl);
         return dataUrl;
@@ -1186,43 +1506,153 @@ class ReaderService {
     return null;
   }
 
-  cropImageToDataUrl(imgSrc, crop) {
+  /**
+   * Нарезка портрета через Canvas (с безопасным перехватом CORS)
+   */
+  cropImageToDataUrl(imgSrc, crop, portrait = null) {
     return new Promise((resolve) => {
       const img = new Image();
+      img.crossOrigin = 'anonymous';
       img.onload = () => {
-        let sx, sy, sw, sh;
-        if (crop.unit === '%' || (crop.x <= 1 && crop.y <= 1 && crop.w <= 1 && crop.h <= 1)) {
-          sx = Math.round(crop.x * img.naturalWidth);
-          sy = Math.round(crop.y * img.naturalHeight);
-          sw = Math.round(crop.w * img.naturalWidth);
-          sh = Math.round(crop.h * img.naturalHeight);
-        } else if (crop.unit === 'percent' || (crop.isPercent && crop.w <= 100)) {
-          sx = Math.round((crop.x / 100) * img.naturalWidth);
-          sy = Math.round((crop.y / 100) * img.naturalHeight);
-          sw = Math.round((crop.w / 100) * img.naturalWidth);
-          sh = Math.round((crop.h / 100) * img.naturalHeight);
-        } else {
-          sx = Math.max(0, Math.round(crop.x));
-          sy = Math.max(0, Math.round(crop.y));
-          sw = Math.min(img.naturalWidth - sx, Math.round(crop.w));
-          sh = Math.min(img.naturalHeight - sy, Math.round(crop.h));
-        }
+        try {
+          const norm = this.getNormalizedCrop(crop, img.naturalWidth, img.naturalHeight, portrait);
+          let sx = Math.max(0, Math.round(norm.x * img.naturalWidth));
+          let sy = Math.max(0, Math.round(norm.y * img.naturalHeight));
+          let sw = Math.max(1, Math.min(img.naturalWidth - sx, Math.round(norm.w * img.naturalWidth)));
+          let sh = Math.max(1, Math.min(img.naturalHeight - sy, Math.round(norm.h * img.naturalHeight)));
 
-        if (sw <= 0 || sh <= 0) {
+          if (sw <= 0 || sh <= 0) {
+            resolve(null);
+            return;
+          }
+
+          const cvs = document.createElement('canvas');
+          cvs.width = sw;
+          cvs.height = sh;
+          const ctx = cvs.getContext('2d');
+          ctx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
+          try {
+            resolve(cvs.toDataURL('image/png'));
+          } catch (corsErr) {
+            // Tainted canvas (CORS не разрешен внешним сервером)
+            resolve(null);
+          }
+        } catch (e) {
           resolve(null);
-          return;
         }
-
-        const cvs = document.createElement('canvas');
-        cvs.width = sw;
-        cvs.height = sh;
-        const ctx = cvs.getContext('2d');
-        ctx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
-        resolve(cvs.toDataURL('image/png'));
       };
       img.onerror = () => resolve(null);
       img.src = imgSrc;
     });
+  }
+
+  /**
+   * Надежный рендеринг портрета в слоте рамки диалога (Canvas + DOM/CSS fallback)
+   */
+  async renderPortraitInSlot(slot, portraitObj, baseImg) {
+    if (!slot || !portraitObj) return;
+
+    slot.innerHTML = '';
+    const cacheKey = portraitObj.name;
+
+    // 1. Проверяем кэш готовых нарезок
+    if (this.portraitCache.has(cacheKey)) {
+      const cachedUrl = this.portraitCache.get(cacheKey);
+      if (cachedUrl) {
+        const pImg = document.createElement('img');
+        pImg.src = cachedUrl;
+        pImg.alt = '';
+        pImg.style.width = '100%';
+        pImg.style.height = '100%';
+        pImg.style.objectFit = 'cover';
+        slot.appendChild(pImg);
+        return;
+      }
+    }
+
+    // 2. Если уже есть dataURL в самом объекте
+    if (portraitObj.dataURL) {
+      const pImg = document.createElement('img');
+      pImg.src = portraitObj.dataURL;
+      pImg.alt = '';
+      pImg.style.width = '100%';
+      pImg.style.height = '100%';
+      pImg.style.objectFit = 'cover';
+      slot.appendChild(pImg);
+      return;
+    }
+
+    // 3. Получаем URL исходного изображения
+    let srcUrl = await this.resolvePortraitSourceUrl(portraitObj);
+    if (!srcUrl && baseImg && baseImg.src) {
+      srcUrl = baseImg.src;
+    }
+
+    if (!srcUrl || !portraitObj.crop) {
+      return;
+    }
+
+    // 4. Загружаем изображение и вычисляем нарезку
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      const norm = this.getNormalizedCrop(portraitObj.crop, img.naturalWidth, img.naturalHeight, portraitObj);
+
+      // Пытаемся нарезать через Canvas
+      let croppedDataUrl = null;
+      try {
+        const cvs = document.createElement('canvas');
+        let sx = Math.max(0, Math.round(norm.x * img.naturalWidth));
+        let sy = Math.max(0, Math.round(norm.y * img.naturalHeight));
+        let sw = Math.max(1, Math.min(img.naturalWidth - sx, Math.round(norm.w * img.naturalWidth)));
+        let sh = Math.max(1, Math.min(img.naturalHeight - sy, Math.round(norm.h * img.naturalHeight)));
+        cvs.width = sw;
+        cvs.height = sh;
+        const ctx = cvs.getContext('2d');
+        ctx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
+        croppedDataUrl = cvs.toDataURL('image/png');
+        this.portraitCache.set(cacheKey, croppedDataUrl);
+      } catch (canvasErr) {
+        // Tainted canvas (CORS внешнего сервера)
+        croppedDataUrl = null;
+      }
+
+      slot.innerHTML = '';
+      if (croppedDataUrl) {
+        const pImg = document.createElement('img');
+        pImg.src = croppedDataUrl;
+        pImg.alt = '';
+        pImg.style.width = '100%';
+        pImg.style.height = '100%';
+        pImg.style.objectFit = 'cover';
+        slot.appendChild(pImg);
+      } else {
+        // Надежный DOM/CSS fallback: масштабируем и позиционируем исходное изображение в слоте без Canvas!
+        // Правила CORS не блокируют отображение DOM img
+        const cssImg = document.createElement('img');
+        cssImg.src = srcUrl;
+        cssImg.alt = '';
+        const scaleW = norm.w > 0 ? (1 / norm.w) * 100 : 100;
+        const scaleH = norm.h > 0 ? (1 / norm.h) * 100 : 100;
+        const leftPercent = norm.w > 0 ? (-norm.x * scaleW) : 0;
+        const topPercent = norm.h > 0 ? (-norm.y * scaleH) : 0;
+
+        cssImg.style.position = 'absolute';
+        cssImg.style.left = `${leftPercent}%`;
+        cssImg.style.top = `${topPercent}%`;
+        cssImg.style.width = `${scaleW}%`;
+        cssImg.style.height = `${scaleH}%`;
+        cssImg.style.maxWidth = 'none';
+        cssImg.style.maxHeight = 'none';
+        cssImg.style.objectFit = 'fill';
+        cssImg.style.pointerEvents = 'none';
+        slot.appendChild(cssImg);
+      }
+    };
+    img.onerror = () => {
+      slot.innerHTML = '';
+    };
+    img.src = srcUrl;
   }
 
   setLanguage(lang) {
@@ -1519,6 +1949,14 @@ class ReaderService {
       this.currentIndex += step;
       this.currentDialogBlockIndex = 0;
       this.updateReaderDisplay();
+    } else if (!this.isFullMode) {
+      const isEn = window.i18n && window.i18n.getLang() === 'en';
+      window.app?.showToast(
+        isEn 
+          ? `🔒 Demo preview complete (${this.pages.length} scenes). Purchase to unlock full translation!` 
+          : `🔒 Демо-превью завершено (${this.pages.length} сцен). Приобретите новеллу, чтобы открыть все главы!`,
+        'info'
+      );
     }
   }
 
@@ -1977,16 +2415,7 @@ class ReaderService {
               portraitSlot.style.width = `${pz.w}%`;
               portraitSlot.style.height = `${pz.h}%`;
 
-              const portraitImg = document.createElement('img');
-              portraitImg.alt = portraitObj.name;
-
-              this.getPortraitUrl(portraitObj).then(url => {
-                if (url) {
-                  portraitImg.src = url;
-                }
-              }).catch(e => console.warn('Ошибка загрузки портрета:', e));
-
-              portraitSlot.appendChild(portraitImg);
+              this.renderPortraitInSlot(portraitSlot, portraitObj, baseImg);
               frameWrapper.appendChild(portraitSlot);
             }
           } catch (pErr) {
@@ -2077,6 +2506,8 @@ class ReaderService {
   }
 
   closeReader() {
+    this.isDemoMode = false;
+    this.activeDemoImages = null;
     const modal = document.getElementById('reader-modal');
     if (modal) {
       modal.classList.remove('active');

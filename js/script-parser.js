@@ -477,88 +477,97 @@ class ScriptParser {
    * @param {number} previewPagesCount - Количество разрешенных превью страниц (по умолчанию 3)
    * @returns {string} Безопасный урезанный скрипт для публичного каталога
    */
-  static generatePreviewSlice(fullScriptText, previewPagesCount = 3) {
-    if (!fullScriptText || typeof fullScriptText !== 'string' || !fullScriptText.trim()) {
-      return '';
-    }
-
+  static generatePreviewSlice(fullScriptText, previewPagesCount = 3, demoImages = []) {
     try {
       const parser = new ScriptParser();
       const parsed = parser.parse(fullScriptText);
-
-      if (!parsed || !parsed.languages || parsed.languages.length === 0) {
-        // Если структура нестандартная, отдаем только первые 2000 символов
-        return fullScriptText.slice(0, 2000);
-      }
-
-      const limit = Math.max(1, Number(previewPagesCount) || 3);
       const keptKeys = new Set();
-      const out = [];
 
-      // 1. Заголовок и технические строки папок
-      out.push(parsed.titleMarker || 'Title');
-      const techLines = (parsed.techHeaderLines && parsed.techHeaderLines.length > 0)
-        ? [...parsed.techHeaderLines]
-        : [];
-      if (parsed.allowedSubfolders && parsed.allowedSubfolders.length > 0) {
-        parsed.allowedSubfolders.forEach(sub => {
-          const formatted = sub.replace(/[\\/]+$/, '') + '\\';
-          if (!techLines.some(l => l.trim().toLowerCase() === formatted.toLowerCase())) {
-            techLines.push(formatted);
+      const demoPageNumbers = new Set();
+      const demoKeys = new Set();
+      if (Array.isArray(demoImages)) {
+        demoImages.forEach(item => {
+          if (!item) return;
+          const p = item.page !== undefined ? item.page : (item.num || item.key || '');
+          if (!isNaN(Number(p)) && Number(p) > 0) {
+            demoPageNumbers.add(Number(p));
+          } else if (p) {
+            demoKeys.add(String(p).toLowerCase().trim());
+          }
+          if (item.key) demoKeys.add(String(item.key).toLowerCase().trim());
+        });
+      } else if (demoImages && typeof demoImages === 'object') {
+        Object.keys(demoImages).forEach(k => {
+          if (!isNaN(Number(k)) && Number(k) > 0) {
+            demoPageNumbers.add(Number(k));
+          } else {
+            demoKeys.add(String(k).toLowerCase().trim());
           }
         });
       }
-      techLines.forEach(l => out.push(l));
+
+      if (parsed.titleMarker) {
+        keptKeys.add(parsed.titleMarker);
+      }
+
+      if (parsed.languages && Array.isArray(parsed.languages)) {
+        for (const lang of parsed.languages) {
+          if (parsed.entries && parsed.entries[lang]) {
+            parsed.entries[lang] = parsed.entries[lang].filter((entry, idx) => {
+              if (idx < previewPagesCount) return true;
+              const pageNum = idx + 1;
+              if (demoPageNumbers.has(pageNum)) return true;
+              const kLower = (entry.key || '').toLowerCase();
+              const targetLower = (entry.targetKey || '').toLowerCase();
+              const pureLower = kLower.split(/[\/\\]/).pop().replace(/\.[^/.]+$/, '');
+              return demoKeys.has(kLower) || demoKeys.has(targetLower) || demoKeys.has(pureLower);
+            });
+            for (const entry of parsed.entries[lang]) {
+              if (entry.key) keptKeys.add(entry.key);
+            }
+          }
+        }
+      }
+
+      let out = [];
+      if (parsed.titleMarker) {
+        out.push(parsed.titleMarker);
+      }
+      if (parsed.techHeaderLines && parsed.techHeaderLines.length > 0) {
+        out.push(...parsed.techHeaderLines);
+      }
       if (parsed.titleContent && parsed.titleContent.length > 0) {
-        parsed.titleContent.forEach(l => out.push(l));
+        out.push('');
+        out.push(...parsed.titleContent);
       }
       out.push('');
 
-      // 2. Для каждого языка сохраняем только первые limit записей
-      parsed.languages.forEach(lang => {
-        out.push(`【${lang}】`);
-        out.push('');
-
-        const entries = parsed.entries[lang] || [];
-        const sliceEntries = entries.slice(0, limit);
-        let activeSubfolder = '';
-
-        sliceEntries.forEach(entry => {
-          // Регистрируем ключ для фильтрации OVERLAY_DATA
-          const normKey = (entry.key || '').replace(/\\/g, '/');
-          const pureName = normKey.split('/').pop();
-          const targetNorm = (entry.targetKey || '').replace(/\\/g, '/');
-          const pureTarget = targetNorm.split('/').pop();
-
-          if (entry.key) keptKeys.add(entry.key);
-          if (normKey) keptKeys.add(normKey);
-          if (pureName) keptKeys.add(pureName);
-          if (entry.targetKey) keptKeys.add(entry.targetKey);
-          if (targetNorm) keptKeys.add(targetNorm);
-          if (pureTarget) keptKeys.add(pureTarget);
-
-          // Проверяем смену подпапки для гарантии её сохранения при парсинге превью
-          if (entry.subfolder && entry.subfolder !== activeSubfolder) {
-            out.push(`${entry.subfolder}\\`);
-            activeSubfolder = entry.subfolder;
-          }
-
-          // Записываем заголовок записи
-          if (entry.rawLine) {
-            out.push(entry.rawLine);
-          } else if (entry.alias) {
-            out.push(`${entry.key}=${entry.alias}`);
-          } else {
-            out.push(entry.key);
-          }
-
-          // Текст диалогов текущей превью-записи
-          if (entry.text) {
-            out.push(entry.text.trimEnd());
-          }
+      if (parsed.languages && Array.isArray(parsed.languages)) {
+        for (const lang of parsed.languages) {
+          out.push(`【${lang}】`);
           out.push('');
-        });
-      });
+          const entries = parsed.entries[lang] || [];
+          let lastSubfolder = '';
+          for (const entry of entries) {
+            if (entry.isTitle || (parsed.titleMarker && entry.key.toLowerCase() === parsed.titleMarker.toLowerCase() && !entry.subfolder)) {
+              continue;
+            }
+            let fileRef = entry.filename;
+            if (entry.subfolder && entry.subfolder !== lastSubfolder) {
+               fileRef = entry.subfolder.replace(/\//g, '\\') + '\\' + entry.filename;
+               lastSubfolder = entry.subfolder;
+            } else if (!entry.subfolder) {
+               lastSubfolder = '';
+            }
+            if (entry.alias) {
+              fileRef += '=' + entry.alias;
+            }
+            out.push(fileRef);
+            out.push(entry.text);
+            out.push('');
+          }
+        }
+      }
 
       // 3. Секция OVERLAY_DATA: фильтруем, оставляя координаты только для превью-записей
       if (parsed.overlayData && typeof parsed.overlayData === 'object') {
