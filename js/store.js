@@ -210,14 +210,40 @@ class Store {
       { page: 11, url: 'https://img.dlsite.jp/modpub/images2/work/doujin/RJ233000/RJ232738_img_smp6.webp' }
     ];
 
-    const w1 = this.data.works.find(w => w.id === 'work-001');
-    if (w1 && (!w1.demoImages || !Array.isArray(w1.demoImages) || w1.demoImages.length === 0)) {
-      w1.demoImages = defaultDemo;
+    const w1 = this.data.works.find(w => w.id === 'work-001') || this.data.works[0];
+    if (w1) {
+      // Восстанавливаем оригинальные названия, описание, обложку и превью, если они были стерты
+      const hasValidTitle = w1.title && typeof w1.title === 'object' ? (w1.title.ru || w1.title.en) : (w1.title && w1.title.trim());
+      if (!hasValidTitle) {
+        w1.title = { ru: 'Breast Sandwich Beach', en: 'Breast Sandwich Beach' };
+      }
+      const hasValidDesc = w1.description && typeof w1.description === 'object' ? (w1.description.ru || w1.description.en) : (w1.description && w1.description.trim());
+      if (!hasValidDesc) {
+        w1.description = {
+          ru: 'Художественный перевод новеллы Breast Sandwich Beach. Полная адаптация диалоговых окон, реплик и оверлеев.',
+          en: 'Official translation of Breast Sandwich Beach with full dialogue and character overlay adaptation.'
+        };
+      }
+      if (!w1.coverUrl || w1.coverUrl === 'assets/demo/cover-1.svg') {
+        w1.coverUrl = 'https://img.dlsite.jp/modpub/images2/work/doujin/RJ233000/RJ232738_img_main.webp';
+      }
+      if (!w1.author || w1.author === 'Glaive Team') {
+        w1.author = 'Grave';
+      }
+      if (!w1.tags || w1.tags.length === 0 || w1.tags[0] === 'Визуальная новелла') {
+        w1.tags = ['CG', 'Kaiman'];
+      }
+      if (!w1.previewPagesCount || w1.previewPagesCount === 3) {
+        w1.previewPagesCount = 6;
+      }
+      if (!w1.demoImages || !Array.isArray(w1.demoImages) || w1.demoImages.length === 0) {
+        w1.demoImages = defaultDemo;
+      }
       this.saveToStorage();
       if (window.supabaseClient) {
         setTimeout(() => {
           this.saveWorkToSupabase(w1, w1.fullScriptText);
-        }, 1500);
+        }, 1200);
       }
     }
   }
@@ -238,11 +264,6 @@ class Store {
             this.data.works.push(idbWork);
           }
         });
-
-        // Если в IDB больше работ или свежее — синхронизируем
-        if (idbData.works.length !== this.data.works.length) {
-          this.data = idbData;
-        }
 
         this.migrateXpubSettings();
 
@@ -274,44 +295,76 @@ class Store {
       if (!worksErr && dbWorks && dbWorks.length > 0) {
         const mappedWorks = dbWorks.map(w => {
           const existing = (this.data.works || []).find(ew => ew.id === w.id);
-          return {
+
+          // Надежное сохранение названий: если из базы пришли пустые строки, сохраняем существующие
+          const existingTitleRu = existing ? (typeof existing.title === 'object' ? (existing.title.ru || existing.title.en) : existing.title) : '';
+          const existingTitleEn = existing ? (typeof existing.title === 'object' ? (existing.title.en || existing.title.ru) : existing.titleEn) : '';
+          const titleRu = (w.title_ru && w.title_ru.trim()) || existingTitleRu || 'Breast Sandwich Beach';
+          const titleEn = (w.title_en && w.title_en.trim()) || existingTitleEn || titleRu;
+
+          // Надежное сохранение описаний
+          const existingDescRu = existing ? (typeof existing.description === 'object' ? (existing.description.ru || existing.description.en) : existing.description) : '';
+          const existingDescEn = existing ? (typeof existing.description === 'object' ? (existing.description.en || existing.description.ru) : existing.descriptionEn) : '';
+          const descRu = (w.description_ru && w.description_ru.trim()) || existingDescRu || 'Художественный перевод новеллы Breast Sandwich Beach. Полная адаптация диалоговых окон, реплик и оверлеев.';
+          const descEn = (w.description_en && w.description_en.trim()) || existingDescEn || 'Official translation of Breast Sandwich Beach with full dialogue and character overlay adaptation.';
+
+          // Надежное сохранение обложки
+          const existingCover = existing ? existing.coverUrl : '';
+          let coverUrl = w.cover_url || '';
+          if (!coverUrl || coverUrl === 'assets/demo/cover-1.svg') {
+            coverUrl = (existingCover && existingCover !== 'assets/demo/cover-1.svg') 
+              ? existingCover 
+              : 'https://img.dlsite.jp/modpub/images2/work/doujin/RJ233000/RJ232738_img_main.webp';
+          }
+
+          // Надежное сохранение числа страниц превью
+          const existingPreview = existing ? Number(existing.previewPagesCount) : 0;
+          const previewPages = (w.preview_pages_count && w.preview_pages_count > 0 && w.preview_pages_count !== 3)
+            ? Number(w.preview_pages_count)
+            : (existingPreview > 0 ? existingPreview : 6);
+
+          const sbDemo = Array.isArray(w.demo_images) ? w.demo_images.filter(item => item && item.url) : [];
+          const locDemo = (existing && Array.isArray(existing.demoImages)) ? existing.demoImages.filter(item => item && item.url) : [];
+          const demoImages = sbDemo.length > 0 ? sbDemo : (locDemo.length > 0 ? locDemo : (w.demo_images || []));
+
+          const mapped = {
             id: w.id,
             title: {
-              ru: w.title_ru,
-              en: w.title_en || w.title_ru
+              ru: titleRu,
+              en: titleEn
             },
             description: {
-              ru: w.description_ru,
-              en: w.description_en || w.description_ru
+              ru: descRu,
+              en: descEn
             },
-            author: w.author,
-            price: Number(w.price),
-            totalPages: w.total_pages,
-            previewPagesCount: w.preview_pages_count,
-            tags: w.tags || [],
-            coverUrl: w.cover_url,
+            author: w.author || (existing ? existing.author : 'Grave'),
+            price: Number(w.price || (existing ? existing.price : 1)),
+            totalPages: Number(w.total_pages || (existing ? existing.totalPages : 109)),
+            previewPagesCount: previewPages,
+            tags: (Array.isArray(w.tags) && w.tags.length > 0) ? w.tags : (existing && existing.tags ? existing.tags : ['CG', 'Kaiman']),
+            coverUrl: coverUrl,
             availableLanguages: w.available_languages || ['Русский', 'English'],
             scriptFileName: w.script_file_name || 'script.txt',
-            sampleScriptText: w.sample_script_text || '',
+            sampleScriptText: w.sample_script_text || (existing ? existing.sampleScriptText : ''),
             fullScriptText: (existing && existing.fullScriptText) ? existing.fullScriptText : null,
-            demoImages: (() => {
-              const sbDemo = Array.isArray(w.demo_images) ? w.demo_images.filter(item => item && item.url) : [];
-              const locDemo = (existing && Array.isArray(existing.demoImages)) ? existing.demoImages.filter(item => item && item.url) : [];
-              if (locDemo.length > 0 && sbDemo.length === 0) {
-                // Если локально ссылки были, а в Supabase еще нет — сохраняем их в базу
-                setTimeout(() => {
-                  this.saveWorkToSupabase({ ...w, demoImages: locDemo }, (existing ? existing.fullScriptText : null));
-                }, 1500);
-              }
-              return sbDemo.length > 0 ? sbDemo : (locDemo.length > 0 ? locDemo : (w.demo_images || []));
-            })(),
+            demoImages: demoImages,
             createdAt: w.created_at ? w.created_at.split('T')[0] : '2026-09-01'
           };
+
+          // Если в Supabase были пустые поля, тихо синхронизируем исправленную работу обратно в базу
+          if ((!w.title_ru || !w.cover_url || w.cover_url === 'assets/demo/cover-1.svg' || sbDemo.length === 0) && mapped) {
+            setTimeout(() => {
+              this.saveWorkToSupabase(mapped, mapped.fullScriptText || (existing ? existing.fullScriptText : null));
+            }, 2000);
+          }
+
+          return mapped;
         });
 
         this.data.works = mappedWorks;
         this.saveToStorage();
         if (window.app) window.app.renderStorefront();
+        if (window.admin) window.admin.renderWorksTable();
       }
 
       // 2. Загрузка настроек кошельков из Supabase
@@ -969,18 +1022,68 @@ The fate of the kingdom is now in your hands.
    * - Закрытая таблица public.work_scripts: полный скрипт под защитой RLS
    */
   async saveWorkToSupabase(work, fullScriptText = null) {
-    if (!window.supabaseClient) return { success: true, localOnly: true };
+    if (!window.supabaseClient || !work) return { success: true, localOnly: true };
 
-    const scriptToSave = fullScriptText || work.fullScriptText || work.sampleScriptText || '';
-    const previewPages = Number(work.previewPagesCount) || 3;
+    const existing = (this.data.works || []).find(w => w.id === work.id);
+
+    const scriptToSave = fullScriptText || work.fullScriptText || work.sampleScriptText || (existing ? (existing.fullScriptText || existing.sampleScriptText) : '') || '';
+    const previewPages = Number(work.previewPagesCount || work.preview_pages_count || (existing ? existing.previewPagesCount : 6)) || 6;
+    const demoImages = (Array.isArray(work.demoImages) && work.demoImages.length > 0)
+      ? work.demoImages
+      : ((Array.isArray(work.demo_images) && work.demo_images.length > 0) ? work.demo_images : (existing && existing.demoImages ? existing.demoImages : []));
+
     const previewSlice = (typeof ScriptParser !== 'undefined' && ScriptParser.generatePreviewSlice && scriptToSave)
-      ? ScriptParser.generatePreviewSlice(scriptToSave, previewPages, work.demoImages || [])
+      ? ScriptParser.generatePreviewSlice(scriptToSave, previewPages, demoImages)
       : (work.sampleScriptText || scriptToSave);
 
-    const titleRu = typeof work.title === 'object' ? (work.title.ru || '') : (work.title || '');
-    const titleEn = typeof work.title === 'object' ? (work.title.en || '') : (work.titleEn || titleRu);
-    const descRu = typeof work.description === 'object' ? (work.description.ru || '') : (work.description || '');
-    const descEn = typeof work.description === 'object' ? (work.description.en || '') : (work.descriptionEn || descRu);
+    // Определение названий с защитой от пустых строк
+    let titleRu = '';
+    let titleEn = '';
+    if (typeof work.title === 'object' && work.title !== null) {
+      titleRu = (work.title.ru || work.title.en || '').trim();
+      titleEn = (work.title.en || work.title.ru || '').trim();
+    } else if (typeof work.title === 'string' && work.title.trim()) {
+      titleRu = work.title.trim();
+      titleEn = (work.titleEn || work.originalTitle || titleRu).trim();
+    }
+    if (!titleRu && work.title_ru) titleRu = String(work.title_ru).trim();
+    if (!titleEn && work.title_en) titleEn = String(work.title_en).trim();
+    if (!titleRu && existing && existing.title) {
+      titleRu = typeof existing.title === 'object' ? (existing.title.ru || existing.title.en || '') : existing.title;
+    }
+    if (!titleEn && existing && existing.title) {
+      titleEn = typeof existing.title === 'object' ? (existing.title.en || existing.title.ru || '') : (existing.titleEn || titleRu);
+    }
+    if (!titleRu) titleRu = 'Breast Sandwich Beach';
+    if (!titleEn) titleEn = titleRu;
+
+    // Определение описаний с защитой
+    let descRu = '';
+    let descEn = '';
+    if (typeof work.description === 'object' && work.description !== null) {
+      descRu = (work.description.ru || work.description.en || '').trim();
+      descEn = (work.description.en || work.description.ru || '').trim();
+    } else if (typeof work.description === 'string' && work.description.trim()) {
+      descRu = work.description.trim();
+      descEn = (work.descriptionEn || descRu).trim();
+    }
+    if (!descRu && work.description_ru) descRu = String(work.description_ru).trim();
+    if (!descEn && work.description_en) descEn = String(work.description_en).trim();
+    if (!descRu && existing && existing.description) {
+      descRu = typeof existing.description === 'object' ? (existing.description.ru || existing.description.en || '') : existing.description;
+    }
+    if (!descEn && existing && existing.description) {
+      descEn = typeof existing.description === 'object' ? (existing.description.en || existing.description.ru || '') : (existing.descriptionEn || descRu);
+    }
+
+    // Обложка с защитой
+    let coverUrl = work.coverUrl || work.cover_url || '';
+    if ((!coverUrl || coverUrl === 'assets/demo/cover-1.svg') && existing && existing.coverUrl && existing.coverUrl !== 'assets/demo/cover-1.svg') {
+      coverUrl = existing.coverUrl;
+    }
+    if (!coverUrl || coverUrl === 'assets/demo/cover-1.svg') {
+      coverUrl = 'https://img.dlsite.jp/modpub/images2/work/doujin/RJ233000/RJ232738_img_main.webp';
+    }
 
     const dbPayload = {
       id: work.id,
@@ -988,16 +1091,16 @@ The fate of the kingdom is now in your hands.
       title_en: titleEn,
       description_ru: descRu,
       description_en: descEn,
-      author: work.author || '',
-      price: Number(work.price) || 1,
-      total_pages: Number(work.totalPages) || 1,
+      author: work.author || (existing ? existing.author : 'Grave'),
+      price: Number(work.price || (existing ? existing.price : 1)),
+      total_pages: Number(work.totalPages || work.total_pages || (existing ? existing.totalPages : 109)),
       preview_pages_count: previewPages,
-      tags: work.tags || [],
-      cover_url: work.coverUrl || 'assets/demo/cover-1.svg',
-      available_languages: work.availableLanguages || ['Русский', 'English'],
-      script_file_name: work.scriptFileName || 'script.txt',
+      tags: (Array.isArray(work.tags) && work.tags.length > 0) ? work.tags : (existing && existing.tags ? existing.tags : ['CG', 'Kaiman']),
+      cover_url: coverUrl,
+      available_languages: work.availableLanguages || work.available_languages || ['Русский', 'English'],
+      script_file_name: work.scriptFileName || work.script_file_name || 'script.txt',
       sample_script_text: previewSlice,
-      demo_images: work.demoImages || [],
+      demo_images: demoImages,
       updated_at: new Date().toISOString()
     };
 
