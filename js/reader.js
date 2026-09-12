@@ -994,23 +994,113 @@ class ReaderService {
   }
 
   /**
-   * Демо-сцены
+   * Получение ссылки на демо-изображение из интернета для заданной страницы/сцены
    */
-  loadDemoImages() {
-    const work = this.currentWork;
-    const isPreview = !this.isFullMode;
-    const previewLimit = work ? (work.previewPagesCount || 3) : 3;
+  getDemoImageUrl(work, pageIndex, pageKey = '') {
+    if (!work || !work.demoImages) return null;
+    const pageNum = pageIndex + 1; // 1-based номер страницы
 
-    this.pages = [
-      { index: 0, key: 'Title', name: 'Title', entry: { key: 'Title', text: '挟乳海岸\nДемонстрационный режим' }, url: 'assets/demo/page-1.svg', isLocked: false },
-      { index: 1, key: '01_ChichibuHasami', name: '01_ChichibuHasami', entry: { key: '01_ChichibuHasami', text: 'Титибу Хасами\nДемо-описание' }, url: 'assets/demo/page-2.svg', isLocked: false },
-      { index: 2, key: '00-00', name: '00-00', entry: { key: '00-00', text: '(Таюн) Демонстрационная сцена!' }, url: 'assets/demo/page-3.svg', isLocked: false },
-      { index: 3, key: '01-00', name: '01-00', entry: { key: '01-00', text: 'Заблокированная страница' }, url: 'assets/demo/cover-1.svg', isLocked: isPreview && (3 >= previewLimit) }
-    ];
+    if (Array.isArray(work.demoImages)) {
+      // 1. Поиск по точному номеру страницы (1, 2, 3...)
+      const foundByNum = work.demoImages.find(item => {
+        if (!item || !item.url) return false;
+        const p = String(item.page !== undefined ? item.page : (item.num || '')).trim();
+        return p === String(pageNum);
+      });
+      if (foundByNum) return foundByNum.url.trim();
+
+      // 2. Поиск по ключу/имени сцены (Title, 00-00 и т.д.)
+      if (pageKey) {
+        const cleanKey = String(pageKey).split(/[\/\\]/).pop().replace(/\.[^/.]+$/, '').toLowerCase();
+        const foundByKey = work.demoImages.find(item => {
+          if (!item || !item.url) return false;
+          const p = String(item.page !== undefined ? item.page : (item.key || item.name || '')).trim().toLowerCase();
+          return p === cleanKey || p === String(pageKey).toLowerCase();
+        });
+        if (foundByKey) return foundByKey.url.trim();
+      }
+      return null;
+    }
+
+    if (typeof work.demoImages === 'object') {
+      return work.demoImages[pageNum] 
+        || (pageKey && work.demoImages[pageKey]) 
+        || null;
+    }
+
+    if (typeof work.demoImages === 'string') {
+      const lines = work.demoImages.split('\n');
+      for (const line of lines) {
+        const parts = line.split(/[:=](.+)/);
+        if (parts.length >= 2) {
+          const key = parts[0].trim();
+          const url = parts[1].trim();
+          if (key === String(pageNum) || (pageKey && key.toLowerCase() === pageKey.toLowerCase())) {
+            return url;
+          }
+        }
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Демо-сцены: построение страниц по реальному скрипту новеллы с наложением интернет-изображений
+   */
+  async loadDemoImages() {
+    const work = this.currentWork;
+    if (!work) return;
+
+    this.isFullMode = false;
+    const previewLimit = work.previewPagesCount || 3;
+
+    // 1. Получаем и парсим актуальный скрипт этой работы
+    let scriptText = work.sampleScriptText || work.fullScriptText;
+    if (!scriptText || scriptText.startsWith('[STORED_IN_IDB')) {
+      scriptText = await this.store.getSampleScript(work.id);
+    }
+    if (scriptText) {
+      this.parseWorkScript(work, scriptText);
+    }
+
+    const availableLangs = (this.parsedScript && this.parsedScript.languages && this.parsedScript.languages.length > 0)
+      ? this.parsedScript.languages
+      : (work.availableLanguages || ['Русский', 'English']);
+    this.currentLang = this.getPriorityLanguage(availableLangs);
+
+    // 2. Строим структуру страниц точно по скрипту новеллы
+    this.rebuildPagesFromScript();
+
+    // 3. Для каждой страницы превью подставляем привязанную интернет-ссылку
+    if (this.pages && this.pages.length > 0) {
+      this.pages.forEach((p, idx) => {
+        const demoUrl = this.getDemoImageUrl(work, idx, p.key);
+        if (demoUrl) {
+          p.url = demoUrl;
+        } else {
+          // Если для этой страницы ссылка не задана, используем иллюстрацию-заглушку
+          p.url = p.url || (work.coverUrl || `assets/demo/page-${(idx % 3) + 1}.svg`);
+        }
+      });
+    } else {
+      // Резервный список, если скрипт пуст
+      this.pages = [
+        { index: 0, key: 'Title', name: 'Title', entry: { key: 'Title', text: `${work.title?.ru || work.title || 'Демо'}\nДемонстрационный режим` }, url: this.getDemoImageUrl(work, 0) || 'assets/demo/page-1.svg', isLocked: false },
+        { index: 1, key: '01_Scene', name: '01_Scene', entry: { key: '01_Scene', text: 'Демо-сцена превью' }, url: this.getDemoImageUrl(work, 1) || 'assets/demo/page-2.svg', isLocked: false },
+        { index: 2, key: 'Locked', name: 'Locked', entry: { key: 'Locked', text: 'Заблокированная страница' }, url: 'assets/demo/cover-1.svg', isLocked: true }
+      ];
+    }
 
     this.currentIndex = 0;
     this.currentDialogBlockIndex = 0;
     this.renderReaderUI();
+
+    const isEn = window.i18n && window.i18n.getLang() === 'en';
+    window.app?.showToast(
+      isEn ? '💡 Loaded interactive demo preview' : '💡 Загружено интерактивное превью с демо-сценами',
+      'info'
+    );
   }
 
   /**
@@ -1646,6 +1736,9 @@ class ReaderService {
         } catch (e) {
           console.warn('Резервная конвертация в base64 не удалась:', e);
         }
+      } else if (page.url && page.url.startsWith('http')) {
+        console.warn('Не удалось загрузить внешнее изображение:', page.url);
+        baseImg.src = 'assets/demo/cover-1.svg';
       }
     };
 

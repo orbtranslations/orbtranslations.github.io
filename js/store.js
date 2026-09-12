@@ -269,6 +269,7 @@ class Store {
             scriptFileName: w.script_file_name || 'script.txt',
             sampleScriptText: w.sample_script_text || '',
             fullScriptText: (existing && existing.fullScriptText) ? existing.fullScriptText : null,
+            demoImages: w.demo_images || (existing ? existing.demoImages : []) || [],
             createdAt: w.created_at ? w.created_at.split('T')[0] : '2026-09-01'
           };
         });
@@ -838,6 +839,7 @@ The fate of the kingdom is now in your hands.
       scriptFileName: workData.scriptFileName || 'script.txt',
       sampleScriptText: previewSlice,
       fullScriptText: fullScript,
+      demoImages: workData.demoImages || [],
       createdAt: new Date().toISOString().split('T')[0]
     };
 
@@ -888,6 +890,7 @@ The fate of the kingdom is now in your hands.
       previewPagesCount: previewPagesCount,
       tags: updatedData.tags !== undefined ? updatedData.tags : current.tags,
       coverUrl: updatedData.coverUrl !== undefined ? updatedData.coverUrl : (current.coverUrl || 'assets/demo/cover-1.svg'),
+      demoImages: updatedData.demoImages !== undefined ? updatedData.demoImages : (current.demoImages || []),
       sampleScriptText: previewSlice,
       fullScriptText: fullScript,
       updatedAt: new Date().toISOString().split('T')[0]
@@ -949,14 +952,23 @@ The fate of the kingdom is now in your hands.
       available_languages: work.availableLanguages || ['Русский', 'English'],
       script_file_name: work.scriptFileName || 'script.txt',
       sample_script_text: previewSlice,
+      demo_images: work.demoImages || [],
       updated_at: new Date().toISOString()
     };
 
     try {
       // 1. Сохранение метаданных и публичной превью-выжимки в public.works
-      const { error: worksErr } = await window.supabaseClient
+      let { error: worksErr } = await window.supabaseClient
         .from('works')
         .upsert(dbPayload);
+
+      if (worksErr && dbPayload.demo_images) {
+        // Резервная попытка без demo_images, если колонка в Supabase еще не создана
+        const fallbackPayload = { ...dbPayload };
+        delete fallbackPayload.demo_images;
+        const res2 = await window.supabaseClient.from('works').upsert(fallbackPayload);
+        worksErr = res2.error;
+      }
 
       if (worksErr) {
         console.error('Ошибка сохранения работы в public.works:', worksErr);

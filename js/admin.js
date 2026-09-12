@@ -18,6 +18,7 @@ class AdminService {
     this.renderWorksTable();
     this.renderUsersTable();
     this.loadXpubSettings();
+    this.renderDemoImageRows([]);
   }
 
   bindEvents() {
@@ -254,6 +255,9 @@ class AdminService {
     if (coverUrlInput) coverUrlInput.value = work.coverUrl || '';
     this.updateCoverPreview(work.coverUrl || '');
 
+    // Заполнение строк демо-изображений
+    this.renderDemoImageRows(work.demoImages || []);
+
     // Загрузка полного скрипта (из памяти или закрытой таблицы Supabase work_scripts)
     const scriptTextarea = document.getElementById('admin-script-text');
     scriptTextarea.value = '⏳ Загрузка полного скрипта...';
@@ -315,6 +319,9 @@ class AdminService {
     if (coverFileInput) coverFileInput.value = '';
     this.updateCoverPreview('');
 
+    // Сброс строк демо-изображений
+    this.renderDemoImageRows([]);
+
     const displayEl = document.getElementById('admin-total-pages-display');
     const hiddenInput = document.getElementById('admin-work-total-pages');
     if (displayEl) displayEl.textContent = '4';
@@ -364,6 +371,7 @@ class AdminService {
     const totalPages = this.calculateTotalPagesFromScript(sampleScriptText);
     const previewPagesCount = Number(document.getElementById('admin-preview-pages-num').value) || 3;
     const tags = tagsRaw ? tagsRaw.split(',').map(t => t.trim()).filter(Boolean) : [isEn ? 'Translation' : 'Перевод'];
+    const demoImages = this.getDemoImagesFromForm();
 
     const payload = {
       title: {
@@ -380,6 +388,7 @@ class AdminService {
       previewPagesCount: Math.min(totalPages, Math.max(1, previewPagesCount)),
       tags,
       coverUrl: coverUrl || 'assets/demo/cover-1.svg',
+      demoImages,
       sampleScriptText
     };
 
@@ -877,6 +886,89 @@ class AdminService {
       console.error('Ошибка очистки сделок:', err);
       window.app.showToast(isEn ? 'Failed to clear deals' : 'Не удалось очистить историю сделок', 'error');
     }
+  }
+
+  /**
+   * Добавление строки привязки веб-изображения к номеру страницы превью
+   */
+  addDemoImageRow(page = '', url = '') {
+    const container = document.getElementById('admin-demo-images-container');
+    if (!container) return;
+
+    const row = document.createElement('div');
+    row.className = 'demo-image-row';
+    row.style.cssText = 'display: flex; gap: 8px; align-items: center; background: rgba(255, 255, 255, 0.02); padding: 6px 10px; border-radius: var(--radius-sm); border: 1px solid rgba(255, 255, 255, 0.05);';
+
+    const isEn = window.i18n && window.i18n.getLang() === 'en';
+    const pagePlaceholder = window.i18n ? window.i18n.t('admin_demo_page_placeholder') : 'Стр. № (1, 2...)';
+    const urlPlaceholder = window.i18n ? window.i18n.t('admin_demo_url_placeholder') : 'https://... прямая ссылка на изображение';
+
+    row.innerHTML = `
+      <span style="font-size: 0.8rem; color: var(--text-muted); white-space: nowrap;">📄 ${isEn ? 'Page #' : 'Стр. №'}:</span>
+      <input type="text" class="input-styled demo-page-num" style="width: 80px; text-align: center; padding: 4px 8px; font-size: 0.82rem;" placeholder="${pagePlaceholder}" value="${page || ''}">
+      <span style="font-size: 0.8rem; color: var(--text-muted); white-space: nowrap;">🌐 URL:</span>
+      <input type="text" class="input-styled demo-image-url" style="flex: 1; padding: 4px 10px; font-size: 0.82rem;" placeholder="${urlPlaceholder}" value="${url || ''}">
+      <button type="button" class="btn btn-secondary btn-small" style="padding: 4px 8px; color: var(--accent-danger);" onclick="this.closest('.demo-image-row').remove()" title="${isEn ? 'Remove' : 'Удалить'}">🗑️</button>
+    `;
+
+    container.appendChild(row);
+  }
+
+  /**
+   * Отрисовка всех строк демо-изображений
+   */
+  renderDemoImageRows(demoImages = []) {
+    const container = document.getElementById('admin-demo-images-container');
+    if (!container) return;
+    container.innerHTML = '';
+
+    if (Array.isArray(demoImages) && demoImages.length > 0) {
+      demoImages.forEach(item => {
+        if (item) {
+          const page = item.page !== undefined ? item.page : (item.num || '');
+          const url = item.url || '';
+          this.addDemoImageRow(page, url);
+        }
+      });
+    } else if (typeof demoImages === 'object' && demoImages !== null && Object.keys(demoImages).length > 0) {
+      Object.entries(demoImages).forEach(([page, url]) => {
+        this.addDemoImageRow(page, url);
+      });
+    } else {
+      // По умолчанию создаем 3 пустые строки для удобства (стр. 1, 2, 3)
+      this.addDemoImageRow('1', '');
+      this.addDemoImageRow('2', '');
+      this.addDemoImageRow('3', '');
+    }
+  }
+
+  /**
+   * Сбор списка демо-изображений из полей формы
+   */
+  getDemoImagesFromForm() {
+    const container = document.getElementById('admin-demo-images-container');
+    if (!container) return [];
+
+    const rows = container.querySelectorAll('.demo-image-row');
+    const result = [];
+
+    rows.forEach((row, idx) => {
+      const pageInput = row.querySelector('.demo-page-num');
+      const urlInput = row.querySelector('.demo-image-url');
+
+      const rawPage = pageInput ? pageInput.value.trim() : '';
+      const url = urlInput ? urlInput.value.trim() : '';
+
+      if (url) {
+        const pageNum = rawPage ? (isNaN(Number(rawPage)) ? rawPage : Number(rawPage)) : (idx + 1);
+        result.push({
+          page: pageNum,
+          url: url
+        });
+      }
+    });
+
+    return result;
   }
 }
 

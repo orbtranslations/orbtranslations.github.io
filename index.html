@@ -251,6 +251,25 @@
               </div>
             </div>
 
+            <!-- Demo Preview Images (Ссылки на изображения сцен в интернете) -->
+            <div style="margin-bottom: 1.25rem; background: rgba(0, 0, 0, 0.2); padding: 1rem; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+              <label style="font-size: 0.88rem; font-weight: 600; display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                <span data-i18n="admin_demo_images_label">🌐 Демо-изображения для превью (Ссылки в интернете)</span>
+                <span class="badge badge-glass" style="font-size: 0.75rem; color: var(--accent-secondary);" data-i18n="admin_demo_images_badge">Для чтения без архива</span>
+              </label>
+              <p style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 0.75rem;" data-i18n="admin_demo_images_hint">
+                Укажите соответствие: номер страницы превью (1, 2, 3...) или имя сцены и прямую ссылку на изображение в сети. Скрипт читалки наложит текст, оверлеи и диалоги прямо поверх этих изображений!
+              </p>
+              
+              <div id="admin-demo-images-container" style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px;">
+                <!-- Динамические строки demo images -->
+              </div>
+
+              <button type="button" class="btn btn-secondary btn-small" id="admin-add-demo-image-btn" onclick="window.admin.addDemoImageRow()">
+                <span data-i18n="admin_add_demo_image">➕ Добавить ссылку на сцену</span>
+              </button>
+            </div>
+
             <!-- Translation Script Upload -->
             <div style="margin-bottom: 1.5rem; background: rgba(0, 0, 0, 0.25); padding: 1rem; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
               <label style="font-size: 0.9rem; font-weight: 600; display: block; margin-bottom: 6px;" data-i18n="admin_script_label">📄 Translation Script (.txt)</label>
@@ -863,15 +882,15 @@
        Application JavaScript Modules
        ======================================================================== -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="js/supabase-client.js?v=3.3.8"></script>
-  <script src="js/store.js?v=3.3.8"></script>
-  <script src="js/i18n.js?v=3.3.8"></script>
-  <script src="js/script-parser.js?v=3.3.8"></script>
-  <script src="js/auth.js?v=3.3.8"></script>
-  <script src="js/qrcode.min.js?v=3.3.8"></script>
-  <script src="js/crypto-pay.js?v=3.3.8"></script>
-  <script src="js/reader.js?v=3.3.8"></script>
-  <script src="js/admin.js?v=3.3.8"></script>
-  <script src="js/app.js?v=3.3.8"></script>
+  <script src="js/supabase-client.js?v=3.3.9"></script>
+  <script src="js/store.js?v=3.3.9"></script>
+  <script src="js/i18n.js?v=3.3.9"></script>
+  <script src="js/script-parser.js?v=3.3.9"></script>
+  <script src="js/auth.js?v=3.3.9"></script>
+  <script src="js/qrcode.min.js?v=3.3.9"></script>
+  <script src="js/crypto-pay.js?v=3.3.9"></script>
+  <script src="js/reader.js?v=3.3.9"></script>
+  <script src="js/admin.js?v=3.3.9"></script>
+  <script src="js/app.js?v=3.3.9"></script>
 </body>
 </html>

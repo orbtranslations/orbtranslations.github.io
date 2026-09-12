@@ -30,9 +30,13 @@ CREATE TABLE IF NOT EXISTS public.works (
   available_languages TEXT[],
   script_file_name TEXT,
   sample_script_text TEXT,
+  demo_images JSONB DEFAULT '[]'::jsonb,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Миграция для добавления demo_images в существующую таблицу
+ALTER TABLE public.works ADD COLUMN IF NOT EXISTS demo_images JSONB DEFAULT '[]'::jsonb;
 
 -- 2.1. Защищенная таблица полных скриптов перевода (доступна только покупателям и администраторам)
 CREATE TABLE IF NOT EXISTS public.work_scripts (
