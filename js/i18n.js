@@ -177,6 +177,7 @@ class I18nManager {
         modal_archive_pick_folder: '📂 Выбрать папку с графикой',
         modal_archive_no_file: 'Нет под рукой оригинального архива?',
         modal_archive_demo_btn: '💡 Использовать демо-сцены',
+        modal_archive_warning: '⚠️ Важно: скрипт перевода работает только с оригинальными, непереименованными изображениями (сохраняйте исходные имена файлов).',
         modal_archive_remember: '💾 Запомнить на этом устройстве (не выбирать повторно при F5)',
         modal_archive_forget_btn: '🗑 Забыть',
 
@@ -516,6 +517,7 @@ class I18nManager {
         modal_archive_pick_folder: '📂 Select Graphics Folder',
         modal_archive_no_file: 'Do not have the original archive handy?',
         modal_archive_demo_btn: '💡 Use Built-in Demo Scenes',
+        modal_archive_warning: '⚠️ Notice: The translation script only works with original, unrenamed images (please keep the original filenames).',
         modal_archive_remember: '💾 Remember on this device (auto-load on refresh / F5)',
         modal_archive_forget_btn: '🗑 Forget',
 

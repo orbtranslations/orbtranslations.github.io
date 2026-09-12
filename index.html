@@ -886,8 +886,14 @@
           <input type="file" id="archive-file-input" accept=".zip,.cbz" style="display: none;">
           <input type="file" id="archive-folder-input" webkitdirectory directory style="display: none;">
 
+          <!-- Warning Notice: original unrenamed images -->
+          <div style="margin-top: 1rem; padding: 0.65rem 0.95rem; background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: var(--radius-sm); font-size: 0.78rem; color: #fcd34d; text-align: left; display: flex; align-items: center; gap: 8px; line-height: 1.45;">
+            <span style="font-size: 1.15rem; flex-shrink: 0;">⚠️</span>
+            <span id="archive-modal-warning" data-i18n="modal_archive_warning">Важно: скрипт перевода работает только с оригинальными, непереименованными изображениями (сохраняйте исходные имена файлов).</span>
+          </div>
+
           <!-- Remember on this device checkbox -->
-          <div style="margin-top: 1.1rem; padding-top: 0.85rem; border-top: 1px dashed rgba(255, 255, 255, 0.1); display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 0.82rem; color: var(--text-secondary);">
+          <div style="margin-top: 0.85rem; padding-top: 0.85rem; border-top: 1px dashed rgba(255, 255, 255, 0.1); display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 0.82rem; color: var(--text-secondary);">
             <input type="checkbox" id="archive-remember-checkbox" checked style="cursor: pointer; width: 16px; height: 16px; accent-color: var(--accent-primary);">
             <label for="archive-remember-checkbox" style="cursor: pointer; user-select: none;" data-i18n="modal_archive_remember">
               💾 Запомнить на этом устройстве (не выбирать повторно при F5)
@@ -1039,15 +1045,15 @@
        Application JavaScript Modules
        ======================================================================== -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="js/supabase-client.js?v=3.4.5"></script>
-  <script src="js/store.js?v=3.4.5"></script>
-  <script src="js/i18n.js?v=3.4.5"></script>
-  <script src="js/script-parser.js?v=3.4.5"></script>
-  <script src="js/auth.js?v=3.4.5"></script>
-  <script src="js/qrcode.min.js?v=3.4.5"></script>
-  <script src="js/crypto-pay.js?v=3.4.5"></script>
-  <script src="js/reader.js?v=3.4.5"></script>
-  <script src="js/admin.js?v=3.4.5"></script>
-  <script src="js/app.js?v=3.4.5"></script>
+  <script src="js/supabase-client.js?v=3.4.6"></script>
+  <script src="js/store.js?v=3.4.6"></script>
+  <script src="js/i18n.js?v=3.4.6"></script>
+  <script src="js/script-parser.js?v=3.4.6"></script>
+  <script src="js/auth.js?v=3.4.6"></script>
+  <script src="js/qrcode.min.js?v=3.4.6"></script>
+  <script src="js/crypto-pay.js?v=3.4.6"></script>
+  <script src="js/reader.js?v=3.4.6"></script>
+  <script src="js/admin.js?v=3.4.6"></script>
+  <script src="js/app.js?v=3.4.6"></script>
 </body>
 </html>

@@ -1464,6 +1464,13 @@ class App {
         : `Вы приобрели доступ к переводу. Чтобы начать чтение новеллы с полным наложением текста, выберите официальный архив (.zip) или папку с графикой.`;
     }
 
+    const warnEl = document.getElementById('archive-modal-warning');
+    if (warnEl && window.i18n) {
+      warnEl.textContent = window.i18n.t('modal_archive_warning') || (isEn
+        ? 'Notice: The translation script only works with original, unrenamed images (please keep the original filenames).'
+        : 'Важно: скрипт перевода работает только с оригинальными, непереименованными изображениями (сохраняйте исходные имена файлов).');
+    }
+
     // Проверяем наличие сохраненного в IndexedDB архива или дескриптора папки
     const saved = savedInfo !== null ? savedInfo : (typeof IDBStorage !== 'undefined' ? await IDBStorage.getClientArchive(work.id) : null);
     this.activeSavedInfo = saved;
