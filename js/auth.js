@@ -40,40 +40,8 @@ class AuthManager {
         this.notify();
       });
 
-      // 3. Автоматическая подготовка аккаунта администратора GraveAdmin
-      this.ensureAdminAccount();
     } catch (e) {
       console.warn('Ошибка при инициализации Supabase Auth:', e);
-    }
-  }
-
-  /**
-   * Проверка и предварительное создание аккаунта администратора в Supabase
-   */
-  async ensureAdminAccount() {
-    if (!window.supabaseClient) return;
-    try {
-      const adminEmail = 'ismayilovelchin1984@gmail.com';
-      const adminPass = 'ZlY263ws31Th5FMZ';
-      const adminName = 'GraveAdmin';
-
-      const { data, error } = await window.supabaseClient.auth.signUp({
-        email: adminEmail,
-        password: adminPass,
-        options: {
-          data: { name: adminName }
-        }
-      });
-
-      if (data && data.user) {
-        // Назначаем роль admin в таблице public.profiles
-        await window.supabaseClient
-          .from('profiles')
-          .update({ role: 'admin', name: adminName })
-          .eq('id', data.user.id);
-      }
-    } catch (e) {
-      // Если аккаунт уже создан — пропускаем
     }
   }
 
@@ -124,15 +92,6 @@ class AuthManager {
       
       const role = isAdminEmail ? 'admin' : ((profile && profile.role) || defaultRole);
       this.store.setRole(role);
-
-      // Если в базе еще не была проставлена роль admin для главного email
-      if (isAdminEmail && profile && profile.role !== 'admin') {
-        window.supabaseClient
-          .from('profiles')
-          .update({ role: 'admin', name: 'GraveAdmin' })
-          .eq('id', sbUser.id)
-          .then(() => {});
-      }
 
       // 3. Загружаем купленные работы пользователя из public.purchases
       if (window.supabaseClient && sbUser && sbUser.id) {

@@ -513,7 +513,7 @@ class Store {
     return this.data.currentUser.orbs;
   }
 
-  purchaseWork(workId) {
+  async purchaseWork(workId) {
     const work = this.getWorkById(workId);
     if (!work) return { success: false, message: 'Работа не найдена' };
 
@@ -524,15 +524,59 @@ class Store {
     const currentOrbs = Math.floor(Number(this.data.currentUser.orbs || 0));
     const workPrice = Math.floor(Number(work.price || 1));
 
-    if (currentOrbs < workPrice) {
-      return {
-        success: false,
-        needOrbs: Math.max(0, workPrice - currentOrbs),
-        message: 'Недостаточно Орбов для покупки'
-      };
+    // Если авторизован в Supabase — вызываем безопасную серверную функцию buy_work
+    const isSupabaseUser = window.supabaseClient && 
+      this.data.currentUser.id && 
+      this.data.currentUser.id !== 'guest' && 
+      !this.data.currentUser.id.startsWith('usr_');
+
+    if (isSupabaseUser) {
+      try {
+        const { data: rpcRes, error: rpcErr } = await window.supabaseClient.rpc('buy_work', {
+          p_work_id: workId
+        });
+
+        if (rpcErr) {
+          console.warn('RPC buy_work error:', rpcErr);
+          return {
+            success: false,
+            message: rpcErr.message || 'Ошибка выполнения транзакции покупки'
+          };
+        }
+
+        if (!rpcRes || !rpcRes.success) {
+          return {
+            success: false,
+            needOrbs: rpcRes ? rpcRes.need_orbs : Math.max(0, workPrice - currentOrbs),
+            message: rpcRes ? rpcRes.message : 'Недостаточно Орбов для покупки'
+          };
+        }
+
+        // Сервер успешно списал баланс и добавил покупку
+        if (rpcRes.new_balance !== undefined) {
+          this.data.currentUser.orbs = Math.floor(Number(rpcRes.new_balance));
+        } else {
+          this.data.currentUser.orbs = Math.max(0, currentOrbs - workPrice);
+        }
+      } catch (err) {
+        console.warn('Ошибка при вызове серверной процедуры buy_work:', err);
+        return {
+          success: false,
+          message: err.message || 'Ошибка при проведении покупки'
+        };
+      }
+    } else {
+      // Оффлайн / демо режим
+      if (currentOrbs < workPrice) {
+        return {
+          success: false,
+          needOrbs: Math.max(0, workPrice - currentOrbs),
+          message: 'Недостаточно Орбов для покупки'
+        };
+      }
+      this.data.currentUser.orbs = Math.max(0, currentOrbs - workPrice);
     }
 
-    this.data.currentUser.orbs = Math.max(0, currentOrbs - workPrice);
     if (!this.data.currentUser.purchasedWorks.includes(workId)) {
       this.data.currentUser.purchasedWorks.push(workId);
     }
@@ -565,24 +609,6 @@ class Store {
       type: 'purchase'
     });
     this.saveToStorage();
-
-    // Синхронизация покупки и баланса с Supabase
-    if (window.supabaseClient && this.data.currentUser.id && this.data.currentUser.id !== 'guest' && !this.data.currentUser.id.startsWith('usr_')) {
-      window.supabaseClient
-        .from('purchases')
-        .insert({
-          user_id: this.data.currentUser.id,
-          work_id: workId,
-          price_paid: work.price
-        })
-        .then(() => {
-          return window.supabaseClient
-            .from('profiles')
-            .update({ orbs: this.data.currentUser.orbs, updated_at: new Date().toISOString() })
-            .eq('id', this.data.currentUser.id);
-        })
-        .catch(err => console.warn('Ошибка сохранения покупки в Supabase:', err));
-    }
 
     return { success: true, newBalance: this.data.currentUser.orbs };
   }

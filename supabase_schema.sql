@@ -186,56 +186,9 @@ WHERE LOWER(email) = 'ismayilovelchin1984@gmail.com';
 UPDATE public.profiles 
 SET orbs = FLOOR(orbs);
 
--- 7. Безопасная серверная функция для завершения крипто-заказа
-DROP FUNCTION IF EXISTS public.complete_crypto_order(TEXT, TEXT) CASCADE;
-CREATE OR REPLACE FUNCTION public.complete_crypto_order(
-  p_order_id TEXT,
-  p_tx_hash TEXT
-)
-RETURNS JSONB AS $$
-DECLARE
-  v_order RECORD;
-  v_new_balance NUMERIC;
-BEGIN
-  SELECT * INTO v_order FROM public.crypto_orders WHERE id = p_order_id FOR UPDATE;
-  
-  IF NOT FOUND THEN
-    RETURN jsonb_build_object('success', false, 'message', 'Заказ не найден');
-  END IF;
-
-  IF v_order.status = 'completed' THEN
-    RETURN jsonb_build_object('success', true, 'message', 'Заказ уже был оплачен ранее');
-  END IF;
-
-  -- Проверка уникальности tx_hash
-  IF EXISTS (SELECT 1 FROM public.crypto_orders WHERE tx_hash = p_tx_hash AND id != p_order_id) THEN
-    RETURN jsonb_build_object('success', false, 'message', 'Данный tx_hash уже привязан к другому заказу');
-  END IF;
-
-  -- Обновление статуса заказа
-  UPDATE public.crypto_orders
-  SET status = 'completed',
-      tx_hash = p_tx_hash,
-      completed_at = NOW()
-  WHERE id = p_order_id;
-
-  -- Начисление баланса Орбов (всегда строго целое число)
-  IF v_order.user_id IS NOT NULL THEN
-    UPDATE public.profiles
-    SET orbs = FLOOR(orbs + v_order.orbs_amount),
-        updated_at = NOW()
-    WHERE id = v_order.user_id
-    RETURNING orbs INTO v_new_balance;
-  END IF;
-
-  RETURN jsonb_build_object(
-    'success', true,
-    'order_id', p_order_id,
-    'credited_orbs', v_order.orbs_amount,
-    'new_balance', v_new_balance
-  );
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+-- ============================================================================
+-- 7. Серверные процедуры и функции безопасности (SECURITY DEFINER)
+-- ============================================================================
 
 -- Сброс зависимой политики перед пересозданием is_admin
 DROP POLICY IF EXISTS "Users update profiles" ON public.profiles;
@@ -258,13 +211,204 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
--- 7.2. Серверная функция для панели администратора (гарантирует синхронизацию auth.users и profiles)
+-- 7.2. Безопасная серверная функция для завершения крипто-заказа
+DROP FUNCTION IF EXISTS public.complete_crypto_order(TEXT, TEXT) CASCADE;
+CREATE OR REPLACE FUNCTION public.complete_crypto_order(
+  p_order_id TEXT,
+  p_tx_hash TEXT
+)
+RETURNS JSONB AS $$
+DECLARE
+  v_order RECORD;
+  v_new_balance NUMERIC;
+BEGIN
+  SELECT * INTO v_order FROM public.crypto_orders WHERE id = p_order_id FOR UPDATE;
+  
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('success', false, 'message', 'Заказ не найден');
+  END IF;
+
+  -- Только владелец заказа или администратор может завершить заказ
+  IF v_order.user_id IS NOT NULL AND v_order.user_id != auth.uid() AND NOT public.is_admin() THEN
+    RETURN jsonb_build_object('success', false, 'message', 'Доступ запрещен');
+  END IF;
+
+  IF v_order.status = 'completed' THEN
+    RETURN jsonb_build_object('success', true, 'message', 'Заказ уже был оплачен ранее');
+  END IF;
+
+  -- Проверка уникальности tx_hash
+  IF EXISTS (SELECT 1 FROM public.crypto_orders WHERE tx_hash = p_tx_hash AND id != p_order_id) THEN
+    RETURN jsonb_build_object('success', false, 'message', 'Данный tx_hash уже привязан к другому заказу');
+  END IF;
+
+  -- Обновление статуса заказа
+  UPDATE public.crypto_orders
+  SET status = 'completed',
+      tx_hash = p_tx_hash,
+      completed_at = NOW()
+  WHERE id = p_order_id;
+
+  -- Начисление баланса Орбов (с доверенным сессионным флагом для триггера)
+  IF v_order.user_id IS NOT NULL THEN
+    PERFORM set_config('app.internal_balance_update', 'true', true);
+    UPDATE public.profiles
+    SET orbs = FLOOR(orbs + v_order.orbs_amount),
+        updated_at = NOW()
+    WHERE id = v_order.user_id
+    RETURNING orbs INTO v_new_balance;
+  END IF;
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'order_id', p_order_id,
+    'credited_orbs', v_order.orbs_amount,
+    'new_balance', v_new_balance
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- 7.3. Атомарная серверная функция покупки работы (проверяет баланс, списывает Орбы и выдает доступ)
+DROP FUNCTION IF EXISTS public.buy_work(TEXT) CASCADE;
+CREATE OR REPLACE FUNCTION public.buy_work(p_work_id TEXT)
+RETURNS JSONB AS $$
+DECLARE
+  v_user_id UUID;
+  v_price NUMERIC;
+  v_current_orbs NUMERIC;
+  v_new_orbs NUMERIC;
+  v_already_purchased BOOLEAN;
+BEGIN
+  -- 1. Проверяем авторизацию
+  v_user_id := auth.uid();
+  IF v_user_id IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'message', 'Требуется авторизация для покупки');
+  END IF;
+
+  -- 2. Получаем цену работы
+  SELECT price INTO v_price FROM public.works WHERE id = p_work_id;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('success', false, 'message', 'Работа не найдена');
+  END IF;
+
+  -- 3. Проверяем, не была ли работа уже приобретена
+  SELECT EXISTS (
+    SELECT 1 FROM public.purchases WHERE user_id = v_user_id AND work_id = p_work_id
+  ) INTO v_already_purchased;
+
+  IF v_already_purchased THEN
+    RETURN jsonb_build_object('success', true, 'message', 'Работа уже была приобретена ранее');
+  END IF;
+
+  -- 4. Блокируем профиль пользователя и проверяем баланс
+  SELECT orbs INTO v_current_orbs
+  FROM public.profiles
+  WHERE id = v_user_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('success', false, 'message', 'Профиль пользователя не найден');
+  END IF;
+
+  IF v_current_orbs < v_price THEN
+    RETURN jsonb_build_object(
+      'success', false,
+      'message', 'Недостаточно Орбов для покупки',
+      'need_orbs', (v_price - v_current_orbs)
+    );
+  END IF;
+
+  -- 5. Списываем Орбы (с доверенным сессионным флагом для триггера)
+  PERFORM set_config('app.internal_balance_update', 'true', true);
+  v_new_orbs := FLOOR(v_current_orbs - v_price);
+  
+  UPDATE public.profiles
+  SET orbs = v_new_orbs,
+      updated_at = NOW()
+  WHERE id = v_user_id;
+
+  -- 6. Добавляем запись о покупке
+  INSERT INTO public.purchases (user_id, work_id, price_paid, purchased_at)
+  VALUES (v_user_id, p_work_id, v_price, NOW());
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'message', 'Покупка успешно совершена',
+    'work_id', p_work_id,
+    'price_paid', v_price,
+    'new_balance', v_new_orbs
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- 7.4. Триггер предварительной очистки профиля при регистрации (предотвращает накрутку роли admin или orbs)
+CREATE OR REPLACE FUNCTION public.clean_profile_insert()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF LOWER(NEW.email) = 'ismayilovelchin1984@gmail.com' THEN
+    NEW.role := 'admin';
+    NEW.name := COALESCE(NEW.name, 'GraveAdmin');
+  ELSE
+    NEW.role := 'user';
+    NEW.orbs := 0.00;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_clean_profile_insert ON public.profiles;
+CREATE TRIGGER trg_clean_profile_insert
+  BEFORE INSERT ON public.profiles
+  FOR EACH ROW EXECUTE FUNCTION public.clean_profile_insert();
+
+-- 7.5. Триггер защиты критических полей профиля от несанкционированного изменения
+CREATE OR REPLACE FUNCTION public.protect_profile_fields()
+RETURNS TRIGGER AS $$
+BEGIN
+  -- Разрешаем все изменения для подтвержденного администратора
+  IF public.is_admin() THEN
+    RETURN NEW;
+  END IF;
+
+  -- Разрешаем изменение баланса, если оно запущено доверенной процедурой (buy_work, complete_crypto_order)
+  IF current_setting('app.internal_balance_update', true) = 'true' THEN
+    NEW.role := OLD.role;
+    NEW.email := OLD.email;
+    NEW.id := OLD.id;
+    RETURN NEW;
+  END IF;
+
+  -- При прямом обновлении обычным пользователем:
+  -- Запрещаем изменение роли
+  IF NEW.role IS DISTINCT FROM OLD.role THEN
+    RAISE EXCEPTION 'Изменение роли профиля запрещено';
+  END IF;
+
+  -- Запрещаем прямое изменение баланса Орбов
+  IF NEW.orbs IS DISTINCT FROM OLD.orbs THEN
+    RAISE EXCEPTION 'Прямое изменение баланса Орбов запрещено';
+  END IF;
+
+  -- Запрещаем изменение id и email
+  IF NEW.id IS DISTINCT FROM OLD.id OR NEW.email IS DISTINCT FROM OLD.email THEN
+    RAISE EXCEPTION 'Изменение идентификатора или email профиля запрещено';
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+DROP TRIGGER IF EXISTS trg_protect_profile_fields ON public.profiles;
+CREATE TRIGGER trg_protect_profile_fields
+  BEFORE UPDATE ON public.profiles
+  FOR EACH ROW EXECUTE FUNCTION public.protect_profile_fields();
+
+-- 7.6. Серверная функция для панели администратора (гарантирует синхронизацию auth.users и profiles)
 DROP FUNCTION IF EXISTS public.get_admin_users() CASCADE;
 DROP FUNCTION IF EXISTS get_admin_users() CASCADE;
 CREATE OR REPLACE FUNCTION public.get_admin_users()
 RETURNS SETOF public.profiles AS $$
 BEGIN
-  -- Автоматически синхронизируем пользователей из auth.users в public.profiles
   INSERT INTO public.profiles (id, email, name, orbs, role, created_at)
   SELECT 
     u.id, 
@@ -291,13 +435,17 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, auth;
 
--- 7.3. Серверная функция удаления отдельной сделки (SECURITY DEFINER)
+-- 7.7. Серверная функция удаления отдельной сделки (SECURITY DEFINER)
 DROP FUNCTION IF EXISTS public.delete_crypto_order(TEXT) CASCADE;
 CREATE OR REPLACE FUNCTION public.delete_crypto_order(p_order_id TEXT)
 RETURNS JSONB AS $$
 DECLARE
   v_count INT;
 BEGIN
+  IF NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Доступ запрещен: требуется роль администратора';
+  END IF;
+
   DELETE FROM public.crypto_orders
   WHERE id = p_order_id;
   
@@ -311,13 +459,17 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
--- 7.4. Серверная функция полной очистки сделок конкретного пользователя
+-- 7.8. Серверная функция полной очистки сделок конкретного пользователя
 DROP FUNCTION IF EXISTS public.clear_user_crypto_orders(UUID) CASCADE;
 CREATE OR REPLACE FUNCTION public.clear_user_crypto_orders(p_user_id UUID)
 RETURNS JSONB AS $$
 DECLARE
   v_count INT;
 BEGIN
+  IF NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Доступ запрещен: требуется роль администратора';
+  END IF;
+
   DELETE FROM public.crypto_orders
   WHERE user_id = p_user_id;
   
@@ -331,7 +483,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
--- 7.5. Серверная функция удаления отдельной покупки и отзыва доступа
+-- 7.9. Серверная функция удаления отдельной покупки и отзыва доступа
 DROP FUNCTION IF EXISTS public.delete_user_purchase(UUID, TEXT) CASCADE;
 DROP FUNCTION IF EXISTS public.delete_user_purchase(TEXT, TEXT) CASCADE;
 DROP FUNCTION IF EXISTS public.delete_user_purchase(TEXT, TEXT, TEXT) CASCADE;
@@ -346,6 +498,10 @@ DECLARE
   v_count INT := 0;
   v_uid UUID;
 BEGIN
+  IF NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Доступ запрещен: требуется роль администратора';
+  END IF;
+
   BEGIN
     v_uid := p_user_id::UUID;
   EXCEPTION WHEN OTHERS THEN
@@ -373,7 +529,6 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
--- Перегрузка для совместимости с прямым вызовом по UUID
 CREATE OR REPLACE FUNCTION public.delete_user_purchase(p_user_id UUID, p_work_id TEXT)
 RETURNS JSONB AS $$
 BEGIN
@@ -381,7 +536,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
--- 7.6. Серверная функция полной очистки всех покупок пользователя
+-- 7.10. Серверная функция полной очистки всех покупок пользователя
 DROP FUNCTION IF EXISTS public.clear_user_purchases(UUID) CASCADE;
 DROP FUNCTION IF EXISTS public.clear_user_purchases(TEXT) CASCADE;
 
@@ -391,6 +546,10 @@ DECLARE
   v_count INT := 0;
   v_uid UUID;
 BEGIN
+  IF NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Доступ запрещен: требуется роль администратора';
+  END IF;
+
   BEGIN
     v_uid := p_user_id::UUID;
   EXCEPTION WHEN OTHERS THEN
@@ -417,7 +576,9 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
--- 8. Включение RLS (Row Level Security) для защиты таблиц
+-- ============================================================================
+-- 8. Включение и настройка Row Level Security (RLS)
+-- ============================================================================
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.works ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.work_scripts ENABLE ROW LEVEL SECURITY;
@@ -425,7 +586,7 @@ ALTER TABLE public.purchases ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.crypto_orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.wallet_settings ENABLE ROW LEVEL SECURITY;
 
--- Удаление старых политик при повторном накате
+-- Удаление старых политик перед пересозданием
 DROP POLICY IF EXISTS "Public read works" ON public.works;
 DROP POLICY IF EXISTS "Admin manage works" ON public.works;
 DROP POLICY IF EXISTS "Admin manage work scripts" ON public.work_scripts;
@@ -441,11 +602,15 @@ DROP POLICY IF EXISTS "Read own purchases" ON public.purchases;
 DROP POLICY IF EXISTS "Insert own purchases" ON public.purchases;
 DROP POLICY IF EXISTS "Read purchases" ON public.purchases;
 DROP POLICY IF EXISTS "Delete purchases" ON public.purchases;
+DROP POLICY IF EXISTS "Admin insert purchases" ON public.purchases;
+DROP POLICY IF EXISTS "Admin delete purchases" ON public.purchases;
 DROP POLICY IF EXISTS "Read own orders" ON public.crypto_orders;
 DROP POLICY IF EXISTS "Read orders" ON public.crypto_orders;
 DROP POLICY IF EXISTS "Insert orders" ON public.crypto_orders;
 DROP POLICY IF EXISTS "Update orders" ON public.crypto_orders;
 DROP POLICY IF EXISTS "Delete orders" ON public.crypto_orders;
+DROP POLICY IF EXISTS "Admin update orders" ON public.crypto_orders;
+DROP POLICY IF EXISTS "Admin delete orders" ON public.crypto_orders;
 
 -- 8.1. Каталог работ: публичное чтение метаданных и превью, управление — только администратору
 CREATE POLICY "Public read works" ON public.works FOR SELECT USING (true);
@@ -470,21 +635,40 @@ CREATE POLICY "Admin manage work scripts" ON public.work_scripts FOR ALL
 -- 8.3. Настройки кошельков: публичное чтение
 CREATE POLICY "Public read wallet_settings" ON public.wallet_settings FOR SELECT USING (true);
 
--- 8.4. Профили: чтение и вставка доступны всем пользователям, а обновление баланса — владельцу или администратору
+-- 8.4. Профили пользователей:
+-- Чтение доступно всем (для отображения никнеймов и авторов)
 CREATE POLICY "Users read profiles" ON public.profiles FOR SELECT USING (true);
+-- Вставка новой записи при регистрации
 CREATE POLICY "Users insert profiles" ON public.profiles FOR INSERT WITH CHECK (true);
-CREATE POLICY "Users update profiles" ON public.profiles FOR UPDATE USING (auth.uid() = id OR public.is_admin()) WITH CHECK (auth.uid() = id OR public.is_admin());
+-- Обновление разрешено только владельцу или администратору (а триггер trg_protect_profile_fields защищает поля role и orbs)
+CREATE POLICY "Users update profiles" ON public.profiles FOR UPDATE
+  USING (auth.uid() = id OR public.is_admin())
+  WITH CHECK (auth.uid() = id OR public.is_admin());
 
--- 8.5. Покупки: чтение, вставка и удаление покупок (для пользователей и администраторов)
-CREATE POLICY "Read purchases" ON public.purchases FOR SELECT USING (true);
-CREATE POLICY "Insert own purchases" ON public.purchases FOR INSERT WITH CHECK (true);
-CREATE POLICY "Delete purchases" ON public.purchases FOR DELETE USING (true);
+-- 8.5. Покупки:
+-- Чтение только своих покупок или для администратора
+CREATE POLICY "Read purchases" ON public.purchases FOR SELECT
+  USING (auth.uid() = user_id OR public.is_admin());
+-- Прямая вставка покупок пользователями ЗАПРЕЩЕНА (покупки совершаются через buy_work), разрешена только администратору
+CREATE POLICY "Admin insert purchases" ON public.purchases FOR INSERT
+  WITH CHECK (public.is_admin());
+-- Удаление покупок разрешено только администратору
+CREATE POLICY "Admin delete purchases" ON public.purchases FOR DELETE
+  USING (public.is_admin());
 
--- 8.6. Заказы: пользователи могут создавать, просматривать, обновлять и удалять заказы (администраторы могут стирать сделки)
-CREATE POLICY "Read orders" ON public.crypto_orders FOR SELECT USING (true);
-CREATE POLICY "Insert orders" ON public.crypto_orders FOR INSERT WITH CHECK (true);
-CREATE POLICY "Update orders" ON public.crypto_orders FOR UPDATE USING (true) WITH CHECK (true);
-CREATE POLICY "Delete orders" ON public.crypto_orders FOR DELETE USING (true);
+-- 8.6. Криптовалютные заказы:
+-- Чтение только своих заказов или для администратора
+CREATE POLICY "Read orders" ON public.crypto_orders FOR SELECT
+  USING (auth.uid() = user_id OR public.is_admin());
+-- Создание заказов только для своего пользователя
+CREATE POLICY "Insert orders" ON public.crypto_orders FOR INSERT
+  WITH CHECK (auth.uid() = user_id OR user_id IS NULL OR public.is_admin());
+-- Обновление и удаление заказов — только администратору
+CREATE POLICY "Admin update orders" ON public.crypto_orders FOR UPDATE
+  USING (public.is_admin())
+  WITH CHECK (public.is_admin());
+CREATE POLICY "Admin delete orders" ON public.crypto_orders FOR DELETE
+  USING (public.is_admin());
 
 -- 8.7. Закрытый бакет Storage work-scripts (1 GB) и политики доступа
 INSERT INTO storage.buckets (id, name, public)
@@ -512,32 +696,37 @@ CREATE POLICY "Admin read work scripts" ON storage.objects
 FOR SELECT TO authenticated
 USING (bucket_id = 'work-scripts' AND public.is_admin());
 
--- 9. Права доступа к таблицам и процедурам для PostgREST API (роли anon и authenticated)
-GRANT USAGE ON SCHEMA public TO anon, authenticated;
-GRANT ALL ON TABLE public.profiles TO anon, authenticated;
-GRANT ALL ON TABLE public.works TO anon, authenticated;
-GRANT ALL ON TABLE public.work_scripts TO anon, authenticated;
-GRANT ALL ON TABLE public.purchases TO anon, authenticated;
-GRANT ALL ON TABLE public.crypto_orders TO anon, authenticated;
-GRANT SELECT ON TABLE public.wallet_settings TO anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.is_admin() TO anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.complete_crypto_order(TEXT, TEXT) TO anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.get_admin_users() TO anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.delete_crypto_order(TEXT) TO anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.clear_user_crypto_orders(UUID) TO anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.delete_user_purchase(TEXT, TEXT, TEXT) TO anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.delete_user_purchase(UUID, TEXT) TO anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.clear_user_purchases(TEXT) TO anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.clear_user_purchases(UUID) TO anon, authenticated;
+-- 8.8. Закрытый бакет Storage backups (1 GB) для Disaster Recovery
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('backups', 'backups', false)
+ON CONFLICT (id) DO UPDATE SET public = false;
 
--- 10. Очистка устаревших тестовых записей без пользователя
-DELETE FROM public.crypto_orders WHERE id IN ('TEST-1', 'TEST-UPDATE') OR user_id IS NULL;
+DROP POLICY IF EXISTS "Allow public read backups" ON storage.objects;
+DROP POLICY IF EXISTS "Allow public insert backups" ON storage.objects;
+DROP POLICY IF EXISTS "Allow public update backups" ON storage.objects;
+DROP POLICY IF EXISTS "Allow public delete backups" ON storage.objects;
+DROP POLICY IF EXISTS "Admin read backups" ON storage.objects;
+DROP POLICY IF EXISTS "Admin insert backups" ON storage.objects;
+DROP POLICY IF EXISTS "Admin update backups" ON storage.objects;
+DROP POLICY IF EXISTS "Admin delete backups" ON storage.objects;
+
+CREATE POLICY "Admin read backups" ON storage.objects
+  FOR SELECT USING (bucket_id = 'backups' AND public.is_admin());
+
+CREATE POLICY "Admin insert backups" ON storage.objects
+  FOR INSERT WITH CHECK (bucket_id = 'backups' AND public.is_admin());
+
+CREATE POLICY "Admin update backups" ON storage.objects
+  FOR UPDATE USING (bucket_id = 'backups' AND public.is_admin()) 
+  WITH CHECK (bucket_id = 'backups' AND public.is_admin());
+
+CREATE POLICY "Admin delete backups" ON storage.objects
+  FOR DELETE USING (bucket_id = 'backups' AND public.is_admin());
 
 -- ========================================================================
--- 11. Система обратной связи (Feedback & Support) и настройки платформы
+-- 9. Система обратной связи (Feedback & Support) и настройки платформы
 -- ========================================================================
 
--- Таблица тикетов и обращений пользователей
 CREATE TABLE IF NOT EXISTS public.feedback_messages (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   created_at TIMESTAMPTZ DEFAULT now(),
@@ -546,11 +735,10 @@ CREATE TABLE IF NOT EXISTS public.feedback_messages (
   contact_info TEXT NOT NULL,
   category TEXT NOT NULL,
   message TEXT NOT NULL,
-  status TEXT NOT NULL DEFAULT 'new', -- 'new', 'in_progress', 'resolved'
+  status TEXT NOT NULL DEFAULT 'new',
   admin_notes TEXT
 );
 
--- Таблица настроек платформы и Telegram-бота
 CREATE TABLE IF NOT EXISTS public.site_settings (
   id INT PRIMARY KEY DEFAULT 1,
   telegram_bot_token TEXT DEFAULT '',
@@ -560,12 +748,10 @@ CREATE TABLE IF NOT EXISTS public.site_settings (
   updated_at TIMESTAMPTZ DEFAULT now()
 );
 
--- Инициализация начальной строки настроек платформы
 INSERT INTO public.site_settings (id, telegram_bot_token, telegram_chat_id, telegram_enabled, support_telegram_username)
 VALUES (1, '', '276204182', true, 'OrbTranslationsSupportBot')
 ON CONFLICT (id) DO NOTHING;
 
--- Включение RLS
 ALTER TABLE public.feedback_messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.site_settings ENABLE ROW LEVEL SECURITY;
 
@@ -576,15 +762,15 @@ CREATE POLICY "Anyone can submit feedback" ON public.feedback_messages
 
 DROP POLICY IF EXISTS "Admin view all feedback" ON public.feedback_messages;
 CREATE POLICY "Admin view all feedback" ON public.feedback_messages
-  FOR SELECT USING (true);
+  FOR SELECT USING (public.is_admin());
 
 DROP POLICY IF EXISTS "Admin update feedback" ON public.feedback_messages;
 CREATE POLICY "Admin update feedback" ON public.feedback_messages
-  FOR UPDATE USING (true) WITH CHECK (true);
+  FOR UPDATE USING (public.is_admin()) WITH CHECK (public.is_admin());
 
 DROP POLICY IF EXISTS "Admin delete feedback" ON public.feedback_messages;
 CREATE POLICY "Admin delete feedback" ON public.feedback_messages
-  FOR DELETE USING (true);
+  FOR DELETE USING (public.is_admin());
 
 -- RLS для site_settings
 DROP POLICY IF EXISTS "Public read site_settings" ON public.site_settings;
@@ -593,34 +779,33 @@ CREATE POLICY "Public read site_settings" ON public.site_settings
 
 DROP POLICY IF EXISTS "Admin manage site_settings" ON public.site_settings;
 CREATE POLICY "Admin manage site_settings" ON public.site_settings
-  FOR ALL USING (true) WITH CHECK (true);
+  FOR ALL USING (public.is_admin()) WITH CHECK (public.is_admin());
 
--- Права доступа
+-- ========================================================================
+-- 10. Права доступа к таблицам и процедурам (anon и authenticated)
+-- ========================================================================
+GRANT USAGE ON SCHEMA public TO anon, authenticated;
+GRANT ALL ON TABLE public.profiles TO anon, authenticated;
+GRANT ALL ON TABLE public.works TO anon, authenticated;
+GRANT ALL ON TABLE public.work_scripts TO anon, authenticated;
+GRANT ALL ON TABLE public.purchases TO anon, authenticated;
+GRANT ALL ON TABLE public.crypto_orders TO anon, authenticated;
+GRANT SELECT ON TABLE public.wallet_settings TO anon, authenticated;
 GRANT ALL ON TABLE public.feedback_messages TO anon, authenticated;
 GRANT ALL ON TABLE public.site_settings TO anon, authenticated;
 
--- ============================================================================
--- 9. БАКЕТ ХРАНИЛИЩА (Supabase Storage 1 GB) ДЛЯ РЕЗЕРВНЫХ КОПИЙ (Disaster Recovery)
--- ============================================================================
-INSERT INTO storage.buckets (id, name, public)
-VALUES ('backups', 'backups', true)
-ON CONFLICT (id) DO UPDATE SET public = true;
+GRANT EXECUTE ON FUNCTION public.is_admin() TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.buy_work(TEXT) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.complete_crypto_order(TEXT, TEXT) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.get_admin_users() TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.delete_crypto_order(TEXT) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.clear_user_crypto_orders(UUID) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.delete_user_purchase(TEXT, TEXT, TEXT) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.delete_user_purchase(UUID, TEXT) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.clear_user_purchases(TEXT) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.clear_user_purchases(UUID) TO anon, authenticated;
 
--- Разрешить чтение и загрузку файлов резервных копий
-DROP POLICY IF EXISTS "Allow public read backups" ON storage.objects;
-CREATE POLICY "Allow public read backups" ON storage.objects
-  FOR SELECT USING (bucket_id = 'backups');
-
-DROP POLICY IF EXISTS "Allow public insert backups" ON storage.objects;
-CREATE POLICY "Allow public insert backups" ON storage.objects
-  FOR INSERT WITH CHECK (bucket_id = 'backups');
-
-DROP POLICY IF EXISTS "Allow public update backups" ON storage.objects;
-CREATE POLICY "Allow public update backups" ON storage.objects
-  FOR UPDATE USING (bucket_id = 'backups') WITH CHECK (bucket_id = 'backups');
-
-DROP POLICY IF EXISTS "Allow public delete backups" ON storage.objects;
-CREATE POLICY "Allow public delete backups" ON storage.objects
-  FOR DELETE USING (bucket_id = 'backups');
+-- 11. Очистка устаревших тестовых записей без пользователя
+DELETE FROM public.crypto_orders WHERE id IN ('TEST-1', 'TEST-UPDATE') OR user_id IS NULL;
 
 

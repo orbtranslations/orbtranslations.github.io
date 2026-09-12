@@ -740,7 +740,7 @@ class App {
   /**
    * Обработка покупки работы
    */
-  handlePurchaseWork(workId, fromInsideReader = false) {
+  async handlePurchaseWork(workId, fromInsideReader = false) {
     if (window.auth.isGuest()) {
       this.showAuthModal();
       return;
@@ -749,7 +749,7 @@ class App {
     const work = window.store.getWorkById(workId);
     if (!work) return;
 
-    const result = window.store.purchaseWork(workId);
+    const result = await window.store.purchaseWork(workId);
     const title = window.i18n ? window.i18n.getWorkTitle(work) : work.title;
 
     if (result.success) {
@@ -766,7 +766,11 @@ class App {
       }
     } else {
       // Недостаточно Орбов
-      this.showInsufficientOrbsModal(work, result.needOrbs);
+      if (result.needOrbs) {
+        this.showInsufficientOrbsModal(work, result.needOrbs);
+      } else {
+        this.showToast(result.message || 'Ошибка покупки', 'error');
+      }
     }
   }
 
@@ -1690,11 +1694,11 @@ class App {
         ` : ''}
         <div class="form-group" style="margin-bottom: 0.85rem;">
           <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;">Email</label>
-          <input type="email" id="auth-email-input" class="input-styled" required placeholder="name@example.com" value="${isLogin ? 'ismayilovelchin1984@gmail.com' : ''}">
+          <input type="email" id="auth-email-input" class="input-styled" required placeholder="name@example.com" value="">
         </div>
         <div class="form-group" style="margin-bottom: 0.5rem;">
           <label style="font-size: 0.85rem; color: var(--text-secondary); display: block; margin-bottom: 4px;">${isEn ? 'Password' : 'Пароль'}</label>
-          <input type="password" id="auth-password-input" class="input-styled" required minlength="6" placeholder="${isEn ? 'At least 6 characters' : 'Минимум 6 символов'}" value="${isLogin ? 'ZlY263ws31Th5FMZ' : ''}">
+          <input type="password" id="auth-password-input" class="input-styled" required minlength="6" placeholder="${isEn ? 'At least 6 characters' : 'Минимум 6 символов'}" value="">
         </div>
         ${isLogin ? `
           <div style="display: flex; justify-content: flex-end; margin-bottom: 1.25rem;">

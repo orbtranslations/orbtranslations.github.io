@@ -11,7 +11,7 @@ git add .
 
 echo.
 echo [2/3] Committing changes...
-git commit -m "feat: add 1GB Supabase Storage disaster recovery system (v3.4.9)"
+git commit -m "feat: fix critical security vulnerabilities, add atomic buy_work and profile protection (v3.5.0)"
 
 echo.
 echo [3/3] Pushing to GitHub (main)...
