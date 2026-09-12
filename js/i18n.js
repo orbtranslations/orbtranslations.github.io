@@ -600,6 +600,9 @@ class I18nManager {
       window.app.renderStorefront();
       window.app.renderUserHeader();
       window.app.renderPurchases();
+      if (typeof window.app.renderDepositHistory === 'function') {
+        window.app.renderDepositHistory();
+      }
       if (window.app.onTopupConfigChange) window.app.onTopupConfigChange();
       if (window.admin) window.admin.renderWorksTable();
     }
@@ -618,13 +621,20 @@ class I18nManager {
    */
   getWorkTitle(work) {
     if (!work) return '';
-    if (typeof work.title === 'object') {
-      return (this.currentLang === 'en' && work.title.en) ? work.title.en : (work.title.ru || work.title.en || '');
+    if (typeof work.title === 'object' && work.title !== null) {
+      if (this.currentLang === 'en') {
+        if (work.title.en && work.title.en !== work.title.ru) return work.title.en;
+        if (work.titleEn) return work.titleEn;
+        if (work.originalTitle) return work.originalTitle;
+        if (work.title.en) return work.title.en;
+      }
+      return work.title.ru || work.title.en || '';
     }
-    if (this.currentLang === 'en' && work.originalTitle) {
-      return work.originalTitle;
+    if (this.currentLang === 'en') {
+      if (work.titleEn) return work.titleEn;
+      if (work.originalTitle) return work.originalTitle;
     }
-    return work.title;
+    return work.title || '';
   }
 
   /**

@@ -493,7 +493,22 @@ class App {
         // Колонка назначения / блокчейн-транзакции
         let txDetailsCell = '<span style="color: var(--text-muted);">—</span>';
         if (isPurchase) {
-          const workTitle = item.workTitle || (isEn ? 'Novel Translation' : 'Перевод визуальной новеллы');
+          const store = this.store || (typeof window !== 'undefined' ? window.store : null);
+          const work = (store && item.workId) ? store.getWorkById(item.workId) : null;
+          let workTitle = '';
+          if (work && window.i18n) {
+            workTitle = window.i18n.getWorkTitle(work);
+          }
+          if (!workTitle) {
+            if (typeof item.workTitle === 'object' && item.workTitle !== null) {
+              workTitle = isEn ? (item.workTitle.en || item.workTitle.ru) : (item.workTitle.ru || item.workTitle.en);
+            } else if (typeof item.workTitle === 'string' && item.workTitle) {
+              workTitle = item.workTitle;
+            }
+          }
+          if (!workTitle) {
+            workTitle = isEn ? 'Novel Translation' : 'Перевод визуальной новеллы';
+          }
           txDetailsCell = `
             <div style="display: flex; flex-direction: column; gap: 2px; max-width: 280px;">
               <span style="color: #60a5fa; font-weight: 600; font-size: 0.82rem; line-height: 1.25; word-break: break-word;" title="${workTitle}">

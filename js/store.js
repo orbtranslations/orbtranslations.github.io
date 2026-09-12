@@ -313,11 +313,13 @@ class Store {
             const alreadyInOrders = this.data.orders.some(o => o.workId === p.work_id && o.type === 'purchase');
             if (!alreadyInOrders) {
               const work = this.getWorkById(p.work_id);
-              const title = work ? (typeof work.title === 'object' ? (work.title.ru || work.title.en) : work.title) : p.work_id;
+              const workTitle = (work && typeof work.title === 'object')
+                ? { ru: work.title.ru || work.title.en || '', en: work.title.en || work.title.ru || '' }
+                : (work ? { ru: work.title, en: work.titleEn || work.originalTitle || work.title } : { ru: p.work_id, en: p.work_id });
               this.data.orders.push({
                 id: 'ORD-P-' + (p.id || p.work_id),
                 workId: p.work_id,
-                workTitle: title,
+                workTitle,
                 price: Number(p.price_paid || (work ? work.price : 1)),
                 date: p.purchased_at || new Date().toISOString(),
                 type: 'purchase'
@@ -618,10 +620,14 @@ The fate of the kingdom is now in your hands.
     }
     this.addDevicePurchase(workId);
 
+    const workTitle = (work && typeof work.title === 'object')
+      ? { ru: work.title.ru || work.title.en || '', en: work.title.en || work.title.ru || '' }
+      : (work ? { ru: work.title, en: work.titleEn || work.originalTitle || work.title } : { ru: workId, en: workId });
+
     this.data.orders.push({
       id: 'ORD-P-' + Date.now().toString().slice(-6),
       workId,
-      workTitle: typeof work.title === 'object' ? (work.title.ru || work.title.en) : work.title,
+      workTitle,
       price: workPrice,
       date: new Date().toISOString(),
       type: 'purchase'
@@ -1263,14 +1269,18 @@ The fate of the kingdom is now in your hands.
       .filter(o => o.type === 'purchase')
       .map(o => {
         const work = this.getWorkById(o.workId);
-        const title = o.workTitle || (work ? (typeof work.title === 'object' ? (work.title.ru || work.title.en) : work.title) : o.workId);
+        const workTitle = (work && typeof work.title === 'object')
+          ? { ru: work.title.ru || work.title.en || '', en: work.title.en || work.title.ru || '' }
+          : (typeof o.workTitle === 'object' && o.workTitle !== null)
+            ? o.workTitle
+            : (work ? { ru: work.title, en: work.titleEn || work.originalTitle || work.title } : { ru: o.workTitle || o.workId, en: o.workTitle || o.workId });
         const rawId = String(o.id || '');
         const id = rawId.startsWith('ORD-') ? rawId : ('ORD-P-' + rawId.replace(/^ord_p_|^ord_/, ''));
         return {
           id,
           type: 'purchase',
           workId: o.workId,
-          workTitle: title,
+          workTitle,
           date: o.date,
           amountUsdt: Number(o.price || (work ? work.price : 1)),
           orbs: -Number(o.price || (work ? work.price : 1)),
@@ -1298,12 +1308,14 @@ The fate of the kingdom is now in your hands.
       const alreadyInList = list.some(item => item.type === 'purchase' && item.workId === workId);
       if (!alreadyInList) {
         const work = this.getWorkById(workId);
-        const title = work ? (typeof work.title === 'object' ? (work.title.ru || work.title.en) : work.title) : workId;
+        const workTitle = (work && typeof work.title === 'object')
+          ? { ru: work.title.ru || work.title.en || '', en: work.title.en || work.title.ru || '' }
+          : (work ? { ru: work.title, en: work.titleEn || work.originalTitle || work.title } : { ru: workId, en: workId });
         list.push({
           id: `ORD-P-${workId}`,
           type: 'purchase',
           workId: workId,
-          workTitle: title,
+          workTitle,
           date: new Date().toISOString(),
           amountUsdt: Number(work?.price || 1),
           orbs: -Number(work?.price || 1),
@@ -1506,14 +1518,16 @@ The fate of the kingdom is now in your hands.
           if (!pErr && Array.isArray(dbPurchases)) {
             dbPurchases.forEach(p => {
               const work = this.getWorkById(p.work_id);
-              const title = work ? (typeof work.title === 'object' ? (work.title.ru || work.title.en) : work.title) : p.work_id;
+              const workTitle = (work && typeof work.title === 'object')
+                ? { ru: work.title.ru || work.title.en || '', en: work.title.en || work.title.ru || '' }
+                : (work ? { ru: work.title, en: work.titleEn || work.originalTitle || work.title } : { ru: p.work_id, en: p.work_id });
               const ordId = `ORD-P-${p.id || p.work_id}`;
               const existingIndex = list.findIndex(item => item.type === 'purchase' && (item.id === ordId || item.workId === p.work_id));
               const purchaseItem = {
                 id: ordId,
                 type: 'purchase',
                 workId: p.work_id,
-                workTitle: title,
+                workTitle,
                 date: p.purchased_at || new Date().toISOString(),
                 amountUsdt: Number(p.price_paid || (work ? work.price : 1)),
                 orbs: -Number(p.price_paid || (work ? work.price : 1)),
