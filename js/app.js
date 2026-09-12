@@ -290,6 +290,7 @@ class App {
       const orbTxt = isEn ? 'Orbs' : 'Орб';
       const previewBtnTxt = window.i18n ? window.i18n.t('card_btn_preview') : (isEn ? '👁️ Preview' : '👁️ Превью');
       const readBtnTxt = window.i18n ? window.i18n.t('card_btn_read') : (isEn ? '📖 Read Translation' : '📖 Читать перевод');
+      const accessTxt = window.i18n ? window.i18n.t('card_access_granted') : (isEn ? '✓ Unlocked' : '✓ Доступ открыт');
       const buyBtnTxt = window.i18n ? `${window.i18n.t('card_btn_buy')} ${work.price} ${orbTxt}` : `⚡ ${isEn ? 'Buy for' : 'Купить за'} ${work.price} ${orbTxt}`;
       const loginBuyTxt = window.i18n ? window.i18n.t('card_btn_login_to_buy') : (isEn ? '🔑 Sign In to Buy' : '🔑 Войти для покупки');
       const freePagesTxt = window.i18n ? `${work.previewPagesCount} ${window.i18n.t('card_preview_free')}` : `${work.previewPagesCount} ${isEn ? 'pages free' : 'стр. бесплатно'}`;
@@ -304,8 +305,12 @@ class App {
             <div class="work-cover-backdrop" style="background-image: url('${work.coverUrl || 'assets/demo/cover-1.svg'}');"></div>
             <img src="${work.coverUrl || 'assets/demo/cover-1.svg'}" alt="${title}" class="work-cover-img" onerror="this.src='assets/demo/cover-1.svg'; if(this.previousElementSibling) this.previousElementSibling.style.backgroundImage='url(assets/demo/cover-1.svg)';">
             <div class="work-badge-overlay">
-              <span class="badge badge-accent">💎 ${work.price} ${orbTxt} ($${work.price})</span>
-              <span class="badge badge-glass">👁️ ${freePagesTxt}</span>
+              ${isPurchased ? `
+                <span class="badge badge-success">${accessTxt}</span>
+              ` : `
+                <span class="badge badge-accent">💎 ${work.price} ${orbTxt} ($${work.price})</span>
+                <span class="badge badge-glass">👁️ ${freePagesTxt}</span>
+              `}
             </div>
           </div>
           <div class="work-card-body">
