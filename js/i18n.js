@@ -179,8 +179,11 @@ class I18nManager {
         modal_archive_pick_folder: '📂 Выбрать папку с графикой',
         modal_archive_no_file: 'Нет под рукой оригинального архива?',
         modal_archive_demo_btn: '💡 Использовать демо-сцены',
+        modal_archive_remember: '💾 Запомнить на этом устройстве (не выбирать повторно при F5)',
+        modal_archive_forget_btn: '🗑 Забыть',
 
         // Reader
+        reader_btn_change_archive: '📁 Сменить графику',
         reader_btn_close: '✕ Закрыть',
         reader_mode_full: '✨ Полный перевод',
         reader_mode_preview: '👁️ Бесплатное превью',
@@ -454,8 +457,11 @@ class I18nManager {
         modal_archive_pick_folder: '📂 Select Graphics Folder',
         modal_archive_no_file: 'Do not have the original archive handy?',
         modal_archive_demo_btn: '💡 Use Built-in Demo Scenes',
+        modal_archive_remember: '💾 Remember on this device (auto-load on refresh / F5)',
+        modal_archive_forget_btn: '🗑 Forget',
 
         // Reader
+        reader_btn_change_archive: '📁 Change Graphics',
         reader_btn_close: '✕ Close',
         reader_mode_full: '✨ Full Translation',
         reader_mode_preview: '👁️ Free Preview',

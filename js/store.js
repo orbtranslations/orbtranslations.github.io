@@ -60,6 +60,53 @@ class IDBStorage {
       }
     });
   }
+
+  static async delete(key) {
+    const db = await IDBStorage.open();
+    if (!db) return false;
+    return new Promise((resolve) => {
+      try {
+        const tx = db.transaction(IDBStorage.STORE_NAME, 'readwrite');
+        const store = tx.objectStore(IDBStorage.STORE_NAME);
+        store.delete(key);
+        tx.oncomplete = () => resolve(true);
+        tx.onerror = () => resolve(false);
+      } catch (e) {
+        resolve(false);
+      }
+    });
+  }
+
+  /**
+   * Сохраняет данные графического архива/папки для работы в IndexedDB
+   */
+  static async saveClientArchive(workId, data) {
+    if (!workId || !data) return false;
+    const key = `client_archive_${workId}`;
+    return await IDBStorage.set(key, {
+      ...data,
+      workId,
+      updatedAt: Date.now()
+    });
+  }
+
+  /**
+   * Получает сохраненный архив/папку для работы из IndexedDB
+   */
+  static async getClientArchive(workId) {
+    if (!workId) return null;
+    const key = `client_archive_${workId}`;
+    return await IDBStorage.get(key);
+  }
+
+  /**
+   * Удаляет сохраненный архив/папку для работы из IndexedDB
+   */
+  static async removeClientArchive(workId) {
+    if (!workId) return false;
+    const key = `client_archive_${workId}`;
+    return await IDBStorage.delete(key);
+  }
 }
 
 /**

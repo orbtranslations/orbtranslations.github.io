@@ -280,9 +280,9 @@ class ReaderService {
   }
 
   /**
-   * Открытие бесплатного превью работы
+   * Открытие бесплатного превью работы с автоматической проверкой сохраненного архива/папки
    */
-  openPreview(workId) {
+  async openPreview(workId) {
     const work = this.store.getWorkById(workId);
     if (!work) return;
 
@@ -300,13 +300,30 @@ class ReaderService {
       this.currentIndex = 0;
       this.currentDialogBlockIndex = 0;
       this.renderReaderUI();
-    } else {
-      window.app.showArchiveUploadModal(work, 'preview');
+      return;
     }
+
+    // Проверяем сохраненный на клиенте архив или дескриптор папки
+    const saved = await this.tryLoadSavedClientArchive(workId);
+    if (saved && (saved.type === 'zip' || saved.status === 'loaded')) {
+      const isEn = window.i18n && window.i18n.getLang() === 'en';
+      const name = saved.fileName || saved.folderName || '';
+      window.app.showToast(
+        isEn ? `⚡ Loaded saved graphics: ${name}` : `⚡ Загружена сохраненная графика: ${name}`,
+        'info'
+      );
+      this.rebuildPagesFromScript();
+      this.currentIndex = 0;
+      this.currentDialogBlockIndex = 0;
+      this.renderReaderUI();
+      return;
+    }
+
+    window.app.showArchiveUploadModal(work, 'preview', saved);
   }
 
   /**
-   * Открытие купленной работы в полном режиме
+   * Открытие купленной работы в полном режиме с автоматической проверкой сохраненного архива/папки
    */
   async openFullTranslationModal(workId) {
     const work = this.store.getWorkById(workId);
@@ -321,7 +338,7 @@ class ReaderService {
         isEn ? 'Please purchase this work to read the full translation' : 'Для доступа к полному переводу необходимо приобрести работу',
         'warning'
       );
-      this.openPreview(workId);
+      await this.openPreview(workId);
       return;
     }
 
@@ -350,9 +367,130 @@ class ReaderService {
       this.currentIndex = 0;
       this.currentDialogBlockIndex = 0;
       this.renderReaderUI();
-    } else {
-      window.app.showArchiveUploadModal(work, 'full');
+      return;
     }
+
+    // Проверяем сохраненный на клиенте архив или дескриптор папки
+    const saved = await this.tryLoadSavedClientArchive(workId);
+    if (saved && (saved.type === 'zip' || saved.status === 'loaded')) {
+      const isEn = window.i18n && window.i18n.getLang() === 'en';
+      const name = saved.fileName || saved.folderName || '';
+      window.app.showToast(
+        isEn ? `⚡ Loaded saved graphics: ${name}` : `⚡ Загружена сохраненная графика: ${name}`,
+        'info'
+      );
+      this.rebuildPagesFromScript();
+      this.currentIndex = 0;
+      this.currentDialogBlockIndex = 0;
+      this.renderReaderUI();
+      return;
+    }
+
+    window.app.showArchiveUploadModal(work, 'full', saved);
+  }
+
+  /**
+   * Попытка восстановить графику из локальной базы IndexedDB
+   */
+  async tryLoadSavedClientArchive(workId) {
+    if (typeof IDBStorage === 'undefined') return null;
+    try {
+      const saved = await IDBStorage.getClientArchive(workId);
+      if (!saved) return null;
+
+      // 1. Сохраненный ZIP-архив (Blob)
+      if (saved.type === 'zip' && saved.blob) {
+        await this.loadUserZipFile(saved.blob);
+        return { type: 'zip', fileName: saved.fileName, size: saved.size };
+      }
+
+      // 2. Сохраненный дескриптор папки (File System Access API)
+      if (saved.type === 'dirHandle' && saved.handle) {
+        let perm = 'prompt';
+        try {
+          perm = await saved.handle.queryPermission({ mode: 'read' });
+        } catch (e) {
+          perm = 'prompt';
+        }
+
+        if (perm === 'granted') {
+          const files = await this.readFilesFromDirectoryHandle(saved.handle);
+          await this.loadUserFolder(files);
+          return { type: 'dirHandle', status: 'loaded', folderName: saved.folderName };
+        } else {
+          return { type: 'dirHandle', status: 'needs_permission', handle: saved.handle, folderName: saved.folderName };
+        }
+      }
+
+      // 3. Сохраненный список файлов (Blob-массив для fallback-папок)
+      if (saved.type === 'files' && Array.isArray(saved.files) && saved.files.length > 0) {
+        const files = saved.files.map(f => {
+          const file = new File([f.blob], f.name, { type: f.type || 'image/jpeg' });
+          if (f.path) {
+            Object.defineProperty(file, 'webkitRelativePath', {
+              value: f.path,
+              writable: false
+            });
+          }
+          return file;
+        });
+        await this.loadUserFolder(files);
+        return { type: 'files', status: 'loaded', folderName: saved.folderName };
+      }
+    } catch (err) {
+      console.warn('Не удалось автоматически загрузить сохраненный архив:', err);
+    }
+    return null;
+  }
+
+  /**
+   * Рекурсивное считывание файлов из FileSystemDirectoryHandle
+   */
+  async readFilesFromDirectoryHandle(dirHandle) {
+    const files = [];
+    async function scan(handle, pathPrefix = '') {
+      for await (const entry of handle.values()) {
+        if (entry.kind === 'file') {
+          const file = await entry.getFile();
+          const relPath = pathPrefix ? `${pathPrefix}/${file.name}` : file.name;
+          Object.defineProperty(file, 'webkitRelativePath', {
+            value: relPath,
+            writable: false
+          });
+          files.push(file);
+        } else if (entry.kind === 'directory') {
+          const nextPrefix = pathPrefix ? `${pathPrefix}/${entry.name}` : entry.name;
+          await scan(entry, nextPrefix);
+        }
+      }
+    }
+    await scan(dirHandle, dirHandle.name);
+    return files;
+  }
+
+  /**
+   * Сменить или заново выбрать архив/папку для текущей работы
+   */
+  changeArchive() {
+    if (!this.currentWork) return;
+    window.app.showArchiveUploadModal(this.currentWork, this.isFullMode ? 'full' : 'preview');
+  }
+
+  /**
+   * Удалить сохраненную графику для работы из IndexedDB
+   */
+  async forgetSavedArchive(workId) {
+    const targetId = workId || (this.currentWork ? this.currentWork.id : null);
+    if (!targetId) return;
+    if (typeof IDBStorage !== 'undefined') {
+      await IDBStorage.removeClientArchive(targetId);
+    }
+    delete this.workArchives[targetId];
+    const isEn = window.i18n && window.i18n.getLang() === 'en';
+    window.app.showToast(
+      isEn ? '🗑 Saved graphics removed from this browser' : '🗑 Сохраненная графика удалена из этого браузера',
+      'info'
+    );
   }
 
   parseWorkScript(work, customScript = null) {

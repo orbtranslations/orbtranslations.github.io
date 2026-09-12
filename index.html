@@ -20,9 +20,9 @@
   <meta http-equiv="Expires" content="0">
 
   <!-- Custom Styles -->
-  <link rel="stylesheet" href="css/style.css?v=3.2.7">
-  <link rel="stylesheet" href="css/components.css?v=3.2.7">
-  <link rel="stylesheet" href="css/reader.css?v=3.2.7">
+  <link rel="stylesheet" href="css/style.css?v=3.2.8">
+  <link rel="stylesheet" href="css/components.css?v=3.2.8">
+  <link rel="stylesheet" href="css/reader.css?v=3.2.8">
 </head>
 <body>
 
@@ -455,7 +455,10 @@
           <option value="Русский">Русский</option>
         </select>
       </div>
-      <div class="reader-header-right">
+      <div class="reader-header-right" style="display: flex; gap: 8px; align-items: center;">
+        <button class="btn btn-secondary btn-small" id="reader-change-archive-btn" onclick="window.reader.changeArchive()" title="Сменить или удалить сохраненную графику" data-i18n="reader_btn_change_archive">
+          📁 Сменить графику
+        </button>
         <button class="btn btn-secondary btn-small" id="reader-spread-btn" onclick="window.reader.toggleSpread()">
           📖 1 экран
         </button>
@@ -780,6 +783,27 @@
           Вы приобрели доступ к скрипту перевода этой работы. Чтобы начать чтение, загрузите официальный архив (.zip) или папку с оригинальными изображениями. Читалка распакует их в браузере и наложит перевод.
         </p>
 
+        <!-- Saved Archive / Folder Quick Action Banner (Shown when graphics found in IndexedDB) -->
+        <div id="archive-saved-banner" style="display: none; margin-bottom: 1.25rem; padding: 0.9rem 1.1rem; background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.35); border-radius: var(--radius-sm);">
+          <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <span style="font-size: 1.5rem;" id="archive-saved-icon">💾</span>
+              <div>
+                <div style="font-size: 0.9rem; font-weight: 600; color: #fff;" id="archive-saved-title">Сохраненная графика найдена</div>
+                <div style="font-size: 0.78rem; color: var(--text-muted);" id="archive-saved-subtitle">Готова к открытию без повторного выбора</div>
+              </div>
+            </div>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <button type="button" class="btn btn-success btn-small" id="archive-saved-resume-btn" onclick="window.app.resumeSavedArchive()">
+                ⚡ Возобновить
+              </button>
+              <button type="button" class="btn btn-secondary btn-small" style="color: #ef4444; border-color: rgba(239, 68, 68, 0.4);" onclick="window.app.forgetSavedArchive()" title="Удалить сохраненные файлы из браузера" data-i18n="modal_archive_forget_btn">
+                🗑 Забыть
+              </button>
+            </div>
+          </div>
+        </div>
+
         <!-- Dropzone -->
         <div class="dropzone" id="archive-dropzone">
           <div class="dropzone-icon">📦</div>
@@ -791,12 +815,20 @@
             <button type="button" class="btn btn-secondary btn-small" onclick="document.getElementById('archive-file-input').click()" data-i18n="modal_archive_pick_zip">
               📦 Select ZIP Archive (.zip)
             </button>
-            <button type="button" class="btn btn-secondary btn-small" onclick="document.getElementById('archive-folder-input').click()" data-i18n="modal_archive_pick_folder">
+            <button type="button" class="btn btn-secondary btn-small" onclick="window.app.pickGraphicsFolder()" data-i18n="modal_archive_pick_folder">
               📂 Select Graphics Folder
             </button>
           </div>
           <input type="file" id="archive-file-input" accept=".zip,.cbz" style="display: none;">
           <input type="file" id="archive-folder-input" webkitdirectory directory style="display: none;">
+
+          <!-- Remember on this device checkbox -->
+          <div style="margin-top: 1.1rem; padding-top: 0.85rem; border-top: 1px dashed rgba(255, 255, 255, 0.1); display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 0.82rem; color: var(--text-secondary);">
+            <input type="checkbox" id="archive-remember-checkbox" checked style="cursor: pointer; width: 16px; height: 16px; accent-color: var(--accent-primary);">
+            <label for="archive-remember-checkbox" style="cursor: pointer; user-select: none;" data-i18n="modal_archive_remember">
+              💾 Запомнить на этом устройстве (не выбирать повторно при F5)
+            </label>
+          </div>
         </div>
 
         <div style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between;">
@@ -875,15 +907,15 @@
        Application JavaScript Modules
        ======================================================================== -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="js/supabase-client.js?v=3.2.7"></script>
-  <script src="js/store.js?v=3.2.7"></script>
-  <script src="js/i18n.js?v=3.2.7"></script>
-  <script src="js/script-parser.js?v=3.2.7"></script>
-  <script src="js/auth.js?v=3.2.7"></script>
-  <script src="js/qrcode.min.js?v=3.2.7"></script>
-  <script src="js/crypto-pay.js?v=3.2.7"></script>
-  <script src="js/reader.js?v=3.2.7"></script>
-  <script src="js/admin.js?v=3.2.7"></script>
-  <script src="js/app.js?v=3.2.7"></script>
+  <script src="js/supabase-client.js?v=3.2.8"></script>
+  <script src="js/store.js?v=3.2.8"></script>
+  <script src="js/i18n.js?v=3.2.8"></script>
+  <script src="js/script-parser.js?v=3.2.8"></script>
+  <script src="js/auth.js?v=3.2.8"></script>
+  <script src="js/qrcode.min.js?v=3.2.8"></script>
+  <script src="js/crypto-pay.js?v=3.2.8"></script>
+  <script src="js/reader.js?v=3.2.8"></script>
+  <script src="js/admin.js?v=3.2.8"></script>
+  <script src="js/app.js?v=3.2.8"></script>
 </body>
 </html>

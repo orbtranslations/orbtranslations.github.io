@@ -1328,10 +1328,11 @@ class App {
    * Модальное окно загрузки архива (.zip) или папки с графикой
    * Поддерживает режимы: preview (бесплатный предпросмотр N страниц) и full (полное чтение)
    */
-  showArchiveUploadModal(work, mode = 'preview') {
+  async showArchiveUploadModal(work, mode = 'preview', savedInfo = null) {
     const modal = document.getElementById('archive-upload-modal');
     if (!modal) return;
 
+    this.activeArchiveWork = work;
     const title = window.i18n ? window.i18n.getWorkTitle(work) : work.title;
     const prefixEl = document.getElementById('archive-modal-title-prefix');
     const descEl = document.getElementById('archive-modal-desc');
@@ -1351,8 +1352,154 @@ class App {
         : `Вы приобрели доступ к переводу. Чтобы начать чтение новеллы с полным наложением текста, выберите официальный архив (.zip) или папку с графикой.`;
     }
 
+    // Проверяем наличие сохраненного в IndexedDB архива или дескриптора папки
+    const saved = savedInfo !== null ? savedInfo : (typeof IDBStorage !== 'undefined' ? await IDBStorage.getClientArchive(work.id) : null);
+    this.activeSavedInfo = saved;
+
+    const savedBanner = document.getElementById('archive-saved-banner');
+    const savedTitle = document.getElementById('archive-saved-title');
+    const savedSubtitle = document.getElementById('archive-saved-subtitle');
+    const savedIcon = document.getElementById('archive-saved-icon');
+    const resumeBtn = document.getElementById('archive-saved-resume-btn');
+
+    if (saved && savedBanner) {
+      savedBanner.style.display = 'block';
+      if (saved.type === 'zip') {
+        if (savedIcon) savedIcon.textContent = '📦';
+        if (savedTitle) savedTitle.textContent = saved.fileName || 'ZIP-архив';
+        const mb = saved.size ? (saved.size / (1024 * 1024)).toFixed(1) + ' МБ' : '';
+        if (savedSubtitle) savedSubtitle.textContent = isEn
+          ? `Saved locally in browser ${mb ? '(' + mb + ')' : ''}. Ready to open without re-selecting.`
+          : `Сохранено в памяти браузера ${mb ? '(' + mb + ')' : ''}. Готово к мгновенному открытию.`;
+        if (resumeBtn) resumeBtn.textContent = isEn ? '⚡ Open Saved Archive' : '⚡ Открыть архив';
+      } else if (saved.type === 'dirHandle') {
+        if (savedIcon) savedIcon.textContent = '📂';
+        if (savedTitle) savedTitle.textContent = isEn ? `Folder: ${saved.folderName}` : `Папка: ${saved.folderName}`;
+        if (savedSubtitle) savedSubtitle.textContent = isEn
+          ? 'Requires 1 click to confirm browser folder access.'
+          : 'Требуется 1 клик для подтверждения доступа браузера к папке.';
+        if (resumeBtn) resumeBtn.textContent = isEn ? '⚡ Resume Folder Access' : '⚡ Возобновить доступ';
+      } else if (saved.type === 'files') {
+        if (savedIcon) savedIcon.textContent = '📂';
+        if (savedTitle) savedTitle.textContent = `${saved.folderName || 'Папка'} (${saved.files ? saved.files.length : 0} ${isEn ? 'images' : 'изобр.'})`;
+        if (savedSubtitle) savedSubtitle.textContent = isEn
+          ? 'Saved locally in browser. Ready to open.'
+          : 'Сохранено в памяти браузера. Готово к открытию.';
+        if (resumeBtn) resumeBtn.textContent = isEn ? '⚡ Open Saved Images' : '⚡ Открыть графику';
+      }
+    } else if (savedBanner) {
+      savedBanner.style.display = 'none';
+    }
+
     modal.classList.add('active');
     document.body.classList.add('modal-open');
+  }
+
+  async resumeSavedArchive() {
+    if (!this.activeSavedInfo || !this.activeArchiveWork) return;
+    const isEn = window.i18n && window.i18n.getLang() === 'en';
+
+    if (this.activeSavedInfo.type === 'dirHandle') {
+      await this.resumeSavedDirectoryHandle();
+      return;
+    }
+
+    try {
+      this.showToast(isEn ? 'Restoring saved graphics...' : 'Восстановление сохраненной графики...', 'info');
+      const res = await window.reader.tryLoadSavedClientArchive(this.activeArchiveWork.id);
+      if (res && (res.type === 'zip' || res.status === 'loaded')) {
+        this.closeAllModals();
+        window.reader.rebuildPagesFromScript();
+        window.reader.currentIndex = 0;
+        window.reader.currentDialogBlockIndex = 0;
+        window.reader.renderReaderUI();
+        this.showToast(isEn ? '✅ Saved graphics loaded!' : '✅ Сохраненная графика загружена!', 'success');
+      } else {
+        this.showToast(isEn ? 'Failed to restore saved archive' : 'Не удалось загрузить сохраненный архив', 'error');
+      }
+    } catch (err) {
+      this.showToast(err.message || 'Ошибка загрузки сохраненного архива', 'error');
+    }
+  }
+
+  async resumeSavedDirectoryHandle() {
+    if (!this.activeSavedInfo || !this.activeSavedInfo.handle || !this.activeArchiveWork) return;
+    const isEn = window.i18n && window.i18n.getLang() === 'en';
+    const handle = this.activeSavedInfo.handle;
+
+    try {
+      this.showToast(isEn ? 'Requesting browser permission...' : 'Запрос разрешения браузера на доступ к папке...', 'info');
+      const perm = await handle.requestPermission({ mode: 'read' });
+      if (perm === 'granted') {
+        const files = await window.reader.readFilesFromDirectoryHandle(handle);
+        await window.reader.loadUserFolder(files);
+        this.closeAllModals();
+        this.showToast(isEn ? '✅ Folder reconnected!' : '✅ Папка подключена!', 'success');
+      } else {
+        this.showToast(isEn ? 'Folder access was not granted' : 'Доступ к папке не был разрешен', 'warning');
+      }
+    } catch (err) {
+      this.showToast(err.message || 'Ошибка доступа к папке', 'error');
+    }
+  }
+
+  async forgetSavedArchive() {
+    if (!this.activeArchiveWork) return;
+    const workId = this.activeArchiveWork.id;
+    await window.reader.forgetSavedArchive(workId);
+    this.activeSavedInfo = null;
+    const savedBanner = document.getElementById('archive-saved-banner');
+    if (savedBanner) savedBanner.style.display = 'none';
+  }
+
+  async pickGraphicsFolder() {
+    // Если поддерживается File System Access API (Chromium-браузеры: Chrome, Edge, Opera, Яндекс)
+    if ('showDirectoryPicker' in window) {
+      try {
+        const dirHandle = await window.showDirectoryPicker({ mode: 'read' });
+        if (dirHandle) {
+          await this.handleDirectoryHandle(dirHandle);
+          return;
+        }
+      } catch (err) {
+        if (err.name === 'AbortError') {
+          return;
+        }
+        console.warn('showDirectoryPicker fallback to input:', err);
+      }
+    }
+    const folderInput = document.getElementById('archive-folder-input');
+    if (folderInput) folderInput.click();
+  }
+
+  async handleDirectoryHandle(dirHandle) {
+    const isEn = window.i18n && window.i18n.getLang() === 'en';
+    try {
+      this.showToast(isEn ? 'Scanning folder files...' : 'Сканирование файлов папки...', 'info');
+      const files = await window.reader.readFilesFromDirectoryHandle(dirHandle);
+      await window.reader.loadUserFolder(files);
+
+      const rememberCheckbox = document.getElementById('archive-remember-checkbox');
+      const shouldRemember = rememberCheckbox ? rememberCheckbox.checked : true;
+      if (shouldRemember && window.reader.currentWork && typeof IDBStorage !== 'undefined') {
+        await IDBStorage.saveClientArchive(window.reader.currentWork.id, {
+          type: 'dirHandle',
+          handle: dirHandle,
+          folderName: dirHandle.name,
+          savedAt: Date.now()
+        });
+      }
+
+      this.closeAllModals();
+      this.showToast(
+        shouldRemember
+          ? (isEn ? '💾 Folder saved on this device for fast access' : '💾 Папка сохранена на этом устройстве для быстрого доступа')
+          : (isEn ? 'Folder loaded' : 'Папка загружена'),
+        'success'
+      );
+    } catch (err) {
+      this.showToast(err.message || 'Ошибка подключения папки', 'error');
+    }
   }
 
   /**
@@ -1748,20 +1895,69 @@ class App {
   }
 
   async handleArchiveFile(file) {
+    const isEn = window.i18n && window.i18n.getLang() === 'en';
     try {
-      this.showToast('Индексация архива...', 'info');
+      this.showToast(isEn ? 'Indexing ZIP archive...' : 'Индексация архива...', 'info');
       await window.reader.loadUserZipFile(file);
+
+      const rememberCheckbox = document.getElementById('archive-remember-checkbox');
+      const shouldRemember = rememberCheckbox ? rememberCheckbox.checked : true;
+      if (shouldRemember && window.reader.currentWork && typeof IDBStorage !== 'undefined') {
+        await IDBStorage.saveClientArchive(window.reader.currentWork.id, {
+          type: 'zip',
+          blob: file,
+          fileName: file.name,
+          size: file.size,
+          savedAt: Date.now()
+        });
+      }
+
       this.closeAllModals();
+      this.showToast(
+        shouldRemember
+          ? (isEn ? '💾 Archive saved on this device for fast reading' : '💾 Архив сохранен на этом устройстве для быстрого открытия')
+          : (isEn ? 'Archive loaded' : 'Архив загружен'),
+        'success'
+      );
     } catch (err) {
       this.showToast(err.message || 'Ошибка чтения архива', 'error');
     }
   }
 
   async handleArchiveFolder(files) {
+    const isEn = window.i18n && window.i18n.getLang() === 'en';
     try {
-      this.showToast('Чтение папки с изображениями...', 'info');
+      this.showToast(isEn ? 'Reading graphics folder...' : 'Чтение папки с изображениями...', 'info');
       await window.reader.loadUserFolder(files);
+
+      const rememberCheckbox = document.getElementById('archive-remember-checkbox');
+      const shouldRemember = rememberCheckbox ? rememberCheckbox.checked : true;
+      if (shouldRemember && window.reader.currentWork && typeof IDBStorage !== 'undefined') {
+        const fileList = [];
+        for (let i = 0; i < Math.min(files.length, 300); i++) {
+          const f = files[i];
+          fileList.push({
+            name: f.name,
+            path: f.webkitRelativePath || f.name,
+            type: f.type,
+            blob: f
+          });
+        }
+        await IDBStorage.saveClientArchive(window.reader.currentWork.id, {
+          type: 'files',
+          files: fileList,
+          folderName: files[0] ? (files[0].webkitRelativePath ? files[0].webkitRelativePath.split('/')[0] : 'Папка') : 'Папка',
+          savedAt: Date.now()
+        });
+      }
+
       this.closeAllModals();
+      this.showToast(
+        shouldRemember
+          ? (isEn ? '💾 Folder saved on this device for fast reading' : '💾 Папка сохранена на этом устройстве для быстрого открытия')
+          : (isEn ? 'Folder loaded' : 'Папка загружена'),
+        'success'
+      );
     } catch (err) {
       this.showToast(err.message || 'Ошибка чтения папки', 'error');
     }
