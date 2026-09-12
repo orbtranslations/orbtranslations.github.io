@@ -327,21 +327,23 @@ class App {
             </div>
           </div>
           <div class="work-card-footer">
-            <button class="btn btn-secondary" onclick="window.reader.openPreview('${work.id}')" title="${previewBtnTxt}">
-              ${previewBtnTxt}
-            </button>
             ${isPurchased ? `
-              <button class="btn btn-success" onclick="window.reader.openFullTranslationModal('${work.id}')">
+              <button class="btn btn-success" style="width: 100%;" onclick="window.reader.openFullTranslationModal('${work.id}')">
                 ${readBtnTxt}
               </button>
-            ` : isGuest ? `
-              <button class="btn btn-accent" onclick="window.app.showAuthModal()">
-                ${loginBuyTxt}
-              </button>
             ` : `
-              <button class="btn btn-accent" onclick="window.app.handlePurchaseWork('${work.id}')">
-                ${buyBtnTxt}
+              <button class="btn btn-secondary" onclick="window.reader.openPreview('${work.id}')" title="${previewBtnTxt}">
+                ${previewBtnTxt}
               </button>
+              ${isGuest ? `
+                <button class="btn btn-accent" onclick="window.app.showAuthModal()">
+                  ${loginBuyTxt}
+                </button>
+              ` : `
+                <button class="btn btn-accent" onclick="window.app.handlePurchaseWork('${work.id}')">
+                  ${buyBtnTxt}
+                </button>
+              `}
             `}
           </div>
         </article>
@@ -361,8 +363,12 @@ class App {
     this.renderDepositHistory();
 
     const isEn = window.i18n && window.i18n.getLang() === 'en';
+    const allWorks = window.store.getWorks();
+    const purchased = allWorks.filter(w => window.store.hasPurchased(w.id));
+    if (worksBadge) worksBadge.textContent = purchased.length;
+
     const isGuest = window.auth.isGuest();
-    if (isGuest) {
+    if (isGuest && purchased.length === 0) {
       container.innerHTML = `
         <div class="empty-state" style="grid-column: 1 / -1; padding: 4rem 1rem; text-align: center;">
           <div style="font-size: 3rem; margin-bottom: 1rem;">🔒</div>
@@ -373,10 +379,6 @@ class App {
       `;
       return;
     }
-
-    const allWorks = window.store.getWorks();
-    const purchased = allWorks.filter(w => window.store.hasPurchased(w.id));
-    if (worksBadge) worksBadge.textContent = purchased.length;
 
     if (purchased.length === 0) {
       container.innerHTML = `
@@ -393,7 +395,6 @@ class App {
       container.innerHTML = purchased.map(work => {
         const title = window.i18n ? window.i18n.getWorkTitle(work) : (work.title.ru || work.title);
         const desc = window.i18n ? window.i18n.getWorkDesc(work) : (work.description.ru || work.description);
-        const previewBtnTxt = window.i18n ? window.i18n.t('card_btn_preview') : '👁️ Превью';
         const readBtnTxt = window.i18n ? window.i18n.t('card_btn_read') : '📖 Читать перевод';
         const accessTxt = window.i18n ? window.i18n.t('card_access_granted') : '✓ Доступ открыт';
 
@@ -421,8 +422,7 @@ class App {
               </div>
             </div>
             <div class="work-card-footer">
-              <button class="btn btn-secondary" onclick="window.reader.openPreview('${work.id}')">${previewBtnTxt}</button>
-              <button class="btn btn-accent" onclick="window.reader.openFullTranslationModal('${work.id}')">${readBtnTxt}</button>
+              <button class="btn btn-accent" style="width: 100%;" onclick="window.reader.openFullTranslationModal('${work.id}')">${readBtnTxt}</button>
             </div>
           </article>
         `;

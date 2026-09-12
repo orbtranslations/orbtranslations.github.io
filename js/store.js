@@ -590,7 +590,11 @@ The fate of the kingdom is now in your hands.
     }
 
     this.data.currentUser.orbs = Math.max(0, currentOrbs - workPrice);
-    this.data.currentUser.purchasedWorks.push(workId);
+    if (!this.data.currentUser.purchasedWorks.includes(workId)) {
+      this.data.currentUser.purchasedWorks.push(workId);
+    }
+    this.addDevicePurchase(workId);
+
     this.data.orders.push({
       id: 'ord_' + Date.now(),
       workId,
@@ -622,10 +626,48 @@ The fate of the kingdom is now in your hands.
     return { success: true, newBalance: this.data.currentUser.orbs };
   }
 
+  getDevicePurchases() {
+    try {
+      const raw = localStorage.getItem('orb_device_purchases');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch (e) {}
+    return [];
+  }
+
+  addDevicePurchase(workId) {
+    if (!workId) return;
+    try {
+      const list = this.getDevicePurchases();
+      if (!list.includes(workId)) {
+        list.push(workId);
+        localStorage.setItem('orb_device_purchases', JSON.stringify(list));
+      }
+    } catch (e) {}
+  }
+
+  setPurchasedWorks(workIds) {
+    if (!Array.isArray(workIds)) return;
+    if (!this.data.currentUser.purchasedWorks) {
+      this.data.currentUser.purchasedWorks = [];
+    }
+    const deviceList = this.getDevicePurchases();
+    const merged = Array.from(new Set([...this.data.currentUser.purchasedWorks, ...workIds, ...deviceList]));
+    this.data.currentUser.purchasedWorks = merged;
+    merged.forEach(id => this.addDevicePurchase(id));
+    this.saveToStorage();
+  }
+
   hasPurchased(workId) {
     if (this.getRole() === 'admin') return true;
-    if (this.getRole() === 'guest') return false;
-    return (this.data.currentUser.purchasedWorks || []).includes(workId);
+    const devicePurchases = this.getDevicePurchases();
+    if (this.getRole() === 'guest') {
+      return devicePurchases.includes(workId) || (this.data.currentUser.purchasedWorks || []).includes(workId);
+    }
+    const userPurchased = (this.data.currentUser.purchasedWorks || []).includes(workId);
+    return userPurchased || devicePurchases.includes(workId);
   }
 
   // Каталог
@@ -879,6 +921,22 @@ The fate of the kingdom is now in your hands.
         }
       } catch (err) {
         console.warn('Ошибка получения закрытого скрипта из Supabase:', err);
+      }
+    }
+
+    // 3.5. Проверка в локальной базе IndexedDB (для офлайн-доступа и кэша)
+    if (typeof IDBStorage !== 'undefined') {
+      try {
+        const idbData = await IDBStorage.get('main_store');
+        if (idbData && Array.isArray(idbData.works)) {
+          const idbWork = idbData.works.find(w => w && w.id === workId);
+          if (idbWork && idbWork.fullScriptText && !idbWork.fullScriptText.startsWith('[STORED_IN_IDB')) {
+            if (work) work.fullScriptText = idbWork.fullScriptText;
+            return idbWork.fullScriptText;
+          }
+        }
+      } catch (e) {
+        console.warn('Ошибка чтения fullScriptText из IDB:', e);
       }
     }
 

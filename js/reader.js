@@ -376,9 +376,16 @@ class ReaderService {
 
     if (this.workArchives[workId]) {
       this.rebuildPagesFromScript();
-      this.currentIndex = 0;
+      const lastPage = this.getReadingProgress(workId);
+      this.currentIndex = (lastPage > 0 && lastPage < this.pages.length) ? lastPage : 0;
       this.currentDialogBlockIndex = 0;
       this.renderReaderUI();
+      if (this.currentIndex > 0) {
+        window.app?.showToast(
+          isEn ? `📖 Resumed reading from page ${this.currentIndex + 1}` : `📖 Чтение возобновлено с ${this.currentIndex + 1} страницы`,
+          'info'
+        );
+      }
       return;
     }
 
@@ -392,9 +399,16 @@ class ReaderService {
         'info'
       );
       this.rebuildPagesFromScript();
-      this.currentIndex = 0;
+      const lastPage = this.getReadingProgress(workId);
+      this.currentIndex = (lastPage > 0 && lastPage < this.pages.length) ? lastPage : 0;
       this.currentDialogBlockIndex = 0;
       this.renderReaderUI();
+      if (this.currentIndex > 0) {
+        window.app?.showToast(
+          isEn ? `📖 Resumed reading from page ${this.currentIndex + 1}` : `📖 Чтение возобновлено с ${this.currentIndex + 1} страницы`,
+          'info'
+        );
+      }
       return;
     }
 
@@ -843,6 +857,31 @@ class ReaderService {
   }
 
   /**
+   * Сохранение прогресса чтения для купленной работы
+   */
+  saveReadingProgress(workId, pageIndex) {
+    if (!workId) return;
+    try {
+      localStorage.setItem(`orb_reading_progress_${workId}`, String(pageIndex));
+    } catch (e) {}
+  }
+
+  /**
+   * Получение сохраненного прогресса чтения
+   */
+  getReadingProgress(workId) {
+    if (!workId) return 0;
+    try {
+      const saved = localStorage.getItem(`orb_reading_progress_${workId}`);
+      if (saved !== null) {
+        const val = parseInt(saved, 10);
+        return isNaN(val) ? 0 : Math.max(0, val);
+      }
+    } catch (e) {}
+    return 0;
+  }
+
+  /**
    * Инициализация последовательности страниц СТРОГО по порядку записей в скрипте
    */
   initPagesSequence() {
@@ -853,7 +892,23 @@ class ReaderService {
     // При открытии читалки приоритетным является язык интерфейса сайта
     this.currentLang = this.getPriorityLanguage(availableLangs);
     this.rebuildPagesFromScript();
-    this.currentIndex = 0;
+
+    if (this.isFullMode && this.currentWork) {
+      const lastPage = this.getReadingProgress(this.currentWork.id);
+      if (lastPage > 0 && lastPage < this.pages.length) {
+        this.currentIndex = lastPage;
+        const isEn = window.i18n && window.i18n.getLang() === 'en';
+        window.app?.showToast(
+          isEn ? `📖 Resumed reading from page ${lastPage + 1}` : `📖 Чтение возобновлено с ${lastPage + 1} страницы`,
+          'info'
+        );
+      } else {
+        this.currentIndex = 0;
+      }
+    } else {
+      this.currentIndex = 0;
+    }
+
     this.currentDialogBlockIndex = 0;
     this.renderReaderUI();
   }
@@ -1469,6 +1524,11 @@ class ReaderService {
 
     if (counter) {
       counter.textContent = `${this.currentIndex + 1} / ${this.pages.length}`;
+    }
+
+    // Сохраняем прогресс чтения для купленной работы
+    if (this.isFullMode && this.currentWork && this.currentIndex >= 0) {
+      this.saveReadingProgress(this.currentWork.id, this.currentIndex);
     }
 
     // Обновление счетчика реплик диалога в нижней панели управления (только для новелл с отдельными репликами)

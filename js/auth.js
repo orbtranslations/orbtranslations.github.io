@@ -134,6 +134,23 @@ class AuthManager {
           .then(() => {});
       }
 
+      // 3. Загружаем купленные работы пользователя из public.purchases
+      if (window.supabaseClient && sbUser && sbUser.id) {
+        try {
+          const { data: dbPurchases, error: pErr } = await window.supabaseClient
+            .from('purchases')
+            .select('work_id')
+            .eq('user_id', sbUser.id);
+
+          if (!pErr && dbPurchases && Array.isArray(dbPurchases)) {
+            const ids = dbPurchases.map(p => p.work_id);
+            this.store.setPurchasedWorks(ids);
+          }
+        } catch (pErr) {
+          console.warn('Ошибка загрузки покупок пользователя из Supabase:', pErr);
+        }
+      }
+
       // Запоминаем пользователя в локальном хранилище
       this.store.recordRegisteredUser({
         id: user.id,
@@ -201,7 +218,8 @@ class AuthManager {
     user.name = 'Гость';
     user.email = '';
     user.orbs = 0;
-    user.purchasedWorks = [];
+    // Сохраняем доступ к работам, купленным на этом устройстве
+    user.purchasedWorks = this.store.getDevicePurchases();
     this.store.saveToStorage();
     this.setRole('guest');
   }
