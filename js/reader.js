@@ -473,7 +473,10 @@ class ReaderService {
    */
   changeArchive() {
     if (!this.currentWork) return;
-    window.app.showArchiveUploadModal(this.currentWork, this.isFullMode ? 'full' : 'preview');
+    const work = this.currentWork;
+    const mode = this.isFullMode ? 'full' : 'preview';
+    this.closeReader();
+    window.app.showArchiveUploadModal(work, mode);
   }
 
   /**
