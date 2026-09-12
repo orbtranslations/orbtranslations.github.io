@@ -105,6 +105,11 @@ class App {
         if (window.reader) window.reader.closeReader();
       }
     });
+
+    // Автоматическая проверка переполнения описаний при изменении размера окна
+    window.addEventListener('resize', () => {
+      this.updateDescToggles();
+    });
   }
 
   handleRouting() {
@@ -267,6 +272,45 @@ class App {
   }
 
   /**
+   * Проверка переполнения описания в карточках:
+   * Кнопка разворачивания отображается ТОЛЬКО если текст реально обрезан (-webkit-line-clamp: 3),
+   * то есть когда scrollHeight > clientHeight + 2.
+   * Если описание целиком умещается в блок, кнопка полностью скрывается и не занимает места.
+   */
+  updateDescToggles(rootElement = document) {
+    const checkOverflow = () => {
+      const target = rootElement || document;
+      const containers = target.querySelectorAll('.work-desc-container');
+      containers.forEach(container => {
+        const descEl = container.querySelector('.work-desc');
+        const btnEl = container.querySelector('.work-desc-toggle');
+        if (!descEl) return;
+
+        // Если описание уже развернуто пользователем, оставляем кнопку видимой (для свертывания)
+        if (descEl.classList.contains('is-expanded')) {
+          if (btnEl) btnEl.style.display = 'inline-flex';
+          return;
+        }
+
+        // Проверяем реальное переполнение текста в браузере:
+        // scrollHeight > clientHeight означает, что текст физически не влез в 3 строки и был обрезан
+        const isOverflowed = descEl.scrollHeight > descEl.clientHeight + 2;
+        if (btnEl) {
+          btnEl.style.display = isOverflowed ? 'inline-flex' : 'none';
+        }
+        if (isOverflowed) {
+          descEl.classList.add('has-expand');
+        } else {
+          descEl.classList.remove('has-expand');
+        }
+      });
+    };
+
+    requestAnimationFrame(checkOverflow);
+    setTimeout(checkOverflow, 80);
+  }
+
+  /**
    * Рендер каталога на главной витрине (с учетом выбранного языка RU / EN)
    */
   renderStorefront() {
@@ -296,7 +340,7 @@ class App {
       const freePagesTxt = window.i18n ? `${work.previewPagesCount} ${window.i18n.t('card_preview_free')}` : `${work.previewPagesCount} ${isEn ? 'pages free' : 'стр. бесплатно'}`;
       const totalTxt = window.i18n ? `${window.i18n.t('card_total_pages')} ${work.totalPages}` : `${isEn ? 'Total:' : 'Всего:'} ${work.totalPages} ${isEn ? 'pages' : 'стр.'}`;
 
-      const isLongDesc = Boolean(desc && desc.length > 80);
+      const hasDesc = Boolean(desc && desc.trim().length > 0);
       const moreTxt = window.i18n ? window.i18n.t('card_desc_more') : (isEn ? 'Show full description ▾' : 'Развернуть описание ▾');
 
       return `
@@ -319,9 +363,9 @@ class App {
             </div>
             <h3 class="work-title" title="${title}">${title}</h3>
             <div class="work-desc-container">
-              <p class="work-desc ${isLongDesc ? 'has-expand' : ''}" id="desc-${work.id}" ${isLongDesc ? `onclick="window.app.toggleDesc('${work.id}')"` : ''}>${desc || ''}</p>
-              ${isLongDesc ? `
-                <button type="button" class="work-desc-toggle" id="desc-btn-${work.id}" onclick="window.app.toggleDesc('${work.id}')">
+              <p class="work-desc" id="desc-${work.id}" onclick="if(this.classList.contains('has-expand')) window.app.toggleDesc('${work.id}')">${desc || ''}</p>
+              ${hasDesc ? `
+                <button type="button" class="work-desc-toggle" id="desc-btn-${work.id}" style="display: none;" onclick="window.app.toggleDesc('${work.id}')">
                   ${moreTxt}
                 </button>
               ` : ''}
@@ -354,6 +398,8 @@ class App {
         </article>
       `;
     }).join('');
+
+    this.updateDescToggles(container);
   }
 
   /**
@@ -403,7 +449,7 @@ class App {
         const readBtnTxt = window.i18n ? window.i18n.t('card_btn_read') : '📖 Читать перевод';
         const accessTxt = window.i18n ? window.i18n.t('card_access_granted') : '✓ Доступ открыт';
 
-        const isLongDesc = Boolean(desc && desc.length > 80);
+        const hasDesc = Boolean(desc && desc.trim().length > 0);
         const moreTxt = window.i18n ? window.i18n.t('card_desc_more') : (isEn ? 'Show full description ▾' : 'Развернуть описание ▾');
 
         return `
@@ -418,9 +464,9 @@ class App {
             <div class="work-card-body">
               <h3 class="work-title">${title}</h3>
               <div class="work-desc-container">
-                <p class="work-desc ${isLongDesc ? 'has-expand' : ''}" id="p-desc-${work.id}" ${isLongDesc ? `onclick="window.app.toggleDesc('${work.id}', 'p-')"` : ''}>${desc || ''}</p>
-                ${isLongDesc ? `
-                  <button type="button" class="work-desc-toggle" id="p-desc-btn-${work.id}" onclick="window.app.toggleDesc('${work.id}', 'p-')">
+                <p class="work-desc" id="p-desc-${work.id}" onclick="if(this.classList.contains('has-expand')) window.app.toggleDesc('${work.id}', 'p-')">${desc || ''}</p>
+                ${hasDesc ? `
+                  <button type="button" class="work-desc-toggle" id="p-desc-btn-${work.id}" style="display: none;" onclick="window.app.toggleDesc('${work.id}', 'p-')">
                     ${moreTxt}
                   </button>
                 ` : ''}
@@ -432,6 +478,8 @@ class App {
           </article>
         `;
       }).join('');
+
+      this.updateDescToggles(container);
     }
 
     // Подгружаем историю пополнений
