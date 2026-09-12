@@ -75,13 +75,11 @@ class I18nManager {
         card_desc_less: 'Свернуть ▴',
         currency_orb: 'Орб',
 
-        // Purchases Section & Tabs
-        section_purchases_title: '📚 Мои переводы и финансы',
-        section_purchases_sub: 'Купленные скрипты новелл и история операций с балансом',
-        purchases_subtab_works: '📚 Приобретённые переводы',
-        purchases_subtab_deposits: '🪙 История сделок и операций',
+        // Purchases Section
+        section_purchases_title: '📚 Мои покупки',
+        section_purchases_sub: 'Купленные скрипты новелл для чтения',
         purchases_guest_title: 'Войдите в аккаунт',
-        purchases_guest_desc: 'Чтобы просматривать купленные работы и историю сделок, выполните вход.',
+        purchases_guest_desc: 'Чтобы просматривать купленные работы, выполните вход.',
         purchases_guest_btn: '🔑 Войти / Зарегистрироваться',
         purchases_empty_title: 'У вас пока нет купленных переводов',
         purchases_empty_desc: 'Перейдите в каталог, чтобы ознакомиться с доступными работами и бесплатными превью.',
@@ -353,13 +351,11 @@ class I18nManager {
         card_desc_less: 'Collapse ▴',
         currency_orb: 'Orbs',
 
-        // Purchases Section & Tabs
-        section_purchases_title: '📚 My Translations & Finances',
-        section_purchases_sub: 'Purchased novel scripts and account transaction history',
-        purchases_subtab_works: '📚 Purchased Translations',
-        purchases_subtab_deposits: '🪙 Transaction & Deals History',
+        // Purchases Section
+        section_purchases_title: '📚 My Purchases',
+        section_purchases_sub: 'Unlocked visual novel scripts ready to read',
         purchases_guest_title: 'Sign In to Your Account',
-        purchases_guest_desc: 'Please sign in to view your purchased scripts and deal history.',
+        purchases_guest_desc: 'Please sign in to view your purchased scripts.',
         purchases_guest_btn: '🔑 Sign In / Register',
         purchases_empty_title: 'You have no unlocked translations yet',
         purchases_empty_desc: 'Explore the catalog to read free previews and unlock full adaptations.',

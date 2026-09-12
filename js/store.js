@@ -620,6 +620,14 @@ The fate of the kingdom is now in your hands.
     }
     this.addDevicePurchase(workId);
 
+    // Сброс прогресса чтения для новой покупки: первое открытие начнется строго с 1-й страницы
+    try {
+      localStorage.removeItem(`orb_progress_${workId}`);
+      localStorage.removeItem(`orb_reading_progress_${workId}`);
+      localStorage.removeItem(`orb_opened_after_purchase_${workId}`);
+      localStorage.removeItem(`orb_preview_progress_${workId}`);
+    } catch (_) {}
+
     // Если работа ранее была в отозванных — снимаем статус отзыва при повторной покупке
     if (this.data.currentUser && this.data.currentUser.id) {
       this.removeRevokedPurchase(this.data.currentUser.id, workId);
@@ -717,6 +725,14 @@ The fate of the kingdom is now in your hands.
     try {
       localStorage.setItem('orb_revoked_purchases', JSON.stringify(list));
     } catch (e) {}
+
+    if (workId) {
+      try {
+        localStorage.removeItem(`orb_progress_${workId}`);
+        localStorage.removeItem(`orb_reading_progress_${workId}`);
+        localStorage.removeItem(`orb_opened_after_purchase_${workId}`);
+      } catch (_) {}
+    }
   }
 
   removeRevokedPurchase(userId, workId) {
@@ -2087,6 +2103,8 @@ The fate of the kingdom is now in your hands.
       this.removeDevicePurchase(workId);
       try {
         localStorage.removeItem(`orb_progress_${workId}`);
+        localStorage.removeItem(`orb_reading_progress_${workId}`);
+        localStorage.removeItem(`orb_opened_after_purchase_${workId}`);
       } catch (_) {}
       changed = true;
     }
@@ -2155,7 +2173,11 @@ The fate of the kingdom is now in your hands.
       const purchased = [...(this.data.currentUser.purchasedWorks || [])];
       purchased.forEach(wId => {
         this.removeDevicePurchase(wId);
-        try { localStorage.removeItem(`orb_progress_${wId}`); } catch (_) {}
+        try {
+          localStorage.removeItem(`orb_progress_${wId}`);
+          localStorage.removeItem(`orb_reading_progress_${wId}`);
+          localStorage.removeItem(`orb_opened_after_purchase_${wId}`);
+        } catch (_) {}
       });
       this.data.currentUser.purchasedWorks = [];
       this.data.orders = (this.data.orders || []).filter(o => o.userId && o.userId !== userId);
@@ -2168,7 +2190,11 @@ The fate of the kingdom is now in your hands.
         if (Array.isArray(regUser.purchasedWorks)) {
           regUser.purchasedWorks.forEach(wId => {
             this.removeDevicePurchase(wId);
-            try { localStorage.removeItem(`orb_progress_${wId}`); } catch (_) {}
+            try {
+              localStorage.removeItem(`orb_progress_${wId}`);
+              localStorage.removeItem(`orb_reading_progress_${wId}`);
+              localStorage.removeItem(`orb_opened_after_purchase_${wId}`);
+            } catch (_) {}
           });
           regUser.purchasedWorks = [];
         }

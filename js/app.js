@@ -615,22 +615,10 @@ class App {
   }
 
   switchPurchasesSubtab(tab) {
-    const worksView = document.getElementById('purchases-works-view');
-    const depositsView = document.getElementById('purchases-deposits-view');
-    const btnWorks = document.getElementById('subtab-btn-works');
-    const btnDeposits = document.getElementById('subtab-btn-deposits');
-
     if (tab === 'deposits') {
-      if (worksView) worksView.style.display = 'none';
-      if (depositsView) depositsView.style.display = 'block';
-      if (btnWorks) btnWorks.classList.remove('active');
-      if (btnDeposits) btnDeposits.classList.add('active');
-      this.renderDepositHistory();
+      this.showDepositHistoryModal();
     } else {
-      if (worksView) worksView.style.display = 'block';
-      if (depositsView) depositsView.style.display = 'none';
-      if (btnWorks) btnWorks.classList.add('active');
-      if (btnDeposits) btnDeposits.classList.remove('active');
+      this.switchTab('purchases');
     }
   }
 
@@ -639,9 +627,6 @@ class App {
     if (modal) {
       modal.classList.add('active');
       document.body.classList.add('modal-open');
-    } else {
-      this.switchTab('purchases');
-      this.switchPurchasesSubtab('deposits');
     }
     return await this.renderDepositHistory();
   }
@@ -706,10 +691,9 @@ class App {
       this.renderPurchases();
       this.renderDepositHistory();
 
+      // Если покупка произошла из окна читалки превью — закрываем читалку превью
       if (fromInsideReader && window.reader) {
-        window.reader.unlockFullReading();
-      } else {
-        window.reader.openFullTranslationModal(workId);
+        window.reader.close();
       }
     } else {
       // Недостаточно Орбов

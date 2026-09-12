@@ -376,7 +376,7 @@ class ReaderService {
 
     if (this.workArchives[workId]) {
       this.rebuildPagesFromScript();
-      const lastPage = this.getReadingProgress(workId);
+      const lastPage = this.getInitialPageIndexForWork(workId);
       this.currentIndex = (lastPage > 0 && lastPage < this.pages.length) ? lastPage : 0;
       this.currentDialogBlockIndex = 0;
       this.renderReaderUI();
@@ -399,7 +399,7 @@ class ReaderService {
         'info'
       );
       this.rebuildPagesFromScript();
-      const lastPage = this.getReadingProgress(workId);
+      const lastPage = this.getInitialPageIndexForWork(workId);
       this.currentIndex = (lastPage > 0 && lastPage < this.pages.length) ? lastPage : 0;
       this.currentDialogBlockIndex = 0;
       this.renderReaderUI();
@@ -882,6 +882,25 @@ class ReaderService {
   }
 
   /**
+   * Определение начальной страницы для купленной работы:
+   * Первое открытие купленной работы после покупки строго начинает с 1-й страницы (индекс 0).
+   * Запоминание страницы начинает работать с момента этого первого открытия.
+   * Возврат к последней прочитанной странице происходит при последующих открытиях.
+   */
+  getInitialPageIndexForWork(workId) {
+    if (!this.isFullMode || !workId) return 0;
+    const hasOpenedKey = `orb_opened_after_purchase_${workId}`;
+    const hasOpened = localStorage.getItem(hasOpenedKey);
+    if (!hasOpened) {
+      // Первое открытие купленной работы после её покупки
+      localStorage.setItem(hasOpenedKey, '1');
+      return 0;
+    }
+    // Последующее открытие купленной работы: возвращаем сохраненную страницу
+    return this.getReadingProgress(workId);
+  }
+
+  /**
    * Инициализация последовательности страниц СТРОГО по порядку записей в скрипте
    */
   initPagesSequence() {
@@ -894,7 +913,7 @@ class ReaderService {
     this.rebuildPagesFromScript();
 
     if (this.isFullMode && this.currentWork) {
-      const lastPage = this.getReadingProgress(this.currentWork.id);
+      const lastPage = this.getInitialPageIndexForWork(this.currentWork.id);
       if (lastPage > 0 && lastPage < this.pages.length) {
         this.currentIndex = lastPage;
         const isEn = window.i18n && window.i18n.getLang() === 'en';

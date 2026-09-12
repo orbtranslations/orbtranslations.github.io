@@ -117,59 +117,18 @@
       </div>
     </section>
 
-    <!-- Section 2: Purchases & History (Мои покупки и история пополнений) -->
+    <!-- Section 2: Purchases (Мои покупки) -->
     <section class="app-section" id="section-purchases" style="display: none;">
       <div class="section-header-row">
         <div>
-          <h2 class="section-title" data-i18n="section_purchases_title">📚 Мои переводы и финансы</h2>
-          <p class="section-subtitle" data-i18n="section_purchases_sub">Купленные скрипты новелл и история криптовалютных пополнений баланса</p>
+          <h2 class="section-title" data-i18n="section_purchases_title">📚 Мои покупки</h2>
+          <p class="section-subtitle" data-i18n="section_purchases_sub">Купленные скрипты новелл для чтения</p>
         </div>
       </div>
 
-      <!-- Sub-tabs: Purchased Works vs Deposit History -->
-      <div style="display: flex; gap: 10px; margin-bottom: 1.5rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.75rem;">
-        <button class="btn btn-secondary btn-small purchases-subtab active" id="subtab-btn-works" onclick="window.app.switchPurchasesSubtab('works')">
-          <span data-i18n="purchases_subtab_works">📚 Purchased Translations</span> (<span id="purchases-count-badge">0</span>)
-        </button>
-        <button class="btn btn-secondary btn-small purchases-subtab" id="subtab-btn-deposits" onclick="window.app.switchPurchasesSubtab('deposits')">
-          <span data-i18n="purchases_subtab_deposits">🪙 Transaction & Deals History</span> (<span id="deposits-count-badge">0</span>)
-        </button>
-      </div>
-
-      <!-- View 1: Works Grid -->
-      <div id="purchases-works-view">
-        <div class="works-grid" id="purchases-grid">
-          <!-- Rendered dynamically via JS -->
-        </div>
-      </div>
-
-      <!-- View 2: Deposits History Table -->
-      <div id="purchases-deposits-view" style="display: none;">
-        <div class="modal-card" style="max-width: 100%; box-shadow: var(--shadow-sm);">
-          <div class="modal-header" style="justify-content: space-between;">
-            <h3 class="modal-title" data-i18n="deposits_table_title">🪙 Transactions & Deals History (Deposits & Purchases)</h3>
-            <button class="btn btn-secondary btn-small" onclick="window.app.renderDepositHistory()" data-i18n="deposits_refresh_btn">🔄 Refresh History</button>
-          </div>
-          <div class="modal-body" style="padding: 0; overflow-x: auto; -webkit-overflow-scrolling: touch;">
-            <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 0.82rem;">
-              <thead>
-                <tr style="border-bottom: 1px solid var(--border-color); background: rgba(255, 255, 255, 0.03); color: var(--text-muted);">
-                  <th style="padding: 0.65rem 0.6rem; white-space: nowrap;" data-i18n="deposits_th_date">Date</th>
-                  <th style="padding: 0.65rem 0.6rem; white-space: nowrap;" data-i18n="deposits_th_order">Order ID / Type</th>
-                  <th style="padding: 0.65rem 0.6rem; white-space: nowrap;" data-i18n="deposits_th_network">Network / Method</th>
-                  <th style="padding: 0.65rem 0.6rem; white-space: nowrap;" data-i18n="deposits_th_amount">Amount</th>
-                  <th style="padding: 0.65rem 0.6rem; white-space: nowrap;" data-i18n="deposits_th_orbs">Orbs (±)</th>
-                  <th style="padding: 0.65rem 0.6rem; white-space: nowrap;" data-i18n="deposits_th_tx">Purpose / Transaction</th>
-                  <th style="padding: 0.65rem 0.6rem; white-space: nowrap;" data-i18n="deposits_th_status">Status</th>
-                  <th style="padding: 0.65rem 0.6rem; text-align: center; white-space: nowrap;" data-i18n="deposits_th_action">Action</th>
-                </tr>
-              </thead>
-              <tbody id="deposits-history-table-body">
-                <!-- Rendered dynamically -->
-              </tbody>
-            </table>
-          </div>
-        </div>
+      <!-- Works Grid -->
+      <div class="works-grid" id="purchases-grid">
+        <!-- Rendered dynamically via JS -->
       </div>
     </section>
 
@@ -904,15 +863,15 @@
        Application JavaScript Modules
        ======================================================================== -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="js/supabase-client.js?v=3.3.6"></script>
-  <script src="js/store.js?v=3.3.6"></script>
-  <script src="js/i18n.js?v=3.3.6"></script>
-  <script src="js/script-parser.js?v=3.3.6"></script>
-  <script src="js/auth.js?v=3.3.6"></script>
-  <script src="js/qrcode.min.js?v=3.3.6"></script>
-  <script src="js/crypto-pay.js?v=3.3.6"></script>
-  <script src="js/reader.js?v=3.3.6"></script>
-  <script src="js/admin.js?v=3.3.6"></script>
-  <script src="js/app.js?v=3.3.6"></script>
+  <script src="js/supabase-client.js?v=3.3.7"></script>
+  <script src="js/store.js?v=3.3.7"></script>
+  <script src="js/i18n.js?v=3.3.7"></script>
+  <script src="js/script-parser.js?v=3.3.7"></script>
+  <script src="js/auth.js?v=3.3.7"></script>
+  <script src="js/qrcode.min.js?v=3.3.7"></script>
+  <script src="js/crypto-pay.js?v=3.3.7"></script>
+  <script src="js/reader.js?v=3.3.7"></script>
+  <script src="js/admin.js?v=3.3.7"></script>
+  <script src="js/app.js?v=3.3.7"></script>
 </body>
 </html>
