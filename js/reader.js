@@ -1922,13 +1922,33 @@ class ReaderService {
    */
   isPageCleanFrame(page) {
     if (!page) return false;
+    const cleanBase = (page.key || '').split(/[\/\\]/).pop().replace(/\.[^/.]+$/, '').toLowerCase();
+    const cleanTarget = (page.targetKey || '').split(/[\/\\]/).pop().replace(/\.[^/.]+$/, '').toLowerCase();
+    if (cleanBase.includes('title') || cleanTarget.includes('title') || page.index === 0) {
+      return true;
+    }
+
+    const overlayData = (this.parsedScript && this.parsedScript.overlayData) || {};
+    const dialogData = overlayData.dialogData || {};
+    const candKeys = this.getCandidateSceneKeys(page);
+
+    let hasInternalBorder = false;
+    let hasNumericBorder = false;
+    for (const k of candKeys) {
+      const b0 = dialogData[`${k}_block_0`];
+      if (b0 && b0.borderIndex !== undefined) {
+        if (b0.borderIndex === 'internal') hasInternalBorder = true;
+        else if (!isNaN(parseInt(b0.borderIndex, 10))) hasNumericBorder = true;
+      }
+    }
+    if (hasInternalBorder) return true;
+    if (hasNumericBorder) return false;
+
     const fData = this.getFrameForPage(page, this.currentLang);
     if (fData && (fData.image || fData.customImage || fData.textZone || (fData.layers && fData.layers.length > 0))) {
       return true;
     }
-    const cleanBase = (page.key || '').split(/[\/\\]/).pop().replace(/\.[^/.]+$/, '').toLowerCase();
-    if (cleanBase.startsWith('001_') || cleanBase.startsWith('002_') || cleanBase.startsWith('003_') || cleanBase.startsWith('004_') ||
-        cleanBase.startsWith('01_') || cleanBase.startsWith('02_') || cleanBase.startsWith('03_') || cleanBase.startsWith('04_') || cleanBase.startsWith('05_') || cleanBase.includes('title')) {
+    if (/^\d{1,4}_/.test(cleanBase) || /^\d{1,4}_/.test(cleanTarget) || (page.subfolder && page.subfolder.includes('キャラ紹介'))) {
       return true;
     }
     return false;
@@ -3300,6 +3320,41 @@ class ReaderService {
     const rawText = (page.entry && page.entry.text) || '';
     const blocks = ScriptParser.getBlocks(rawText);
 
+    // Определение настроек диалога и пресета из dialogData
+    const candKeys = this.getCandidateSceneKeys(page);
+
+    let bSettings = {};
+    for (const k of candKeys) {
+      const fullKey = `${k}_block_${dialogBlockIdx}`;
+      if (dialogData[fullKey]) {
+        bSettings = dialogData[fullKey];
+        break;
+      }
+    }
+    if (!bSettings.preset && !bSettings.fontSettings && dialogBlockIdx !== 0) {
+      for (const k of candKeys) {
+        const fullKey = `${k}_block_0`;
+        if (dialogData[fullKey]) {
+          bSettings = dialogData[fullKey];
+          break;
+        }
+      }
+    }
+
+    const isInternalBorder = bSettings.borderIndex === 'internal' || 
+                             candKeys.some(k => dialogData[`${k}_block_0`]?.borderIndex === 'internal' || 
+                                                dialogData[`${k}_block_${dialogBlockIdx}`]?.borderIndex === 'internal');
+
+    const isCharaCard = /^\d{1,4}_/.test(cleanBase) || /^\d{1,4}_/.test(cleanTarget) ||
+                        (page.subfolder && page.subfolder.includes('キャラ紹介'));
+
+    const isInternalCleanFrame = !isTitle && (
+      isInternalBorder ||
+      isCharaCard ||
+      (fData && fData.image && String(fData.image).toLowerCase().includes('рамка 5')) || 
+      (fData && overlayData.framePresets && overlayData.framePresets[fData.image] === 'CharaTable')
+    );
+
     // =========================================================================
     // 1. Графический оверлей (Title) или Внутренняя рамка персонажа (Clean Frame)
     // =========================================================================
@@ -3382,41 +3437,14 @@ class ReaderService {
 
       // Поиск слоя с текстовой зоной для позиционирования текста
       let textBoundLayer = renderLayers.slice().reverse().find(l => l && l.textZone) || renderLayers[renderLayers.length - 1] || fData;
-      const isInternalCleanFrame = !isTitle && (
-        (fData.image && String(fData.image).toLowerCase().includes('рамка 5')) || 
-        cleanBase.startsWith('002_') || cleanBase.startsWith('003_') || cleanBase.startsWith('004_') ||
-        cleanBase.startsWith('02_') || cleanBase.startsWith('03_') || cleanBase.startsWith('04_') ||
-        (overlayData.framePresets && overlayData.framePresets[fData.image] === 'CharaTable')
-      );
-      const isTitleOrGraphic = isTitle || (!fData.textZone && !textBoundLayer.textZone && (fData.customImage || !isInternalCleanFrame));
 
       let textSlot = null;
       let textContent = null;
 
-      // Определение настроек диалога и пресета из dialogData
-      const candKeys = this.getCandidateSceneKeys(page);
-
-      let bSettings = {};
-      for (const k of candKeys) {
-        const fullKey = `${k}_block_${dialogBlockIdx}`;
-        if (dialogData[fullKey]) {
-          bSettings = dialogData[fullKey];
-          break;
-        }
-      }
-      if (!bSettings.preset && !bSettings.fontSettings && dialogBlockIdx !== 0) {
-        for (const k of candKeys) {
-          const fullKey = `${k}_block_0`;
-          if (dialogData[fullKey]) {
-            bSettings = dialogData[fullKey];
-            break;
-          }
-        }
-      }
-
-      // Слот текста создается, если есть реплики (blocks > 0) И это карточка персонажа или задана textZone
-      const hasTextZone = !!(textBoundLayer && textBoundLayer.textZone) || !!fData.textZone;
-      const shouldRenderText = blocks.length > 0 && (hasTextZone || isInternalCleanFrame || !isTitleOrGraphic);
+      const hasTextZone = !!(textBoundLayer && textBoundLayer.textZone) || !!(fData && fData.textZone);
+      const isTitleOrGraphic = isTitle || (!hasTextZone && !isInternalCleanFrame && !!fData.customImage);
+      // Слот текста создается, если есть реплики (blocks > 0) И это внутренний чистый кадр, задана textZone, либо не титульный графический оверлей
+      const shouldRenderText = blocks.length > 0 && !isTitle && (hasTextZone || isInternalCleanFrame || !fData.customImage);
 
       let effectivePreset = {};
       if (shouldRenderText) {
@@ -3558,8 +3586,8 @@ class ReaderService {
           const frameDrawX = isTzStretchX ? 0 : ((bX / 100) * curSceneW);
           const frameDrawY = isTzStretchY ? 0 : ((bY / 100) * curSceneH);
 
-          // Точная зона текста карточки героини: отступы 5% по бокам и сверху/снизу как в оригинальном редакторе
-          const tz = boundLayer.textZone || fData.textZone || { x: 5, y: 5, w: 90, h: 90 };
+          // Точная зона текста карточки героини или чистого кадра: отступы 5% по бокам и сверху/снизу как в оригинальном редакторе
+          const tz = boundLayer.textZone || fData.textZone || bSettings.textZone || bSettings.customTz || { x: 5, y: 5, w: 90, h: 90 };
 
           const zonePixelX = frameDrawX + (tz.x / 100) * frameDrawW;
           const zonePixelY = frameDrawY + (tz.y / 100) * frameDrawH;
@@ -3613,10 +3641,11 @@ class ReaderService {
         sceneStage.appendChild(textSlot);
       }
     } 
+
     // =========================================================================
     // 2. Нижняя диалоговая рамка Visual Novel (Рамка 1 .. Рамка 4)
     // =========================================================================
-    else if (blocks.length > 0) {
+    if (blocks.length > 0 && !isInternalCleanFrame && !isTitle) {
       const steps = this.getDialogStepsForPage(page);
       const safeStepIdx = Math.max(0, Math.min(dialogBlockIdx, Math.max(0, steps.length - 1)));
       const activeStep = steps[safeStepIdx] || steps[0] || {};
