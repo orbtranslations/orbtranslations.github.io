@@ -999,13 +999,32 @@ class ReaderService {
   }
 
   /**
+   * Запрос архива/папки для купленной работы при завершении превью
+   */
+  async promptFullArchiveAccess() {
+    if (!this.currentWork || !window.app) return;
+    const work = this.currentWork;
+    const isEn = window.i18n && window.i18n.getLang() === 'en';
+
+    window.app.showToast(
+      isEn
+        ? '📖 You own this novel! Select your graphics archive or folder to continue reading.'
+        : '📖 Вы приобрели эту новеллу! Выберите архив или папку с графикой для продолжения чтения.',
+      'info'
+    );
+
+    const saved = typeof IDBStorage !== 'undefined' ? await IDBStorage.getClientArchive(work.id) : null;
+    window.app.showArchiveUploadModal(work, 'full', saved);
+  }
+
+  /**
    * Сменить или заново выбрать архив/папку для текущей работы
    */
   changeArchive() {
     if (!this.currentWork) return;
     const work = this.currentWork;
-    const mode = this.isFullMode ? 'full' : 'preview';
-    this.closeReader();
+    const isPurchased = this.store.hasPurchased(work.id) || (typeof this.store.isAdmin === 'function' ? this.store.isAdmin() : this.store.getRole() === 'admin');
+    const mode = (this.isFullMode || isPurchased) ? 'full' : 'preview';
     window.app.showArchiveUploadModal(work, mode);
   }
 
@@ -2856,6 +2875,12 @@ class ReaderService {
       this.currentDialogBlockIndex = 0;
       this.updateReaderDisplay();
     } else if (!this.isFullMode) {
+      const isPurchased = this.currentWork && (this.store.hasPurchased(this.currentWork.id) || (typeof this.store.isAdmin === 'function' ? this.store.isAdmin() : this.store.getRole() === 'admin'));
+      if (isPurchased) {
+        // Для купленной работы при завершении превью открываем окно выбора архива/папки
+        this.promptFullArchiveAccess();
+        return;
+      }
       const isEn = window.i18n && window.i18n.getLang() === 'en';
       window.app?.showToast(
         isEn 
@@ -3083,10 +3108,32 @@ class ReaderService {
 
     // Экран блокировки завершения бесплатного превью
     if (page.isLocked) {
+      const isPurchased = this.currentWork && (this.store.hasPurchased(this.currentWork.id) || (typeof this.store.isAdmin === 'function' ? this.store.isAdmin() : this.store.getRole() === 'admin'));
+      const isEn = window.i18n && window.i18n.getLang() === 'en';
+
+      if (isPurchased) {
+        container.innerHTML = `
+          <div class="reader-lock-screen">
+            <div class="lock-icon">📖</div>
+            <h2>${isEn ? 'Continue Reading Full Translation' : 'Продолжение полного перевода'}</h2>
+            <p>${isEn 
+              ? 'You have purchased this novel! To continue reading with full translation overlays, select your official graphics archive (.zip) or graphics folder.' 
+              : 'Вы приобрели доступ к переводу! Чтобы продолжить чтение всей новеллы с наложением адаптированного текста, укажите официальный ZIP-архив или папку с графикой.'}
+            </p>
+            <div class="lock-actions">
+              <button class="btn btn-accent btn-large" onclick="window.reader.promptFullArchiveAccess()">
+                ${isEn ? '📂 Select Graphics Archive / Folder' : '📂 Выбрать архив или папку с графикой'}
+              </button>
+            </div>
+          </div>
+        `;
+        this.promptFullArchiveAccess();
+        return;
+      }
+
       const price = this.currentWork ? this.currentWork.price : 1;
       const previewPages = this.currentWork ? (this.currentWork.previewPagesCount || 3) : 3;
       const totalPages = this.pages.length;
-      const isEn = window.i18n && window.i18n.getLang() === 'en';
 
       container.innerHTML = `
         <div class="reader-lock-screen">

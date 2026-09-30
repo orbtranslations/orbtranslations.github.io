@@ -11,7 +11,7 @@ git add .
 
 echo.
 echo [2/3] Committing changes...
-git commit -m "fix: define Store.isAdmin and resilient role checks for purchased works (v3.7.0)"
+git commit -m "feat: prompt archive upload modal when purchased work preview reaches end (v3.7.1)"
 
 echo.
 echo [3/3] Pushing to GitHub (main)...

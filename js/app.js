@@ -1532,8 +1532,16 @@ class App {
       const res = await window.reader.tryLoadSavedClientArchive(this.activeArchiveWork.id);
       if (res && (res.type === 'zip' || res.status === 'loaded')) {
         this.closeAllModals();
+        window.reader.isDemoMode = false;
+        window.reader.activeDemoImages = null;
+        window.reader.isFullMode = true;
+        const fullScript = await window.store.getFullScript(this.activeArchiveWork.id);
+        if (fullScript && !fullScript.startsWith('[STORED_IN_IDB')) {
+          window.reader.parseWorkScript(this.activeArchiveWork, fullScript);
+        }
         window.reader.rebuildPagesFromScript();
-        window.reader.currentIndex = 0;
+        const lastPage = window.reader.getInitialPageIndexForWork(this.activeArchiveWork.id);
+        window.reader.currentIndex = (lastPage > 0 && lastPage < window.reader.pages.length) ? lastPage : 0;
         window.reader.currentDialogBlockIndex = 0;
         window.reader.renderReaderUI();
         this.showToast(isEn ? 'Saved graphics loaded!' : 'Сохраненная графика загружена!', 'success');
@@ -1554,9 +1562,17 @@ class App {
       this.showToast(isEn ? 'Requesting browser permission...' : 'Запрос разрешения браузера на доступ к папке...', 'info');
       const perm = await handle.requestPermission({ mode: 'read' });
       if (perm === 'granted') {
+        window.reader.isDemoMode = false;
+        window.reader.activeDemoImages = null;
+        window.reader.isFullMode = true;
+        const fullScript = await window.store.getFullScript(this.activeArchiveWork.id);
+        if (fullScript && !fullScript.startsWith('[STORED_IN_IDB')) {
+          window.reader.parseWorkScript(this.activeArchiveWork, fullScript);
+        }
         const files = await window.reader.readFilesFromDirectoryHandle(handle);
         await window.reader.loadUserFolder(files);
         this.closeAllModals();
+        window.reader.renderReaderUI();
         this.showToast(isEn ? 'Folder reconnected!' : 'Папка подключена!', 'success');
       } else {
         this.showToast(isEn ? 'Folder access was not granted' : 'Доступ к папке не был разрешен', 'warning');
@@ -1599,6 +1615,18 @@ class App {
     const isEn = window.i18n && window.i18n.getLang() === 'en';
     try {
       this.showToast(isEn ? 'Scanning folder files...' : 'Сканирование файлов папки...', 'info');
+      if (this.activeArchiveWork) {
+        const isPurchased = window.store.hasPurchased(this.activeArchiveWork.id) || (typeof window.store.isAdmin === 'function' ? window.store.isAdmin() : window.store.getRole() === 'admin');
+        if (isPurchased || this.activeArchiveMode === 'full') {
+          window.reader.isDemoMode = false;
+          window.reader.activeDemoImages = null;
+          window.reader.isFullMode = true;
+          const fullScript = await window.store.getFullScript(this.activeArchiveWork.id);
+          if (fullScript && !fullScript.startsWith('[STORED_IN_IDB')) {
+            window.reader.parseWorkScript(this.activeArchiveWork, fullScript);
+          }
+        }
+      }
       const files = await window.reader.readFilesFromDirectoryHandle(dirHandle);
       await window.reader.loadUserFolder(files);
 
@@ -1614,6 +1642,7 @@ class App {
       }
 
       this.closeAllModals();
+      window.reader.renderReaderUI();
       this.showToast(
         shouldRemember
           ? (isEn ? '💾 Folder saved on this device for fast access' : '💾 Папка сохранена на этом устройстве для быстрого доступа')
@@ -2021,6 +2050,18 @@ class App {
     const isEn = window.i18n && window.i18n.getLang() === 'en';
     try {
       this.showToast(isEn ? 'Indexing ZIP archive...' : 'Индексация архива...', 'info');
+      if (this.activeArchiveWork) {
+        const isPurchased = window.store.hasPurchased(this.activeArchiveWork.id) || (typeof window.store.isAdmin === 'function' ? window.store.isAdmin() : window.store.getRole() === 'admin');
+        if (isPurchased || this.activeArchiveMode === 'full') {
+          window.reader.isDemoMode = false;
+          window.reader.activeDemoImages = null;
+          window.reader.isFullMode = true;
+          const fullScript = await window.store.getFullScript(this.activeArchiveWork.id);
+          if (fullScript && !fullScript.startsWith('[STORED_IN_IDB')) {
+            window.reader.parseWorkScript(this.activeArchiveWork, fullScript);
+          }
+        }
+      }
       await window.reader.loadUserZipFile(file);
 
       const rememberCheckbox = document.getElementById('archive-remember-checkbox');
@@ -2036,6 +2077,7 @@ class App {
       }
 
       this.closeAllModals();
+      window.reader.renderReaderUI();
       this.showToast(
         shouldRemember
           ? (isEn ? '💾 Archive saved on this device for fast reading' : '💾 Архив сохранен на этом устройстве для быстрого открытия')
@@ -2051,6 +2093,18 @@ class App {
     const isEn = window.i18n && window.i18n.getLang() === 'en';
     try {
       this.showToast(isEn ? 'Reading graphics folder...' : 'Чтение папки с изображениями...', 'info');
+      if (this.activeArchiveWork) {
+        const isPurchased = window.store.hasPurchased(this.activeArchiveWork.id) || (typeof window.store.isAdmin === 'function' ? window.store.isAdmin() : window.store.getRole() === 'admin');
+        if (isPurchased || this.activeArchiveMode === 'full') {
+          window.reader.isDemoMode = false;
+          window.reader.activeDemoImages = null;
+          window.reader.isFullMode = true;
+          const fullScript = await window.store.getFullScript(this.activeArchiveWork.id);
+          if (fullScript && !fullScript.startsWith('[STORED_IN_IDB')) {
+            window.reader.parseWorkScript(this.activeArchiveWork, fullScript);
+          }
+        }
+      }
       await window.reader.loadUserFolder(files);
 
       const rememberCheckbox = document.getElementById('archive-remember-checkbox');
@@ -2079,6 +2133,7 @@ class App {
       }
 
       this.closeAllModals();
+      window.reader.renderReaderUI();
       this.showToast(
         shouldRemember
           ? (isEn ? '💾 Folder saved on this device for fast reading' : '💾 Папка сохранена на этом устройстве для быстрого открытия')
