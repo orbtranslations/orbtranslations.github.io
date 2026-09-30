@@ -214,19 +214,23 @@ class AdminService {
   calculateTotalPagesFromScript(scriptText) {
     if (!scriptText || !scriptText.trim()) return 4;
     try {
-      const parser = window.scriptParser || new ScriptParser();
+      const parser = (typeof window !== 'undefined' && window.scriptParser) || new ScriptParser();
       const res = parser.parse(scriptText);
-      const pageKeys = new Set();
+      let maxPages = 0;
       if (res.languages && res.languages.length > 0) {
         res.languages.forEach(lang => {
-          (res.entries[lang] || []).forEach(e => {
-            if (!e.isTitle && e.key !== 'Title') {
-              pageKeys.add(e.key || e.filename);
-            }
-          });
+          const count = (res.entries[lang] || []).length;
+          if (count > maxPages) maxPages = count;
         });
       }
-      return Math.max(1, pageKeys.size || 1);
+      if (maxPages === 0 && res.entries) {
+        for (const list of Object.values(res.entries)) {
+          if (Array.isArray(list) && list.length > maxPages) {
+            maxPages = list.length;
+          }
+        }
+      }
+      return Math.max(1, maxPages || 1);
     } catch (e) {
       console.warn('Ошибка вычисления страниц из скрипта:', e);
       return 4;

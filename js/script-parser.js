@@ -3,12 +3,148 @@
  * Обрабатывает специфичный формат текстового файла скриптов перевода.
  */
 class ScriptParser {
+  constructor() {
+    this.knownFiles = new Set();
+    this.knownFileToSubfolder = new Map();
+  }
+
+  /**
+   * Устанавливает список известных названий файлов изображений проекта,
+   * которые служат точными триггерами для распознавания кадров при парсинге.
+   * @param {Iterable<string|File>|Map|Set} fileListOrMap
+   */
+  setKnownFiles(fileListOrMap) {
+    if (!this.knownFiles) this.knownFiles = new Set();
+    if (!this.knownFileToSubfolder) this.knownFileToSubfolder = new Map();
+    if (!fileListOrMap) return;
+
+    const addName = (rawName, subfolder = '') => {
+      if (!rawName || typeof rawName !== 'string') return;
+      const clean = rawName.replace(/\\/g, '/').trim();
+      const base = clean.replace(/\.[^/.]+$/, '').trim();
+      const nameOnly = clean.split('/').pop().trim();
+      const baseOnly = nameOnly.replace(/\.[^/.]+$/, '').trim();
+
+      this.knownFiles.add(clean);
+      this.knownFiles.add(clean.toLowerCase());
+      this.knownFiles.add(base);
+      this.knownFiles.add(base.toLowerCase());
+      this.knownFiles.add(nameOnly);
+      this.knownFiles.add(nameOnly.toLowerCase());
+      this.knownFiles.add(baseOnly);
+      this.knownFiles.add(baseOnly.toLowerCase());
+
+      let sub = subfolder;
+      if (!sub && clean.includes('/')) {
+        const parts = clean.split('/');
+        parts.pop();
+        sub = parts.join('/');
+      }
+
+      if (sub) {
+        this.knownFileToSubfolder.set(baseOnly.toLowerCase(), sub);
+        this.knownFileToSubfolder.set(nameOnly.toLowerCase(), sub);
+        this.knownFileToSubfolder.set(base.toLowerCase(), sub);
+        const stripped = baseOnly.replace(/^\d{1,4}_/, '').toLowerCase();
+        if (stripped !== baseOnly.toLowerCase()) {
+          this.knownFileToSubfolder.set(stripped, sub);
+        }
+      }
+    };
+
+    if (fileListOrMap instanceof Map) {
+      for (const [key, val] of fileListOrMap.entries()) {
+        let sub = '';
+        const rel = (val && (val.webkitRelativePath || val.relativePath)) || (typeof key === 'string' ? key : '');
+        if (rel) {
+          const normRel = rel.replace(/\\/g, '/');
+          const p = normRel.split('/');
+          if (p.length > 2) sub = p.slice(1, -1).join('/');
+          else if (p.length === 2) sub = p[0];
+        }
+        addName(key, sub);
+        if (val && val.name) addName(val.name, sub);
+      }
+    } else if (Array.isArray(fileListOrMap) || fileListOrMap instanceof Set) {
+      for (const item of fileListOrMap) {
+        if (!item) continue;
+        if (typeof item === 'string') {
+          addName(item);
+        } else if (item.name) {
+          let sub = '';
+          const rel = item.webkitRelativePath || item.relativePath || item.name;
+          if (rel) {
+            const normRel = rel.replace(/\\/g, '/');
+            const p = normRel.split('/');
+            if (p.length > 2) sub = p.slice(1, -1).join('/');
+            else if (p.length === 2) sub = p[0];
+          }
+          addName(item.name, sub);
+        }
+      }
+    }
+  }
+
+  _isKnownFile(name) {
+    if (!name || !this.knownFiles || this.knownFiles.size === 0) return false;
+    const clean = name.trim();
+    const cleanLower = clean.toLowerCase();
+    const cleanNorm = cleanLower.replace(/\\/g, '/');
+    const cleanNoExt = cleanNorm.replace(/\.[^/.]+$/, '');
+    const cleanBase = cleanNoExt.split('/').pop().trim();
+    const stripped = cleanBase.replace(/^\d{1,4}_/, '');
+
+    return (
+      this.knownFiles.has(clean) ||
+      this.knownFiles.has(cleanLower) ||
+      this.knownFiles.has(cleanNorm) ||
+      this.knownFiles.has(cleanNoExt) ||
+      this.knownFiles.has(cleanBase) ||
+      this.knownFiles.has(stripped)
+    );
+  }
+
+  _getKnownSubfolder(name) {
+    if (!name || !this.knownFileToSubfolder || this.knownFileToSubfolder.size === 0) return '';
+    const clean = name.replace(/\\/g, '/').replace(/\.[^/.]+$/, '').toLowerCase().trim();
+    const nameOnly = clean.split('/').pop().trim();
+    if (this.knownFileToSubfolder.has(clean)) {
+      return this.knownFileToSubfolder.get(clean);
+    }
+    if (this.knownFileToSubfolder.has(nameOnly)) {
+      return this.knownFileToSubfolder.get(nameOnly);
+    }
+    const stripped = nameOnly.replace(/^\d{1,4}_/, '');
+    if (this.knownFileToSubfolder.has(stripped)) {
+      return this.knownFileToSubfolder.get(stripped);
+    }
+    return '';
+  }
+
   /**
    * Парсит текст скрипта в структурированные данные
    * @param {string} text - Исходный текст файла скрипта
+   * @param {Iterable|Map|Set} [optionalKnownFiles=null]
    * @returns {Object} Структурированные данные скрипта
    */
-  parse(text) {
+  parse(text, optionalKnownFiles = null) {
+    if (optionalKnownFiles) {
+      this.setKnownFiles(optionalKnownFiles);
+    }
+
+    // Предварительно извлекаем knownFiles из 【OVERLAY_DATA】, если они сохранены в скрипте
+    const overlayIdx = text.indexOf('【OVERLAY_DATA】');
+    if (overlayIdx !== -1) {
+      try {
+        const jsonPart = text.substring(overlayIdx + '【OVERLAY_DATA】'.length).trim();
+        if (jsonPart) {
+          const preOverlay = JSON.parse(jsonPart);
+          if (preOverlay && preOverlay.knownFiles && Array.isArray(preOverlay.knownFiles)) {
+            this.setKnownFiles(preOverlay.knownFiles);
+          }
+        }
+      } catch (e) {}
+    }
     const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
     const result = {
       titleMarker: '',
@@ -154,7 +290,8 @@ class ScriptParser {
           continue;
         }
 
-        const isFileRef = expectingFile && cleanTrimmed !== '' && this._isFileReference(cleanTrimmed);
+        const isKnown = this._isKnownFile(cleanTrimmed);
+        const isFileRef = (expectingFile || isKnown) && cleanTrimmed !== '' && this._isFileReference(cleanTrimmed);
         
         if (isFileRef) {
           // Это ссылка на файл
@@ -181,7 +318,13 @@ class ScriptParser {
             filename = normalized.substring(lastSlash + 1);
             currentSubfolder = subfolder;
           } else {
-            subfolder = currentSubfolder;
+            const knownSub = this._getKnownSubfolder(fileRefStr);
+            if (knownSub) {
+              subfolder = knownSub;
+              currentSubfolder = knownSub;
+            } else {
+              subfolder = currentSubfolder;
+            }
             filename = fileRefStr;
           }
           
@@ -291,9 +434,18 @@ class ScriptParser {
     const target = clean.includes('=') ? clean.split('=')[0].trim() : clean;
     if (!target) return false;
 
-    // 1. Содержит слэш или бэкслеш (например, ImageM\06-01A или Char/01_ChichibuHasami)
+    // 0. ПРОВЕРКА ПО СПИСКУ ИЗВЕСТНЫХ ФАЙЛОВ ПРОЕКТА (ТРИГГЕРЫ ИМЁН ФАЙЛОВ)
+    if (this._isKnownFile(target) || this._isKnownFile(clean)) {
+      return true;
+    }
+
+    // 1. Содержит слэш или бэкслеш (например, ImageM\06-01A или vol1のキャラ紹介\01_ChichibuHasami)
     if (target.includes('\\') || target.includes('/')) {
-      return /^[a-zA-Z0-9_.\-\\/]+$/.test(target);
+      const targetNorm = target.replace(/\\/g, '/');
+      const filenamePart = targetNorm.split('/').pop().trim();
+      if (this._isKnownFile(filenamePart) || this._isKnownFile(targetNorm)) return true;
+      if (filenamePart && this._isFileReference(filenamePart)) return true;
+      if (/\.(png|jpg|jpeg|gif|bmp|webp)$/i.test(filenamePart)) return true;
     }
 
     // 2. Расширение файла (например, 06-01A.png, 01_ChichibuHasami.jpg)
@@ -307,16 +459,26 @@ class ScriptParser {
     }
 
     // 4. Форматы нумерации кадров и карточек персонажей/сцен:
-    // - "00-01", "00-02", "01-01A", "10_02", "02-00"
-    if (/^\d+[-_]\d+[a-zA-Z0-9_]*$/i.test(target)) return true;
-    // - "scene01-02", "cg_01-01", "c01-p02"
-    if (/^[a-zA-Z]+[-_]?\d+[-_]\d+[a-zA-Z0-9_]*$/i.test(target)) return true;
-    // - "page-01", "scene-01"
+    // - "00-01", "01-01-02", "01-03-01Z", "02-02-11", "002_01_03" (любое количество цифровых блоков через - или _)
+    if (/^(\d+[-_])+\d+[a-zA-Z0-9_]*$/i.test(target)) return true;
+
+    // - "scene01-02-03", "cg_01-01", "c01-p02-03" (префиксы сцен с разделителями)
+    if (/^[a-zA-Z]+[-_]?\d+([-_]\d+)+[a-zA-Z0-9_]*$/i.test(target)) return true;
+
+    // - "page-01", "scene-01", "cg-01", "bg-01"
     if (/^[a-zA-Z]{2,10}[-_]\d{1,4}[a-zA-Z0-9_]*$/i.test(target)) return true;
-    // - "01_ChichibuHasami", "02_Kureha"
-    if (/^\d{1,3}_[a-zA-Z0-9_]+$/i.test(target)) return true;
-    // - "cg01_hasami"
-    if (/^[a-zA-Z]{1,6}\d{1,3}_[a-zA-Z0-9_]+$/i.test(target)) return true;
+
+    // - "01_ChichibuHasami", "002_01_ChichibuHasami", "02_Kureha"
+    if (/^\d{1,4}_[a-zA-Z0-9_]+$/i.test(target)) return true;
+
+    // - "cg01_hasami", "ev01_scene"
+    if (/^[a-zA-Z]{1,6}\d{1,4}_[a-zA-Z0-9_]+$/i.test(target)) return true;
+
+    // - "01-02Z", "02-00" (двухблочные с буквенными суффиксами)
+    if (/^\d+[-_]\d+[a-zA-Z0-9_]*$/i.test(target)) return true;
+
+    // - Обобщенный паттерн идентификатора кадра: буквенно-цифровые токены, разделенные дефисами или подчеркиваниями
+    if (/^[a-zA-Z0-9]+([-_][a-zA-Z0-9]+)+$/i.test(target)) return true;
 
     return false;
   }
@@ -357,7 +519,6 @@ class ScriptParser {
       out.push('');
       
       const entries = parsed.entries[lang] || [];
-      let lastSubfolder = '';
       
       for (const entry of entries) {
         // Пропускаем запись Title внутри языковой секции, так как она выводится в начале файла
@@ -366,13 +527,6 @@ class ScriptParser {
         }
 
         let fileRef = entry.filename;
-        if (entry.subfolder && entry.subfolder !== lastSubfolder) {
-           fileRef = entry.subfolder.replace(/\//g, '\\') + '\\' + entry.filename;
-           lastSubfolder = entry.subfolder;
-        } else if (!entry.subfolder) {
-           lastSubfolder = '';
-        }
-
         if (entry.alias) {
           fileRef += '=' + entry.alias;
         }
@@ -415,20 +569,56 @@ class ScriptParser {
     return this.serialize(parsed, overlayData);
   }
 
-  getAllImageKeys(parsed) {
-    const keys = new Set();
-    if (parsed && parsed.titleMarker) {
-      keys.add(parsed.titleMarker);
+  /**
+   * Получает упорядоченный список всех ключей изображений с сохранением повторных вхождений
+   * @param {Object} parsed - Распарсенные данные скрипта
+   * @param {string} [preferredLang] - Предпочтительный язык для порядка сцен
+   * @returns {string[]} Массив ключей изображений
+   */
+  getAllImageKeys(parsed, preferredLang) {
+    if (!parsed) return [];
+    
+    // Если передан preferredLang (или берется первый доступный язык), сохраняем последовательность с повторами
+    const targetLang = preferredLang || (parsed.languages && parsed.languages.length > 0 ? parsed.languages[0] : null);
+    if (targetLang && parsed.entries && parsed.entries[targetLang] && parsed.entries[targetLang].length > 0) {
+      const keys = parsed.entries[targetLang].map(e => e.key);
+      
+      // Если в других языках есть уникальные ключи, не встречавшиеся в targetLang, добавляем их в конец
+      if (parsed.languages) {
+        const existingSet = new Set(keys);
+        for (const lang of parsed.languages) {
+          if (lang === targetLang) continue;
+          const otherEntries = parsed.entries[lang] || [];
+          for (const entry of otherEntries) {
+            if (!existingSet.has(entry.key)) {
+              existingSet.add(entry.key);
+              keys.push(entry.key);
+            }
+          }
+        }
+      }
+      return keys;
     }
     
-    for (const lang of (parsed && parsed.languages ? parsed.languages : [])) {
-      const entries = (parsed && parsed.entries ? parsed.entries[lang] : []) || [];
+    // Резервный вариант, если языковые записи отсутствуют
+    const keys = [];
+    const seen = new Set();
+    if (parsed.titleMarker) {
+      keys.push(parsed.titleMarker);
+      seen.add(parsed.titleMarker);
+    }
+    
+    for (const lang of (parsed.languages || [])) {
+      const entries = (parsed.entries ? parsed.entries[lang] : []) || [];
       for (const entry of entries) {
-        keys.add(entry.key);
+        if (!seen.has(entry.key)) {
+          seen.add(entry.key);
+          keys.push(entry.key);
+        }
       }
     }
     
-    return Array.from(keys);
+    return keys;
   }
 
   /**
@@ -470,13 +660,7 @@ class ScriptParser {
     return blocks.filter(b => b && b.trim()).join('\n\n');
   }
 
-  /**
-   * Генерирует безопасную выжимку скрипта только для превью-страниц (первые N страниц).
-   * Удаляет весь остальной текст истории и лишние координаты, защищая полный перевод от утечки.
-   * @param {string} fullScriptText - Исходный полный скрипт
-   * @param {number} previewPagesCount - Количество разрешенных превью страниц (по умолчанию 3)
-   * @returns {string} Безопасный урезанный скрипт для публичного каталога
-   */
+
   static generatePreviewSlice(fullScriptText, previewPagesCount = 3, demoImages = []) {
     try {
       const parser = new ScriptParser();
@@ -629,6 +813,13 @@ class ScriptParser {
   }
 }
 
-if (typeof module !== 'undefined') {
+if (typeof module !== 'undefined' && module.exports) {
   module.exports = ScriptParser;
+}
+if (typeof global !== 'undefined') {
+  global.ScriptParser = ScriptParser;
+}
+if (typeof window !== 'undefined') {
+  window.ScriptParser = ScriptParser;
+  window.scriptParser = new ScriptParser();
 }
