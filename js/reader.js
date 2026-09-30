@@ -41,6 +41,7 @@ class ReaderService {
     this._eventsSetup = false;
     this.isDemoMode = false;
     this.activeDemoImages = null;
+    this.resolvedUrlCache = new Map(); // shortUrl -> { imageUrl, nl, fileName, resolvedAt }
   }
 
   static BORDER_CONFIGS = [
@@ -1279,6 +1280,80 @@ class ReaderService {
   }
 
   /**
+   * Проверка, является ли ссылка короткой ссылкой на страницу ExHentai / E-Hentai (/s/...)
+   */
+  isShortLink(url) {
+    if (!url || typeof url !== 'string') return false;
+    const clean = url.trim().toLowerCase();
+    return clean.includes('exhentai.org/s/') || clean.includes('e-hentai.org/s/');
+  }
+
+  /**
+   * Получение актуальной прямой ссылки на изображение по короткой ссылке через Supabase Edge Function resolve-preview.
+   * При сбое Hath-ноды или истечении keystamp передается forceFresh=true и failover nl.
+   */
+  async resolveImageUrl(shortUrl, forceFresh = false, nl = null) {
+    if (!this.isShortLink(shortUrl)) return shortUrl;
+
+    const cleanShort = shortUrl.trim();
+
+    // 1. Поиск в кэше памяти и sessionStorage (если не запрошено принудительное обновление)
+    if (!forceFresh && !nl) {
+      const cached = this.resolvedUrlCache.get(cleanShort);
+      if (cached && cached.imageUrl) {
+        return cached.imageUrl;
+      }
+      try {
+        const item = sessionStorage.getItem(`ex_img_${cleanShort}`);
+        if (item) {
+          const parsed = JSON.parse(item);
+          // Кэш валиден 2 часа (пока действует Hath keystamp)
+          if (parsed && parsed.imageUrl && (Date.now() - parsed.resolvedAt < 2 * 3600 * 1000)) {
+            this.resolvedUrlCache.set(cleanShort, parsed);
+            return parsed.imageUrl;
+          }
+        }
+      } catch (e) {}
+    }
+
+    if (!window.supabaseClient || !window.supabaseClient.functions) {
+      console.warn('[Reader] Supabase Client недоступен для разрешения ссылки:', cleanShort);
+      return cleanShort;
+    }
+
+    try {
+      const bodyPayload = { url: cleanShort, forceFresh };
+      if (nl) bodyPayload.nl = nl;
+
+      const { data, error } = await window.supabaseClient.functions.invoke('resolve-preview', {
+        body: bodyPayload
+      });
+
+      if (error || !data || !data.success || !data.imageUrl) {
+        console.warn('[Reader] Ошибка функции resolve-preview:', error || data?.error);
+        return null;
+      }
+
+      const cacheEntry = {
+        imageUrl: data.imageUrl,
+        nl: data.nl || null,
+        fileName: data.fileName || '',
+        resolvedAt: Date.now()
+      };
+
+      this.resolvedUrlCache.set(cleanShort, cacheEntry);
+      try {
+        sessionStorage.setItem(`ex_img_${cleanShort}`, JSON.stringify(cacheEntry));
+      } catch (e) {}
+
+      return data.imageUrl;
+    } catch (err) {
+      console.warn('[Reader] Ошибка вызова resolve-preview:', err);
+      return null;
+    }
+  }
+
+  /**
    * Демо-сцены: построение страниц по реальному скрипту новеллы с наложением интернет-изображений
    */
   /**
@@ -1387,6 +1462,7 @@ class ReaderService {
         entry: matchedEntry || { key: pageKey, text: '' },
         rawFile: null,
         url: item.url,
+        sourceUrl: item.url,
         isLocked: false
       });
     });
@@ -2730,8 +2806,9 @@ class ReaderService {
     baseImg.className = 'reader-base-image';
     baseImg.alt = page.name || page.key;
 
-    // Резервная защита на случай блокировки blob браузером: авто-конвертация в Base64 Data URL
+    // Резервная защита и авто-обновление ссылки на изображение при истечении срока или ошибке сети:
     baseImg.onerror = async () => {
+      // 1. Для сырых файлов zip-архива
       if (page.rawFile && page.rawFile.zipEntry) {
         try {
           const base64 = await page.rawFile.zipEntry.async('base64');
@@ -2744,8 +2821,31 @@ class ReaderService {
         } catch (e) {
           console.warn('Резервная конвертация в base64 не удалась:', e);
         }
-      } else if (page.url && page.url.startsWith('http')) {
-        console.warn('Не удалось загрузить внешнее изображение:', page.url);
+        return;
+      }
+
+      // 2. Если ссылка на изображение устарела (Hath keystamp) или сервер недоступен:
+      // Запрашиваем актуальную прямую ссылку у Supabase Edge Function по исходной короткой ссылке
+      const shortUrl = page.sourceUrl || (this.isShortLink(page.url) ? page.url : null);
+      if (shortUrl && (!page._refreshAttempts || page._refreshAttempts < 2)) {
+        page._refreshAttempts = (page._refreshAttempts || 0) + 1;
+        console.warn(`[Reader] Картинка недоступна (${baseImg.src}). Запрашиваем актуальную ссылку у Supabase... (попытка ${page._refreshAttempts})`);
+
+        const cached = this.resolvedUrlCache.get(shortUrl);
+        const failoverNl = cached ? cached.nl : null;
+        this.resolvedUrlCache.delete(shortUrl);
+        try { sessionStorage.removeItem(`ex_img_${shortUrl}`); } catch (e) {}
+
+        const freshUrl = await this.resolveImageUrl(shortUrl, true, failoverNl);
+        if (freshUrl && freshUrl !== baseImg.src) {
+          page.url = freshUrl;
+          baseImg.src = freshUrl;
+          return;
+        }
+      }
+
+      if (page.url && page.url.startsWith('http')) {
+        console.warn('Не удалось загрузить внешнее изображение после попыток обновления:', page.url);
         baseImg.src = 'assets/demo/cover-1.svg';
       }
     };
@@ -2768,6 +2868,36 @@ class ReaderService {
       } catch (err) {
         if (spinner.parentNode) spinner.innerHTML = `❌ <span style="color: var(--accent-danger);">Ошибка: ${err.message}</span>`;
         return;
+      }
+    } else if (this.isShortLink(page.sourceUrl || page.url)) {
+      const shortUrl = page.sourceUrl || page.url;
+      const cached = this.resolvedUrlCache.get(shortUrl);
+      let targetUrl = cached?.imageUrl;
+
+      if (!targetUrl) {
+        // Показываем деликатный спиннер при первичном разрешении короткой ссылки
+        const spinner = document.createElement('div');
+        spinner.className = 'page-loading-spinner';
+        spinner.innerHTML = `<div class="spinner-orb">🌐</div><p style="font-size: 0.9rem; color: var(--text-muted);">Получение актуальной ссылки на сцену...</p>`;
+        sceneStage.appendChild(spinner);
+        sceneWrapper.appendChild(sceneStage);
+        domBox.appendChild(sceneWrapper);
+        container.appendChild(domBox);
+
+        try {
+          targetUrl = await this.resolveImageUrl(shortUrl);
+        } catch (e) {}
+
+        if (spinner.parentNode) spinner.remove();
+      }
+
+      page.url = targetUrl || page.url;
+      baseImg.src = targetUrl || 'assets/demo/cover-1.svg';
+      sceneStage.appendChild(baseImg);
+      if (!domBox.parentNode) {
+        sceneWrapper.appendChild(sceneStage);
+        domBox.appendChild(sceneWrapper);
+        container.appendChild(domBox);
       }
     } else {
       baseImg.src = page.url || '';

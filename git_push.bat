@@ -11,7 +11,7 @@ git add .
 
 echo.
 echo [2/3] Committing changes...
-git commit -m "fix: localize reader close button and header controls for EN language (v3.5.1)"
+git commit -m "feat: auto-resolve and refresh ExHentai demo images via Supabase Edge Function (v3.6.3)"
 
 echo.
 echo [3/3] Pushing to GitHub (main)...

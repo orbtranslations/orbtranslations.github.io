@@ -965,7 +965,7 @@ class AdminService {
 
     const isEn = window.i18n && window.i18n.getLang() === 'en';
     const pagePlaceholder = window.i18n ? window.i18n.t('admin_demo_page_placeholder') : 'Стр. № (1, 2...)';
-    const urlPlaceholder = window.i18n ? window.i18n.t('admin_demo_url_placeholder') : 'https://... прямая ссылка на изображение';
+    const urlPlaceholder = window.i18n ? window.i18n.t('admin_demo_url_placeholder') : 'https://exhentai.org/s/... или прямая ссылка';
 
     row.innerHTML = `
       <span style="font-size: 0.8rem; color: var(--text-muted); white-space: nowrap;">📄 ${isEn ? 'Page #' : 'Стр. №'}:</span>
