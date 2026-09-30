@@ -240,14 +240,25 @@ class ReaderService {
 
     const cleanBase = (page.key || '').split(/[\/\\]/).pop().replace(/\.[^/.]+$/, '');
     const cleanTarget = (page.targetKey || '').split(/[\/\\]/).pop().replace(/\.[^/.]+$/, '');
-    const candidateKeys = [page.key, cleanBase, page.targetKey, cleanTarget, `Image/${cleanBase}`, `Image/${cleanTarget}`].filter(Boolean);
+    const candidateKeys = [
+      page.key, 
+      cleanBase, 
+      page.targetKey, 
+      cleanTarget, 
+      page.subfolder ? `${page.subfolder}/${cleanBase}` : null,
+      page.subfolder ? `${page.subfolder}/${cleanTarget}` : null,
+      `Image-M/${cleanBase}`,
+      `Image-M/${cleanTarget}`,
+      `Image/${cleanBase}`, 
+      `Image/${cleanTarget}`
+    ].filter(Boolean);
     const langCodes = this.getNormalizedLangCodes(lang);
 
     // 1. Поиск по ключам с точным суффиксом языка (__lang_RUS, __lang_ENG)
     for (const key of candidateKeys) {
       for (const code of langCodes) {
         const langKey = `${key}__lang_${code}`;
-        if (frames[langKey] && (frames[langKey].image || frames[langKey].customImage)) {
+        if (frames[langKey] && (frames[langKey].image || frames[langKey].customImage || (frames[langKey].layers && frames[langKey].layers.length > 0))) {
           return frames[langKey];
         }
       }
@@ -266,15 +277,37 @@ class ReaderService {
       }
     }
 
-    // 3. Базовый поиск без языкового суффикса (например для "01_ChichibuHasami")
+    // 3. Базовый поиск без языкового суффикса (например для "002_01_ChichibuHasami")
     for (const key of candidateKeys) {
       const baseFrame = frames[key];
-      if (baseFrame && (baseFrame.image || baseFrame.customImage)) {
+      if (baseFrame && (baseFrame.image || baseFrame.customImage || (baseFrame.layers && baseFrame.layers.length > 0))) {
         if (baseFrame.lang && baseFrame.lang !== 'all') {
           const matches = langCodes.some(c => c.toLowerCase() === baseFrame.lang.toLowerCase());
-          if (!matches) continue;
+          const layerMatches = Array.isArray(baseFrame.layers) && baseFrame.layers.some(l => {
+            const lLang = l.lang || 'all';
+            return lLang === 'all' || langCodes.some(c => c.toLowerCase() === lLang.toLowerCase());
+          });
+          if (!matches && !layerMatches) continue;
         }
         return baseFrame;
+      }
+    }
+
+    // 4. Поиск в frames по чистому имени файла (без пути)
+    for (const [fKey, fObj] of Object.entries(frames)) {
+      const fClean = fKey.split(/[\/\\]/).pop().replace(/\.[^/.]+$/, '').toLowerCase();
+      if (fClean === cleanBase.toLowerCase() || fClean === cleanTarget.toLowerCase()) {
+        if (fObj && (fObj.image || fObj.customImage || (fObj.layers && fObj.layers.length > 0))) {
+          if (fObj.lang && fObj.lang !== 'all') {
+            const matches = langCodes.some(c => c.toLowerCase() === fObj.lang.toLowerCase());
+            const layerMatches = Array.isArray(fObj.layers) && fObj.layers.some(l => {
+              const lLang = l.lang || 'all';
+              return lLang === 'all' || langCodes.some(c => c.toLowerCase() === lLang.toLowerCase());
+            });
+            if (!matches && !layerMatches) continue;
+          }
+          return fObj;
+        }
       }
     }
 
@@ -1289,11 +1322,12 @@ class ReaderService {
   isPageCleanFrame(page) {
     if (!page) return false;
     const fData = this.getFrameForPage(page, this.currentLang);
-    if (fData && (fData.image || fData.customImage || fData.textZone)) {
+    if (fData && (fData.image || fData.customImage || fData.textZone || (fData.layers && fData.layers.length > 0))) {
       return true;
     }
     const cleanBase = (page.key || '').split(/[\/\\]/).pop().replace(/\.[^/.]+$/, '').toLowerCase();
-    if (cleanBase.startsWith('01_') || cleanBase.startsWith('02_') || cleanBase.startsWith('03_') || cleanBase.startsWith('04_') || cleanBase.startsWith('05_') || cleanBase === 'title') {
+    if (cleanBase.startsWith('001_') || cleanBase.startsWith('002_') || cleanBase.startsWith('003_') || cleanBase.startsWith('004_') ||
+        cleanBase.startsWith('01_') || cleanBase.startsWith('02_') || cleanBase.startsWith('03_') || cleanBase.startsWith('04_') || cleanBase.startsWith('05_') || cleanBase.includes('title')) {
       return true;
     }
     return false;
@@ -2232,40 +2266,116 @@ class ReaderService {
     // =========================================================================
     // 1. Графический оверлей (Title) или Внутренняя рамка персонажа (Clean Frame)
     // =========================================================================
-    if (fData && (fData.customImage || fData.image)) {
-      const frameImg = document.createElement('img');
-      frameImg.className = 'clean-frame-img';
+    const fLayers = (fData && Array.isArray(fData.layers) && fData.layers.length > 0)
+      ? fData.layers
+      : (fData ? [fData] : []);
 
-      if (fData.customImage) {
-        frameImg.src = fData.customImage;
-      } else if (fData.image) {
-        const imgStr = String(fData.image).toLowerCase();
-        if (imgStr.includes('рамка') || imgStr.includes('border') || imgStr.includes('frame')) {
-          frameImg.src = this.getBorderUrl(fData.image);
-        } else {
-          frameImg.src = fData.image;
+    const activeLayers = fLayers.filter(l => {
+      const lLang = l.lang || (fData && fData.lang) || 'all';
+      return lLang === 'all' || langCodes.some(c => c.toLowerCase() === lLang.toLowerCase());
+    }).sort((a, b) => Number(a.layer || 1) - Number(b.layer || 1));
+
+    if (fData && (fData.customImage || fData.image || activeLayers.length > 0)) {
+      const resolveLayerSrc = (layer) => {
+        if (!layer) return '';
+        if (layer.customImage) return layer.customImage;
+        const imgName = layer.image;
+        if (!imgName) return '';
+        if (overlayData.frameAssets && overlayData.frameAssets[imgName]) {
+          return overlayData.frameAssets[imgName];
         }
-      }
+        const imgStr = String(imgName).toLowerCase();
+        if (imgStr.includes('рамка') || imgStr.includes('border') || imgStr.includes('frame')) {
+          return this.getBorderUrl(imgName);
+        }
+        return imgName;
+      };
 
       const posX = fData.x !== undefined ? fData.x : 50;
       const posY = fData.y !== undefined ? fData.y : 0;
       const scale = (fData.scale !== undefined ? fData.scale : 100) / 100;
       const opacity = (fData.opacity !== undefined ? fData.opacity : 100) / 100;
 
-      frameImg.style.left = `${posX}%`;
-      frameImg.style.top = `${posY}%`;
-      frameImg.style.opacity = opacity;
+      const layerElements = [];
+      const renderLayers = activeLayers.length > 0 ? activeLayers : [fData];
 
-      const isTitleOrGraphic = !fData.textZone && fData.customImage;
-      frameImg.style.objectFit = isTitleOrGraphic ? 'contain' : 'fill';
+      renderLayers.forEach((layer, lIdx) => {
+        const layerSrc = resolveLayerSrc(layer);
+        if (!layerSrc) return;
+
+        const layerImg = document.createElement('img');
+        layerImg.className = 'clean-frame-img';
+        layerImg.src = layerSrc;
+
+        const lx = layer.x !== undefined ? layer.x : posX;
+        const ly = layer.y !== undefined ? layer.y : posY;
+        const lOpacity = (layer.opacity !== undefined ? layer.opacity : (fData.opacity !== undefined ? fData.opacity : 100)) / 100;
+        const isStretch = !!(layer.stretch || (layer.stretchX && layer.stretchY));
+
+        layerImg.style.left = isStretch ? '0%' : `${lx}%`;
+        layerImg.style.top = isStretch ? '0%' : `${ly}%`;
+        layerImg.style.opacity = lOpacity;
+        layerImg.style.zIndex = layer.layer !== undefined ? layer.layer : (10 + lIdx);
+        layerImg.style.objectFit = isStretch ? 'fill' : 'fill';
+
+        layerImg.onload = () => {
+          if (!layer._frameNatW || layer._frameNatW <= 0) {
+            layer._frameNatW = layerImg.naturalWidth;
+            layer._frameNatH = layerImg.naturalHeight;
+          }
+          if (typeof updateFrameLayout === 'function') updateFrameLayout();
+        };
+        if (layerImg.complete && layerImg.naturalWidth > 0) {
+          if (!layer._frameNatW || layer._frameNatW <= 0) {
+            layer._frameNatW = layerImg.naturalWidth;
+            layer._frameNatH = layerImg.naturalHeight;
+          }
+        }
+
+        layerElements.push({ img: layerImg, layer, isStretch, lx, ly });
+        sceneStage.appendChild(layerImg);
+      });
+
+      // Поиск слоя с текстовой зоной для позиционирования текста
+      let textBoundLayer = renderLayers.slice().reverse().find(l => l && l.textZone) || renderLayers[renderLayers.length - 1] || fData;
+      const isTitleOrGraphic = (!fData.textZone && !textBoundLayer.textZone && fData.customImage) || cleanBase.toLowerCase().includes('title');
+      const isInternalCleanFrame = (fData.image && String(fData.image).toLowerCase().includes('рамка 5')) || 
+                                  cleanBase.startsWith('002_') || cleanBase.startsWith('003_') || cleanBase.startsWith('004_') ||
+                                  cleanBase.startsWith('02_') || cleanBase.startsWith('03_') || cleanBase.startsWith('04_') ||
+                                  (overlayData.framePresets && (overlayData.framePresets[fData.image] === 'CharaTable' || overlayData.framePresets['internal'] === 'CharaTable'));
 
       let textSlot = null;
       let textContent = null;
 
-      // Слот текста создается ТОЛЬКО если задана textZone (для рамок карточек персонажей)
-      if (fData.textZone && blocks.length > 0) {
+      // Определение настроек диалога и пресета из dialogData
+      const candKeys = [
+        page.key,
+        cleanBase,
+        page.targetKey,
+        `Image-M/${cleanBase}`,
+        `Image-M/${page.key}`,
+        `Image/${cleanBase}`,
+        `Image/${page.key}`
+      ].filter(Boolean);
+
+      let bSettings = {};
+      for (const k of candKeys) {
+        const fullKey = `${k}_block_0`;
+        if (dialogData[fullKey]) {
+          bSettings = dialogData[fullKey];
+          break;
+        }
+      }
+
+      // Слот текста создается, если есть реплики (blocks > 0) И это карточка персонажа или задана textZone
+      const hasTextZone = !!(textBoundLayer && textBoundLayer.textZone) || !!fData.textZone;
+      const shouldRenderText = blocks.length > 0 && (hasTextZone || isInternalCleanFrame || !isTitleOrGraphic);
+
+      let matchedPreset = {};
+      if (shouldRenderText) {
         textSlot = document.createElement('div');
         textSlot.className = 'clean-frame-text-slot';
+        textSlot.style.zIndex = '30';
 
         textContent = document.createElement('div');
         textContent.className = 'clean-frame-text-content';
@@ -2273,57 +2383,100 @@ class ReaderService {
         const joinedTexts = blocks.map(b => ScriptParser.stripComments(b)).filter(Boolean).join('\n\n');
         textContent.textContent = joinedTexts;
 
-        const firstPreset = presets.find(p => p.name === '_style_1' || p.name.startsWith('_style')) || presets[0] || {};
-        textContent.style.color = firstPreset.color || '#ffffff';
-        textContent.style.fontFamily = firstPreset.fontFamily || 'Arial, sans-serif';
-        textContent.style.textAlign = firstPreset.textAlign || 'center';
-        textContent.style.lineHeight = firstPreset.lineHeight || 1.35;
-        if (firstPreset.fontWeight === 'bold') textContent.style.fontWeight = 'bold';
+        const presetName = bSettings.preset 
+          || (overlayData.framePresets && (overlayData.framePresets[fData.image] || overlayData.framePresets['internal']))
+          || (isInternalCleanFrame ? 'CharaTable' : '_style_1');
 
-        if (firstPreset.strokeWidth > 0) {
-          textContent.style.webkitTextStroke = `${firstPreset.strokeWidth}px ${firstPreset.strokeColor || '#000000'}`;
-          textContent.style.textShadow = `-${firstPreset.strokeWidth}px -${firstPreset.strokeWidth}px 0 ${firstPreset.strokeColor || '#000'}, ${firstPreset.strokeWidth}px ${firstPreset.strokeWidth}px 0 ${firstPreset.strokeColor || '#000'}`;
+        matchedPreset = presets.find(p => p.name === presetName)
+          || presets.find(p => p.name === 'CharaTable')
+          || presets.find(p => p.name === '_style_1' || p.name.startsWith('_style'))
+          || presets[0]
+          || {};
+
+        textContent.style.color = matchedPreset.color || (isInternalCleanFrame ? '#000000' : '#ffffff');
+        textContent.style.fontFamily = matchedPreset.fontFamily || 'Arial, sans-serif';
+        textContent.style.textAlign = matchedPreset.textAlign || (isInternalCleanFrame ? 'center' : 'left');
+        textContent.style.lineHeight = matchedPreset.lineHeight || 1.35;
+        if (matchedPreset.fontWeight === 'bold') textContent.style.fontWeight = 'bold';
+
+        if (matchedPreset.strokeWidth > 0) {
+          textContent.style.webkitTextStroke = `${matchedPreset.strokeWidth}px ${matchedPreset.strokeColor || '#000000'}`;
+          textContent.style.textShadow = `-${matchedPreset.strokeWidth}px -${matchedPreset.strokeWidth}px 0 ${matchedPreset.strokeColor || '#000'}, ${matchedPreset.strokeWidth}px ${matchedPreset.strokeWidth}px 0 ${matchedPreset.strokeColor || '#000'}`;
         }
 
         textSlot.appendChild(textContent);
       }
 
-      // Функция динамического расчета геометрии рамки и адаптивного шрифта
+      // Функция динамического расчета геометрии слоев рамки и адаптивного шрифта
       const updateFrameLayout = () => {
         const curSceneW = baseImg.naturalWidth || 640;
         const curSceneH = baseImg.naturalHeight || 480;
 
-        let widthPercent = 50.4 * scale;
-        let heightPercent = 100;
+        layerElements.forEach(({ img, layer, isStretch, lx, ly }) => {
+          if (isStretch) {
+            img.style.width = '100%';
+            img.style.height = '100%';
+            return;
+          }
 
-        if (fData._frameNatW && curSceneW > 0) {
-          widthPercent = ((fData._frameNatW * scale) / curSceneW) * 100;
-        } else if (fData.customImage && isTitleOrGraphic) {
-          widthPercent = 100 * scale;
-        } else {
-          widthPercent = 50.4 * scale;
-        }
+          const lScale = (layer.scale !== undefined ? layer.scale : (fData.scale !== undefined ? fData.scale : 100)) / 100;
+          const lScaleX = (layer.scaleX !== undefined ? layer.scaleX : (layer.scale !== undefined ? layer.scale : (fData.scale !== undefined ? fData.scale : 100))) / 100;
+          const lScaleY = (layer.scaleY !== undefined ? layer.scaleY : (layer.scale !== undefined ? layer.scale : (fData.scale !== undefined ? fData.scale : 100))) / 100;
 
-        if (fData._frameNatH && curSceneH > 0) {
-          heightPercent = ((fData._frameNatH * scale) / curSceneH) * 100;
-        } else if (isTitleOrGraphic) {
-          heightPercent = 100;
-        }
+          let widthPercent = 50.4 * lScaleX;
+          let heightPercent = 100 * lScaleY;
 
-        frameImg.style.width = `${widthPercent}%`;
-        frameImg.style.height = isTitleOrGraphic ? 'auto' : `${heightPercent}%`;
+          const natW = layer._frameNatW || fData._frameNatW;
+          const natH = layer._frameNatH || fData._frameNatH;
 
-        if (textSlot && fData.textZone) {
-          const tz = fData.textZone;
-          textSlot.style.left = `${posX + (tz.x / 100) * widthPercent}%`;
-          textSlot.style.top = `${posY + (tz.y / 100) * heightPercent}%`;
-          textSlot.style.width = `${(tz.w / 100) * widthPercent}%`;
-          textSlot.style.height = `${(tz.h / 100) * heightPercent}%`;
+          if (natW && curSceneW > 0) {
+            widthPercent = ((natW * lScaleX) / curSceneW) * 100;
+          } else if (fData.customImage && isTitleOrGraphic) {
+            widthPercent = 100 * lScaleX;
+          }
 
-          // Масштабирование шрифта под реальное разрешение сцены (текст карточек гарантированно помещается без скролла)
+          if (natH && curSceneH > 0) {
+            heightPercent = ((natH * lScaleY) / curSceneH) * 100;
+          } else if (isTitleOrGraphic) {
+            heightPercent = 100 * lScaleY;
+          }
+
+          img.style.width = `${widthPercent}%`;
+          img.style.height = isTitleOrGraphic ? 'auto' : `${heightPercent}%`;
+        });
+
+        if (textSlot) {
+          const boundLayer = textBoundLayer || fData;
+          const bScale = (boundLayer.scale !== undefined ? boundLayer.scale : (fData.scale !== undefined ? fData.scale : 100)) / 100;
+          const bScaleX = (boundLayer.scaleX !== undefined ? boundLayer.scaleX : (boundLayer.scale !== undefined ? boundLayer.scale : (fData.scale !== undefined ? fData.scale : 100))) / 100;
+          const bScaleY = (boundLayer.scaleY !== undefined ? boundLayer.scaleY : (boundLayer.scale !== undefined ? boundLayer.scale : (fData.scale !== undefined ? fData.scale : 100))) / 100;
+
+          const bNatW = boundLayer._frameNatW || fData._frameNatW;
+          const bNatH = boundLayer._frameNatH || fData._frameNatH;
+
+          let bWidthPercent = 50.4 * bScaleX;
+          let bHeightPercent = 100 * bScaleY;
+
+          if (bNatW && curSceneW > 0) {
+            bWidthPercent = ((bNatW * bScaleX) / curSceneW) * 100;
+          }
+          if (bNatH && curSceneH > 0) {
+            bHeightPercent = ((bNatH * bScaleY) / curSceneH) * 100;
+          }
+
+          const bX = boundLayer.x !== undefined ? boundLayer.x : posX;
+          const bY = boundLayer.y !== undefined ? boundLayer.y : posY;
+
+          // Стандартная зона текста карточки героини (Рамка 5): отступы 6% сверху/снизу и 6% по бокам
+          const tz = boundLayer.textZone || fData.textZone || { x: 6, y: 5, w: 88, h: 90 };
+          textSlot.style.left = `${bX + (tz.x / 100) * bWidthPercent}%`;
+          textSlot.style.top = `${bY + (tz.y / 100) * bHeightPercent}%`;
+          textSlot.style.width = `${(tz.w / 100) * bWidthPercent}%`;
+          textSlot.style.height = `${(tz.h / 100) * bHeightPercent}%`;
+
+          // Масштабирование шрифта под реальное разрешение сцены
           const scaleRatio = curSceneW / 1000;
-          const firstPreset = presets.find(p => p.name === '_style_1' || p.name.startsWith('_style')) || presets[0] || {};
-          const baseFontSize = firstPreset.fontSize || 22;
+          const baseFontSize = matchedPreset.fontSize || 22;
           const effectiveFontSize = Math.max(12, Math.round(baseFontSize * scaleRatio));
           if (textContent) {
             textContent.style.fontSize = `${effectiveFontSize}px`;
@@ -2338,7 +2491,6 @@ class ReaderService {
         updateFrameLayout();
       }
 
-      sceneStage.appendChild(frameImg);
       if (textSlot) {
         sceneStage.appendChild(textSlot);
       }
@@ -2360,6 +2512,10 @@ class ReaderService {
         page.key,
         cleanBase,
         page.targetKey,
+        page.subfolder ? `${page.subfolder}/${cleanBase}` : null,
+        page.subfolder ? `${page.subfolder}/${page.key}` : null,
+        `Image-M/${cleanBase}`,
+        `Image-M/${page.key}`,
         `Image/${cleanBase}`,
         `Image/${page.key}`
       ].filter(Boolean);
