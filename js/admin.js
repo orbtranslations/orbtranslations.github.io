@@ -343,8 +343,9 @@ class AdminService {
     }
     scriptTextarea.value = fullScript;
 
-    // Автоматический пересчет страниц
-    const totalPages = this.calculateTotalPagesFromScript(fullScript) || work.totalPages || 4;
+    // Автоматический пересчет страниц (не занижаем число страниц работы, если в памяти/БД только превью-выжимка)
+    const scriptPages = this.calculateTotalPagesFromScript(fullScript);
+    const totalPages = Math.max(Number(work.totalPages) || 0, scriptPages || 0) || 4;
     const displayEl = document.getElementById('admin-total-pages-display');
     const hiddenInput = document.getElementById('admin-work-total-pages');
     const slider = document.getElementById('admin-preview-pages-slider');
@@ -363,6 +364,16 @@ class AdminService {
       numInput.value = Math.min(work.previewPagesCount || 3, totalPages);
     }
     if (valBadge && slider) valBadge.textContent = slider.value;
+
+    if (scriptPages > 0 && scriptPages < totalPages) {
+      const isEn = window.i18n && window.i18n.getLang() === 'en';
+      window.app?.showToast(
+        isEn
+          ? `ℹ️ Note: Form loaded preview slice (${scriptPages} scenes of ${totalPages}). To update the entire translation, upload the full .txt file via button above.`
+          : `ℹ️ Внимание: загружена превью-выжимка (${scriptPages} из ${totalPages} сцен). Чтобы обновить полный текст всей новеллы, загрузите полный файл через кнопку «Загрузить скрипт (.txt)» выше.`,
+        'info'
+      );
+    }
 
     // Переключение визуального состояния формы
     const isEn = window.i18n && window.i18n.getLang() === 'en';
@@ -442,8 +453,11 @@ class AdminService {
       return;
     }
 
-    // Вычисляем число страниц непосредственно из скрипта
-    const totalPages = this.calculateTotalPagesFromScript(sampleScriptText);
+    // Вычисляем число страниц непосредственно из скрипта, защищая от занижения при превью-выжимке
+    const scriptPages = this.calculateTotalPagesFromScript(sampleScriptText);
+    const existingWork = this.editingWorkId ? this.store.getWorkById(this.editingWorkId) : null;
+    const inputTotalPages = Number(document.getElementById('admin-work-total-pages')?.value) || 0;
+    const totalPages = Math.max(Number(existingWork?.totalPages) || 0, inputTotalPages, scriptPages || 0) || 1;
     const previewPagesCount = Number(document.getElementById('admin-preview-pages-num').value) || 3;
     const tags = tagsRaw ? tagsRaw.split(',').map(t => t.trim()).filter(Boolean) : [isEn ? 'Translation' : 'Перевод'];
     const demoImages = this.getDemoImagesFromForm();

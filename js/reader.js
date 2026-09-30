@@ -2882,10 +2882,11 @@ class ReaderService {
         return;
       }
       const isEn = window.i18n && window.i18n.getLang() === 'en';
+      const totalAll = (this.currentWork && this.currentWork.totalPages > 0) ? this.currentWork.totalPages : this.pages.length;
       window.app?.showToast(
         isEn 
-          ? `🔒 Demo preview complete (${this.pages.length} scenes). Purchase to unlock full translation!` 
-          : `🔒 Демо-превью завершено (${this.pages.length} сцен). Приобретите новеллу, чтобы открыть все главы!`,
+          ? `🔒 Demo preview complete (${this.pages.length} of ${totalAll} scenes). Purchase to unlock full translation!` 
+          : `🔒 Демо-превью завершено (${this.pages.length} из ${totalAll} сцен). Приобретите новеллу, чтобы открыть все главы!`,
         'info'
       );
     }
@@ -3012,7 +3013,14 @@ class ReaderService {
     }
 
     if (counter) {
-      counter.textContent = `${this.currentIndex + 1} / ${this.pages.length}`;
+      if (this.isDemoMode && this.currentWork && this.currentWork.totalPages > this.pages.length) {
+        counter.textContent = `${this.currentIndex + 1} / ${this.pages.length} (${this.currentWork.totalPages})`;
+        counter.title = window.i18n && window.i18n.getLang() === 'en'
+          ? `Page ${this.currentIndex + 1} of ${this.pages.length} demo scenes (${this.currentWork.totalPages} total pages in novel)`
+          : `Сцена ${this.currentIndex + 1} из ${this.pages.length} сцен демо (${this.currentWork.totalPages} всего стр. в новелле)`;
+      } else {
+        counter.textContent = `${this.currentIndex + 1} / ${this.pages.length}`;
+      }
     }
 
     // Сохраняем прогресс чтения для купленной работы
@@ -3133,7 +3141,7 @@ class ReaderService {
 
       const price = this.currentWork ? this.currentWork.price : 1;
       const previewPages = this.currentWork ? (this.currentWork.previewPagesCount || 3) : 3;
-      const totalPages = this.pages.length;
+      const totalPages = (this.currentWork && this.currentWork.totalPages > 0) ? this.currentWork.totalPages : this.pages.length;
 
       container.innerHTML = `
         <div class="reader-lock-screen">

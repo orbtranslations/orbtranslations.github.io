@@ -11,7 +11,7 @@ git add .
 
 echo.
 echo [2/3] Committing changes...
-git commit -m "feat: prompt archive upload modal when purchased work preview reaches end (v3.7.1)"
+git commit -m "fix: prevent totalPages downgrade when editing works and preserve full novel scenes (v3.7.2)"
 
 echo.
 echo [3/3] Pushing to GitHub (main)...

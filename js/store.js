@@ -478,16 +478,13 @@ class Store {
       const safeData = {
         ...this.data,
         works: (this.data.works || []).map(w => {
-          const script = w.sampleScriptText || '';
-          // Если скрипт тяжелее 30 КБ, сохраняем в localStorage только мета-заглушку,
-          // а полный текст живет в IndexedDB и оперативной памяти this.data
-          if (script.length > 30000) {
-            return {
-              ...w,
-              sampleScriptText: `[STORED_IN_IDB:${script.length}]`
-            };
-          }
-          return w;
+          const sample = w.sampleScriptText || '';
+          const full = w.fullScriptText || '';
+          return {
+            ...w,
+            sampleScriptText: (sample.length > 30000) ? `[STORED_IN_IDB:${sample.length}]` : sample,
+            fullScriptText: (full.length > 0) ? `[STORED_IN_IDB:${full.length}]` : ''
+          };
         })
       };
 
@@ -826,8 +823,11 @@ class Store {
         ? workData.description 
         : { ru: workData.description || '', en: workData.descriptionEn || '' },
       author: workData.author || 'Автор перевода',
-      price: Number(workData.price) || 1,
-      totalPages: Number(workData.totalPages) || 10,
+      totalPages: Math.max(
+        Number(workData.totalPages) || 0,
+        (typeof ScriptParser !== 'undefined' && fullScript) ? (new ScriptParser().parse(fullScript)?.entries?.['RUS']?.length || new ScriptParser().parse(fullScript)?.entries?.['ENG']?.length || 0) : 0,
+        1
+      ),
       previewPagesCount: previewPagesCount,
       tags: workData.tags || ['Перевод'],
       coverUrl: workData.coverUrl || 'assets/demo/cover-1.svg',
@@ -864,13 +864,30 @@ class Store {
 
     let fullScript = current.fullScriptText || current.sampleScriptText || '';
     if (updatedData.sampleScriptText !== undefined && !updatedData.sampleScriptText.startsWith('[STORED_IN_IDB')) {
-      fullScript = updatedData.sampleScriptText;
+      const incomingText = updatedData.sampleScriptText;
+      if (!fullScript || incomingText.length >= fullScript.length) {
+        fullScript = incomingText;
+      } else {
+        const incParser = (typeof ScriptParser !== 'undefined') ? new ScriptParser() : null;
+        const incPages = incParser ? (incParser.parse(incomingText)?.entries?.['RUS']?.length || incParser.parse(incomingText)?.entries?.['ENG']?.length || 0) : 0;
+        const curPages = incParser ? (incParser.parse(fullScript)?.entries?.['RUS']?.length || incParser.parse(fullScript)?.entries?.['ENG']?.length || 0) : 0;
+        if (incPages >= curPages || curPages === 0) {
+          fullScript = incomingText;
+        }
+      }
     }
 
     const effectiveDemoImages = this.sanitizeDemoImages(updatedData.demoImages !== undefined ? updatedData.demoImages : (current.demoImages || []));
     const previewSlice = (typeof ScriptParser !== 'undefined' && ScriptParser.generatePreviewSlice && fullScript)
       ? ScriptParser.generatePreviewSlice(fullScript, previewPagesCount, effectiveDemoImages)
       : (updatedData.sampleScriptText !== undefined ? updatedData.sampleScriptText : current.sampleScriptText);
+
+    const effectiveTotalPages = Math.max(
+      updatedData.totalPages !== undefined ? Number(updatedData.totalPages) : 0,
+      Number(current.totalPages) || 0,
+      (typeof ScriptParser !== 'undefined' && fullScript) ? (new ScriptParser().parse(fullScript)?.entries?.['RUS']?.length || new ScriptParser().parse(fullScript)?.entries?.['ENG']?.length || 0) : 0,
+      1
+    );
 
     this.data.works[index] = {
       ...current,
@@ -888,7 +905,7 @@ class Store {
           },
       author: updatedData.author !== undefined ? updatedData.author : current.author,
       price: updatedData.price !== undefined ? Number(updatedData.price) : current.price,
-      totalPages: updatedData.totalPages !== undefined ? Number(updatedData.totalPages) : current.totalPages,
+      totalPages: effectiveTotalPages,
       previewPagesCount: previewPagesCount,
       tags: updatedData.tags !== undefined ? updatedData.tags : current.tags,
       coverUrl: updatedData.coverUrl !== undefined ? updatedData.coverUrl : (current.coverUrl || 'assets/demo/cover-1.svg'),
@@ -996,8 +1013,11 @@ class Store {
       description_ru: descRu,
       description_en: descEn,
       author: work.author || (existing ? existing.author : '') || '',
-      price: Number(work.price !== undefined ? work.price : (existing ? existing.price : 1)),
-      total_pages: Number(work.totalPages || work.total_pages || (existing ? existing.totalPages : 1)),
+      total_pages: Math.max(
+        Number(work.totalPages || work.total_pages || (existing ? existing.totalPages : 1)),
+        (typeof ScriptParser !== 'undefined' && scriptToSave) ? (new ScriptParser().parse(scriptToSave)?.entries?.['RUS']?.length || new ScriptParser().parse(scriptToSave)?.entries?.['ENG']?.length || 0) : 0,
+        1
+      ),
       preview_pages_count: previewPages,
       tags: (Array.isArray(work.tags) && work.tags.length > 0) ? work.tags : (existing && existing.tags ? existing.tags : []),
       cover_url: coverUrl,
