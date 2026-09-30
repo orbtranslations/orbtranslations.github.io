@@ -160,6 +160,7 @@
   display: inline-block;
   line-height: 0;
   max-width: 100%;
+  container-type: inline-size;
 }
 
 .dialog-scene-stage img.reader-base-image {
@@ -198,11 +199,15 @@
   width: 100%;
   min-height: auto;
   margin: auto 0;
-  word-break: break-word;
+  word-break: normal;
+  overflow-wrap: break-word;
   box-sizing: border-box;
   white-space: pre-line;
-  line-height: 1.4;
+  line-height: 1.35;
   padding: 0 4px 8px 4px;
+  paint-order: stroke fill;
+  -webkit-text-stroke-linejoin: round;
+  stroke-linejoin: round;
 }
 
 /* Bottom Visual Novel Dialogue Frame */

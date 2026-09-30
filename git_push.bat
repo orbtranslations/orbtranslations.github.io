@@ -11,7 +11,7 @@ git add .
 
 echo.
 echo [2/3] Committing changes...
-git commit -m "fix: restore text rendering on internal clean frames and narrative scenes in reader (v3.7.3)"
+git commit -m "fix: match clean-frame font scaling, stroke and responsive layout with original editor (v3.7.4)"
 
 echo.
 echo [3/3] Pushing to GitHub (main)...

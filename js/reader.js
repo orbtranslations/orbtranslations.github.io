@@ -3481,7 +3481,8 @@ class ReaderService {
         textContent.style.webkitFontSmoothing = 'antialiased';
 
         const baseFontSize = effectivePreset.fontSize || 24;
-        textContent.style.fontSize = `${baseFontSize}px`;
+        const initialCqw = (baseFontSize / 10).toFixed(2);
+        textContent.style.fontSize = `clamp(11px, ${initialCqw}cqw, ${baseFontSize}px)`;
 
         if (effectivePreset.strokeWidth > 0) {
           textContent.style.webkitTextStroke = `${effectivePreset.strokeWidth}px ${effectivePreset.strokeColor || '#ffffff'}`;
@@ -3600,12 +3601,21 @@ class ReaderService {
           textSlot.style.height = `${(zonePixelH / curSceneH) * 100}%`;
           textSlot.scrollTop = 0;
 
-          // Масштабирование шрифта под реальное разрешение сцены (базовый эталон 1000px)
-          const scaleRatio = curSceneW / 1000;
+          // Масштабирование шрифта под реальное разрешение сцены на экране
+          // В оригинальном редакторе сцена рендерится при naturalWidth и масштабируется через scale(displayW / naturalWidth).
+          // Поэтому видимый масштаб шрифта на экране: (curSceneW / 1000) * (displayW / curSceneW) = displayW / 1000.
+          const displayW = baseImg.clientWidth || sceneStage.clientWidth || (baseImg.getBoundingClientRect ? baseImg.getBoundingClientRect().width : 0);
+          const effectiveDisplayW = displayW > 0 
+            ? displayW 
+            : (sceneStage.parentElement ? sceneStage.parentElement.clientWidth : 0) || Math.min(window.innerWidth * 0.8, 900);
+
+          const scaleRatio = effectiveDisplayW / 1000;
           const baseFontSize = effectivePreset.fontSize || 24;
-          const effectiveFontSize = Math.max(12, Math.round(baseFontSize * scaleRatio));
+          const effectiveFontSize = Math.max(10, Math.round(baseFontSize * scaleRatio));
+          const cqwFontSize = (baseFontSize / 10).toFixed(2);
+
           if (textContent) {
-            textContent.style.fontSize = `${effectiveFontSize}px`;
+            textContent.style.fontSize = `clamp(11px, ${cqwFontSize}cqw, ${effectiveFontSize}px)`;
 
             if (effectivePreset.strokeWidth > 0) {
               const effectiveStrokeWidth = Math.max(0.5, +(effectivePreset.strokeWidth * scaleRatio).toFixed(1));
@@ -3635,6 +3645,17 @@ class ReaderService {
       } else {
         baseImg.addEventListener('load', updateFrameLayout);
         updateFrameLayout();
+      }
+
+      requestAnimationFrame(updateFrameLayout);
+
+      if (typeof ResizeObserver !== 'undefined') {
+        const ro = new ResizeObserver(() => {
+          updateFrameLayout();
+        });
+        ro.observe(sceneStage);
+        if (baseImg) ro.observe(baseImg);
+        sceneStage._cleanFrameRo = ro;
       }
 
       if (textSlot) {
