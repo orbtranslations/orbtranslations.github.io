@@ -1,7 +1,7 @@
 // @ts-nocheck
 // Supabase Edge Function: resolve-preview
 // Автоматическое получение актуальной прямой ссылки на изображение с ExHentai / E-Hentai по короткой ссылке (/s/...)
-// Поддерживает ротацию зеркала Hath (nl), фоллбек на E-Hentai и детальную диагностику ошибок
+// Поддерживает ротацию зеркала Hath (nl), фоллбек на E-Hentai и безопасную обработку редиректов с сохранением Cookie
 
 declare const Deno: any;
 
@@ -10,6 +10,41 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
+
+/**
+ * Безопасный запрос с сохранением Cookie на всех шагах редиректа
+ * Предотвращает сброс заголовка Cookie рантаймом Deno и бесконечный цикл (20 redirects)
+ */
+async function fetchWithCookies(url: string, headers: Record<string, string>, maxRedirects = 5) {
+  let currentUrl = url;
+  for (let i = 0; i < maxRedirects; i++) {
+    const resp = await fetch(currentUrl, {
+      headers,
+      redirect: "manual"
+    });
+
+    // Успешный ответ или стандартная ошибка (не редирект)
+    if (resp.status < 300 || resp.status >= 400) {
+      return { resp, finalUrl: currentUrl };
+    }
+
+    const location = resp.headers.get("location");
+    if (!location) {
+      return { resp, finalUrl: currentUrl };
+    }
+
+    const nextUrl = new URL(location, currentUrl).toString();
+
+    // Перехват блокировки ExHentai
+    if (nextUrl.includes("poni=no")) {
+      throw new Error("ExHentai вернул редирект poni=no (отказ в доступе). Убедитесь, что в EX_COOKIES скопированы ipb_member_id, ipb_pass_hash и ОБЯЗАТЕЛЬНО igneous с сайта exhentai.org!");
+    }
+
+    console.log(`[resolve-preview] Редирект ${resp.status} с ${currentUrl} -> ${nextUrl}`);
+    currentUrl = nextUrl;
+  }
+  throw new Error(`Превышен лимит редиректов (${maxRedirects})`);
+}
 
 const handler = async (req: Request): Promise<Response> => {
   // 1. CORS Preflight
@@ -48,11 +83,16 @@ const handler = async (req: Request): Promise<Response> => {
       fetchUrl = `${fetchUrl}${sep}nl=${encodeURIComponent(nl)}`;
     }
 
-    // 3. Получаем секретные cookie ExHentai из переменных окружения
+    // 3. Получаем и очищаем секретные cookie ExHentai из переменных окружения
     const rawCookies = (typeof Deno !== "undefined" && Deno.env) 
       ? (Deno.env.get("EX_COOKIES") || Deno.env.get("EX_COOKIE") || "") 
       : "";
-    const exCookies = rawCookies.replace(/\r?\n/g, "; ").trim();
+    
+    let exCookies = rawCookies.trim();
+    if (exCookies.toLowerCase().startsWith("cookie:")) {
+      exCookies = exCookies.substring(7).trim();
+    }
+    exCookies = exCookies.replace(/\r?\n/g, "; ").trim();
 
     const headers: Record<string, string> = {
       "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
@@ -78,16 +118,12 @@ const handler = async (req: Request): Promise<Response> => {
     for (const target of targets) {
       try {
         console.log(`[resolve-preview] Fetching ${target}`);
-        const pageResp = await fetch(target, {
-          headers,
-          redirect: "follow"
-        });
+        const { resp: pageResp } = await fetchWithCookies(target, headers, 6);
 
         const status = pageResp.status;
         const text = await pageResp.text();
         const textLen = text.length;
 
-        // Извлекаем заголовок HTML
         const titleMatch = text.match(/<title>([^<]+)<\/title>/i);
         const title = titleMatch ? titleMatch[1].trim() : "";
 
@@ -107,14 +143,14 @@ const handler = async (req: Request): Promise<Response> => {
         let reason = `HTTP ${status}`;
         const lower = text.toLowerCase();
         if (lower.includes("sad panda") || lower.includes("sadpanda")) {
-          reason = "Sad Panda (ExHentai отклонил доступ — проверьте куки EX_COOKIES, особенно igneous)";
+          reason = "Sad Panda (ExHentai отклонил доступ — проверьте куку igneous в EX_COOKIES)";
         } else if (lower.includes("viewing limit") || lower.includes("image limit") || lower.includes("exceeded")) {
           reason = "ExHentai Viewing Limit (исчерпан лимит просмотра изображений аккаунта)";
         } else if (lower.includes("temporarily banned") || lower.includes("excessive pageloads") || lower.includes("banned")) {
           reason = "IP Ban (слишком много запросов подряд / бан по IP)";
         } else if (lower.includes("just a moment") || lower.includes("cloudflare") || lower.includes("turnstile")) {
-          reason = "Cloudflare Challenge (проверка человека Cloudflare)";
-        } else if (lower.includes("this gallery has been removed") || lower.includes("gallery has been removed")) {
+          reason = "Cloudflare Challenge (проверка Cloudflare)";
+        } else if (lower.includes("this gallery has been removed") || lower.includes("gallery has been removed") || status === 404) {
           reason = "Галерея удалена или скрыта";
         } else if (title) {
           reason = `Заголовок: "${title}" (HTML: ${textLen} байт)`;
@@ -124,7 +160,7 @@ const handler = async (req: Request): Promise<Response> => {
 
         targetResults.push({ target, status, reason, title });
       } catch (err: any) {
-        targetResults.push({ target, reason: `Сетевой сбой: ${err.message}` });
+        targetResults.push({ target, reason: err.message });
       }
     }
 
