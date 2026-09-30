@@ -11,7 +11,7 @@ git add .
 
 echo.
 echo [2/3] Committing changes...
-git commit -m "perf: instant preview opening and eliminate unauthorized getFullScript 403 calls (v3.6.8)"
+git commit -m "perf: instant preview opening with real-time loading progress and fast IDB hydration (v3.6.9)"
 
 echo.
 echo [3/3] Pushing to GitHub (main)...

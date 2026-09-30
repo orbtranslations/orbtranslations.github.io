@@ -393,11 +393,11 @@ class App {
           </div>
           <div class="work-card-footer ${isPurchased ? 'single-action' : ''}">
             ${isPurchased ? `
-              <button class="btn btn-success" style="width: 100%; justify-content: center;" onclick="window.reader.openFullTranslationModal('${work.id}')">
+              <button class="btn btn-success" style="width: 100%; justify-content: center;" onclick="window.reader.openFullTranslationModal('${work.id}', event)">
                 ${readBtnTxt}
               </button>
             ` : `
-              <button class="btn btn-secondary" onclick="window.reader.openPreview('${work.id}')" title="${previewBtnTxt}">
+              <button class="btn btn-secondary" onclick="window.reader.openPreview('${work.id}', event)" title="${previewBtnTxt}">
                 ${previewBtnTxt}
               </button>
               ${isGuest ? `
@@ -489,7 +489,7 @@ class App {
               </div>
             </div>
             <div class="work-card-footer single-action">
-              <button class="btn btn-success" style="width: 100%; justify-content: center;" onclick="window.reader.openFullTranslationModal('${work.id}')">${readBtnTxt}</button>
+              <button class="btn btn-success" style="width: 100%; justify-content: center;" onclick="window.reader.openFullTranslationModal('${work.id}', event)">${readBtnTxt}</button>
             </div>
           </article>
         `;
@@ -622,7 +622,7 @@ class App {
         let actionCell = '<span style="color: var(--text-muted); font-size: 0.75rem;">—</span>';
         if (isPurchase && item.workId) {
           actionCell = `
-            <button type="button" class="btn btn-secondary btn-small" style="font-size: 0.75rem; padding: 3px 8px; display: inline-flex; align-items: center; gap: 4px;" onclick="window.reader.openFullTranslationModal('${item.workId}')" title="${isEn ? 'Open translation reader' : 'Читать перевод'}">
+            <button type="button" class="btn btn-secondary btn-small" style="font-size: 0.75rem; padding: 3px 8px; display: inline-flex; align-items: center; gap: 4px;" onclick="window.reader.openFullTranslationModal('${item.workId}', event)" title="${isEn ? 'Open translation reader' : 'Читать перевод'}">
               📖 ${isEn ? 'Read' : 'Читать'}
             </button>
           `;

@@ -605,11 +605,102 @@ class ReaderService {
   }
 
   /**
+   * Управление состоянием загрузки кнопки в каталоге
+   */
+  setButtonLoading(workId, isLoading, event = null) {
+    let btn = (event && (event.currentTarget || event.target));
+    if (!btn || !btn.tagName || btn.tagName.toLowerCase() !== 'button') {
+      btn = document.querySelector(`button[onclick*="openPreview('${workId}')"]`) ||
+            document.querySelector(`button[onclick*="openFullTranslationModal('${workId}')"]`);
+    }
+    if (!btn) return;
+
+    if (isLoading) {
+      if (!btn._origHtml) btn._origHtml = btn.innerHTML;
+      btn.disabled = true;
+      btn.classList.add('btn-loading');
+      const isEn = window.i18n && window.i18n.getLang() === 'en';
+      btn.innerHTML = `<span class="btn-spinner">⏳</span> ${isEn ? 'Opening...' : 'Открытие...'}`;
+    } else {
+      btn.disabled = false;
+      btn.classList.remove('btn-loading');
+      if (btn._origHtml) {
+        btn.innerHTML = btn._origHtml;
+        delete btn._origHtml;
+      }
+    }
+  }
+
+  /**
+   * Мгновенное открытие окна читалки с экраном прогресса
+   */
+  showReaderLoading(work, options = {}) {
+    const modal = document.getElementById('reader-modal');
+    if (!modal) return;
+
+    modal.classList.add('active');
+    document.body.classList.add('modal-open');
+    document.body.classList.add('reader-open');
+
+    const titleEl = document.getElementById('reader-work-title');
+    if (titleEl && work) {
+      titleEl.textContent = window.i18n ? window.i18n.getWorkTitle(work) : (work.title?.ru || work.title || 'Читалка');
+    }
+
+    const overlay = document.getElementById('reader-loading-overlay');
+    if (overlay) {
+      overlay.style.display = 'flex';
+      overlay.style.opacity = '1';
+    }
+
+    const titleLoading = document.getElementById('reader-loading-title');
+    if (titleLoading && work) {
+      const isEn = window.i18n && window.i18n.getLang() === 'en';
+      const workTitle = window.i18n ? window.i18n.getWorkTitle(work) : (work.title?.ru || work.title || '');
+      titleLoading.textContent = isEn ? `Opening: ${workTitle}` : `Загрузка: ${workTitle}`;
+    }
+
+    this.updateReaderLoading(options);
+  }
+
+  /**
+   * Обновление индикатора прогресса и статуса в окне читалки
+   */
+  updateReaderLoading({ percent = 0, status = '' } = {}) {
+    const bar = document.getElementById('reader-loading-bar');
+    if (bar && percent !== undefined) {
+      bar.style.width = `${Math.min(100, Math.max(0, percent))}%`;
+    }
+    const statusEl = document.getElementById('reader-loading-status');
+    if (statusEl && status) {
+      statusEl.textContent = status;
+    }
+  }
+
+  /**
+   * Плавное скрытие экрана загрузки
+   */
+  hideReaderLoading() {
+    const overlay = document.getElementById('reader-loading-overlay');
+    if (overlay) {
+      overlay.style.opacity = '0';
+      setTimeout(() => {
+        if (overlay.style.opacity === '0') {
+          overlay.style.display = 'none';
+        }
+      }, 250);
+    }
+  }
+
+  /**
    * Открытие бесплатного превью работы с автоматической проверкой сохраненного архива/папки
    */
-  async openPreview(workId) {
+  async openPreview(workId, event = null) {
     if (this._isOpeningPreview) return;
     this._isOpeningPreview = true;
+    this.setButtonLoading(workId, true, event);
+
+    const isEn = window.i18n && window.i18n.getLang() === 'en';
 
     try {
       let work = this.store.getWorkById(workId);
@@ -622,8 +713,20 @@ class ReaderService {
       this.currentWork = work;
       this.isFullMode = false;
 
-      // Гарантированно получаем готовый скрипт превью (разворачивая [STORED_IN_IDB] при необходимости)
+      // Сразу показываем читательский экран с визуальным индикатором прогресса (0мс отклик)
+      this.showReaderLoading(work, {
+        percent: 20,
+        status: isEn ? 'Reading novel script...' : 'Считывание скрипта новеллы...'
+      });
+
+      // Гарантированно получаем готовый скрипт превью (из IndexedDB за ~5-15 мс)
       const sampleScript = await this.store.getSampleScript(workId);
+
+      this.updateReaderLoading({
+        percent: 50,
+        status: isEn ? 'Analyzing dialogs and scene frames...' : 'Анализ диалогов и сцен...'
+      });
+
       if (sampleScript && !sampleScript.startsWith('[STORED_IN_IDB')) {
         this.parseWorkScript(work, sampleScript);
       } else {
@@ -639,6 +742,11 @@ class ReaderService {
       const hasConfiguredDemoImages = Array.isArray(work.demoImages)
         ? work.demoImages.some(item => item && item.url)
         : (work.demoImages && typeof work.demoImages === 'object' && Object.keys(work.demoImages).length > 0);
+
+      this.updateReaderLoading({
+        percent: 80,
+        status: isEn ? 'Preparing demo presentation...' : 'Подготовка демо-презентации...'
+      });
 
       // 1. Если настроены интернет-ссылки для превью — сразу мгновенно запускаем демо-сцены без лишних задержек!
       if (hasConfiguredDemoImages) {
@@ -658,11 +766,15 @@ class ReaderService {
       }
 
       // 3. Проверяем сохраненный на клиенте архив или дескриптор папки
+      this.updateReaderLoading({
+        percent: 90,
+        status: isEn ? 'Checking local graphics archive...' : 'Проверка локального архива графики...'
+      });
+
       const saved = await this.tryLoadSavedClientArchive(workId);
       if (saved && (saved.type === 'zip' || saved.status === 'loaded')) {
-        const isEn = window.i18n && window.i18n.getLang() === 'en';
         const name = saved.fileName || saved.folderName || '';
-        window.app.showToast(
+        window.app?.showToast(
           isEn ? `⚡ Loaded saved graphics: ${name}` : `⚡ Загружена сохраненная графика: ${name}`,
           'info'
         );
@@ -675,8 +787,17 @@ class ReaderService {
         return;
       }
 
-      window.app.showArchiveUploadModal(work, 'preview', saved);
+      this.closeReader();
+      window.app?.showArchiveUploadModal(work, 'preview', saved);
+    } catch (err) {
+      console.error('Ошибка при открытии превью:', err);
+      this.closeReader();
+      window.app?.showToast(
+        isEn ? 'Failed to open preview' : 'Не удалось открыть превью',
+        'error'
+      );
     } finally {
+      this.setButtonLoading(workId, false, event);
       this._isOpeningPreview = false;
     }
   }
@@ -684,83 +805,118 @@ class ReaderService {
   /**
    * Открытие купленной работы в полном режиме с автоматической проверкой сохраненного архива/папки
    */
-  async openFullTranslationModal(workId) {
-    let work = this.store.getWorkById(workId);
-    if (!work && this.store.initPromise) {
-      try { await this.store.initPromise; } catch (e) {}
-      work = this.store.getWorkById(workId);
-    }
-    if (!work) return;
+  async openFullTranslationModal(workId, event = null) {
+    if (this._isOpeningPreview) return;
+    this._isOpeningPreview = true;
+    this.setButtonLoading(workId, true, event);
 
     const isEn = window.i18n && window.i18n.getLang() === 'en';
-    const isPurchased = this.store.hasPurchased(workId);
 
-    // Если не куплено и не админ — уведомляем и открываем превью
-    if (!isPurchased) {
-      window.app.showToast(
-        isEn ? 'Please purchase this work to read the full translation' : 'Для доступа к полному переводу необходимо приобрести работу',
-        'warning'
-      );
-      await this.openPreview(workId);
-      return;
-    }
+    try {
+      let work = this.store.getWorkById(workId);
+      if (!work && this.store.initPromise) {
+        try { await this.store.initPromise; } catch (e) {}
+        work = this.store.getWorkById(workId);
+      }
+      if (!work) return;
 
-    this.currentWork = work;
-    this.isFullMode = true;
+      const isPurchased = this.store.hasPurchased(workId);
 
-    // Безопасная загрузка закрытого скрипта из Supabase work_scripts (защищено RLS)
-    let fullScript = await this.store.getFullScript(workId);
-    if (fullScript && !fullScript.startsWith('[STORED_IN_IDB')) {
-      this.parseWorkScript(work, fullScript);
-    } else {
-      const sampleScript = await this.store.getSampleScript(workId);
-      this.parseWorkScript(work, sampleScript);
-    }
-
-    const availableLangs = (this.parsedScript && this.parsedScript.languages && this.parsedScript.languages.length > 0)
-      ? this.parsedScript.languages
-      : (work.availableLanguages || ['Русский', 'English']);
-    this.currentLang = this.getPriorityLanguage(availableLangs);
-
-    if (this.workArchives[workId]) {
-      this.rebuildPagesFromScript();
-      const lastPage = this.getInitialPageIndexForWork(workId);
-      this.currentIndex = (lastPage > 0 && lastPage < this.pages.length) ? lastPage : 0;
-      this.currentDialogBlockIndex = 0;
-      this.renderReaderUI();
-      if (this.currentIndex > 0) {
+      // Если не куплено и не админ — уведомляем и открываем превью
+      if (!isPurchased) {
         window.app?.showToast(
-          isEn ? `📖 Resumed reading from page ${this.currentIndex + 1}` : `📖 Чтение возобновлено с ${this.currentIndex + 1} страницы`,
+          isEn ? 'Please purchase this work to read the full translation' : 'Для доступа к полному переводу необходимо приобрести работу',
+          'warning'
+        );
+        this._isOpeningPreview = false;
+        await this.openPreview(workId, event);
+        return;
+      }
+
+      this.currentWork = work;
+      this.isFullMode = true;
+
+      // Мгновенно открываем читательский интерфейс с экраном прогресса
+      this.showReaderLoading(work, {
+        percent: 20,
+        status: isEn ? 'Loading novel script...' : 'Загрузка скрипта новеллы...'
+      });
+
+      // Безопасная загрузка закрытого скрипта из Supabase work_scripts (защищено RLS) или локального IDB
+      let fullScript = await this.store.getFullScript(workId);
+
+      this.updateReaderLoading({
+        percent: 55,
+        status: isEn ? 'Parsing novel scenes...' : 'Анализ сцен и диалогов...'
+      });
+
+      if (fullScript && !fullScript.startsWith('[STORED_IN_IDB')) {
+        this.parseWorkScript(work, fullScript);
+      } else {
+        const sampleScript = await this.store.getSampleScript(workId);
+        this.parseWorkScript(work, sampleScript);
+      }
+
+      const availableLangs = (this.parsedScript && this.parsedScript.languages && this.parsedScript.languages.length > 0)
+        ? this.parsedScript.languages
+        : (work.availableLanguages || ['Русский', 'English']);
+      this.currentLang = this.getPriorityLanguage(availableLangs);
+
+      this.updateReaderLoading({
+        percent: 85,
+        status: isEn ? 'Preparing graphics...' : 'Подготовка графики...'
+      });
+
+      if (this.workArchives[workId]) {
+        this.rebuildPagesFromScript();
+        const lastPage = this.getInitialPageIndexForWork(workId);
+        this.currentIndex = (lastPage > 0 && lastPage < this.pages.length) ? lastPage : 0;
+        this.currentDialogBlockIndex = 0;
+        this.renderReaderUI();
+        if (this.currentIndex > 0) {
+          window.app?.showToast(
+            isEn ? `📖 Resumed reading from page ${this.currentIndex + 1}` : `📖 Чтение возобновлено с ${this.currentIndex + 1} страницы`,
+            'info'
+          );
+        }
+        return;
+      }
+
+      // Проверяем сохраненный на клиенте архив или дескриптор папки
+      const saved = await this.tryLoadSavedClientArchive(workId);
+      if (saved && (saved.type === 'zip' || saved.status === 'loaded')) {
+        const name = saved.fileName || saved.folderName || '';
+        window.app?.showToast(
+          isEn ? `⚡ Loaded saved graphics: ${name}` : `⚡ Загружена сохраненная графика: ${name}`,
           'info'
         );
+        this.rebuildPagesFromScript();
+        const lastPage = this.getInitialPageIndexForWork(workId);
+        this.currentIndex = (lastPage > 0 && lastPage < this.pages.length) ? lastPage : 0;
+        this.currentDialogBlockIndex = 0;
+        this.renderReaderUI();
+        if (this.currentIndex > 0) {
+          window.app?.showToast(
+            isEn ? `📖 Resumed reading from page ${this.currentIndex + 1}` : `📖 Чтение возобновлено с ${this.currentIndex + 1} страницы`,
+            'info'
+          );
+        }
+        return;
       }
-      return;
-    }
 
-    // Проверяем сохраненный на клиенте архив или дескриптор папки
-    const saved = await this.tryLoadSavedClientArchive(workId);
-    if (saved && (saved.type === 'zip' || saved.status === 'loaded')) {
-      const isEn = window.i18n && window.i18n.getLang() === 'en';
-      const name = saved.fileName || saved.folderName || '';
-      window.app.showToast(
-        isEn ? `⚡ Loaded saved graphics: ${name}` : `⚡ Загружена сохраненная графика: ${name}`,
-        'info'
+      this.closeReader();
+      window.app?.showArchiveUploadModal(work, 'full', saved);
+    } catch (err) {
+      console.error('Ошибка при открытии полного перевода:', err);
+      this.closeReader();
+      window.app?.showToast(
+        isEn ? 'Failed to open novel' : 'Не удалось открыть новеллу',
+        'error'
       );
-      this.rebuildPagesFromScript();
-      const lastPage = this.getInitialPageIndexForWork(workId);
-      this.currentIndex = (lastPage > 0 && lastPage < this.pages.length) ? lastPage : 0;
-      this.currentDialogBlockIndex = 0;
-      this.renderReaderUI();
-      if (this.currentIndex > 0) {
-        window.app?.showToast(
-          isEn ? `📖 Resumed reading from page ${this.currentIndex + 1}` : `📖 Чтение возобновлено с ${this.currentIndex + 1} страницы`,
-          'info'
-        );
-      }
-      return;
+    } finally {
+      this.setButtonLoading(workId, false, event);
+      this._isOpeningPreview = false;
     }
-
-    window.app.showArchiveUploadModal(work, 'full', saved);
   }
 
   /**
@@ -1645,13 +1801,15 @@ class ReaderService {
         scriptText = this.parsedScript.rawText;
       } else if (work.sampleScriptText && !work.sampleScriptText.startsWith('[STORED_IN_IDB')) {
         scriptText = work.sampleScriptText;
-      } else if (work.fullScriptText && !work.fullScriptText.startsWith('[STORED_IN_IDB')) {
-        scriptText = work.fullScriptText;
-      } else if (this.store.hasPurchased(work.id) || this.store.isAdmin()) {
-        scriptText = await this.store.getFullScript(work.id);
+      } else {
+        scriptText = await this.store.getSampleScript(work.id);
       }
       if (!scriptText || scriptText.startsWith('[STORED_IN_IDB')) {
-        scriptText = await this.store.getSampleScript(work.id);
+        if (work.fullScriptText && !work.fullScriptText.startsWith('[STORED_IN_IDB')) {
+          scriptText = work.fullScriptText;
+        } else if (this.store.hasPurchased(work.id) || this.store.isAdmin()) {
+          scriptText = await this.store.getFullScript(work.id);
+        }
       }
     }
     if (scriptText && (!this.parsedScript || this.parsedScript.rawText !== scriptText)) {
@@ -2749,6 +2907,8 @@ class ReaderService {
     const modal = document.getElementById('reader-modal');
     if (!modal) return;
 
+    this.hideReaderLoading();
+
     modal.classList.add('active');
     document.body.classList.add('modal-open');
     document.body.classList.add('reader-open');
@@ -3581,6 +3741,8 @@ class ReaderService {
   closeReader() {
     this.isDemoMode = false;
     this.activeDemoImages = null;
+    this.hideReaderLoading();
+    this._isOpeningPreview = false;
     const modal = document.getElementById('reader-modal');
     if (modal) {
       modal.classList.remove('active');

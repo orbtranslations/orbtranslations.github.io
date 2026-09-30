@@ -215,24 +215,47 @@ class Store {
 
   async initAsyncStorage() {
     try {
-      // 1. Загрузка каталога из Supabase (Single Source of Truth)
+      // 1. Мгновенное обогащение из локального IndexedDB (~5-15 мс)
+      // Разворачивает скрипты [STORED_IN_IDB] в памяти сразу при старте страницы, не блокируя UI и предотвращая задержки
+      try {
+        const idbData = await IDBStorage.get('main_store');
+        if (idbData && Array.isArray(idbData.works)) {
+          idbData.works.forEach(idbWork => {
+            const memWork = (this.data.works || []).find(w => w.id === idbWork.id);
+            if (memWork) {
+              if (idbWork.sampleScriptText && (!memWork.sampleScriptText || memWork.sampleScriptText.startsWith('[STORED_IN_IDB'))) {
+                memWork.sampleScriptText = idbWork.sampleScriptText;
+              }
+              if (idbWork.fullScriptText && (!memWork.fullScriptText || memWork.fullScriptText.startsWith('[STORED_IN_IDB'))) {
+                memWork.fullScriptText = idbWork.fullScriptText;
+              }
+            }
+          });
+        }
+      } catch (errIdb) {
+        console.warn('Ошибка мгновенного чтения IndexedDB:', errIdb);
+      }
+
+      // 2. Фоновая синхронизация с Supabase (Single Source of Truth)
       await this.syncWithSupabase();
 
-      // 2. Локальное обогащение полными скриптами из IndexedDB (для создателя/покупателя)
-      const idbData = await IDBStorage.get('main_store');
-      if (idbData && Array.isArray(idbData.works)) {
-        idbData.works.forEach(idbWork => {
-          const memWork = (this.data.works || []).find(w => w.id === idbWork.id);
-          if (memWork) {
-            if (idbWork.sampleScriptText && (!memWork.sampleScriptText || memWork.sampleScriptText.startsWith('[STORED_IN_IDB'))) {
-              memWork.sampleScriptText = idbWork.sampleScriptText;
+      // 3. Повторная гарантия обогащения полными скриптами из IndexedDB после загрузки каталога из сети
+      try {
+        const idbData = await IDBStorage.get('main_store');
+        if (idbData && Array.isArray(idbData.works)) {
+          idbData.works.forEach(idbWork => {
+            const memWork = (this.data.works || []).find(w => w.id === idbWork.id);
+            if (memWork) {
+              if (idbWork.sampleScriptText && (!memWork.sampleScriptText || memWork.sampleScriptText.startsWith('[STORED_IN_IDB'))) {
+                memWork.sampleScriptText = idbWork.sampleScriptText;
+              }
+              if (idbWork.fullScriptText && (!memWork.fullScriptText || memWork.fullScriptText.startsWith('[STORED_IN_IDB'))) {
+                memWork.fullScriptText = idbWork.fullScriptText;
+              }
             }
-            if (idbWork.fullScriptText) {
-              memWork.fullScriptText = idbWork.fullScriptText;
-            }
-          }
-        });
-      }
+          });
+        }
+      } catch (e) {}
 
       if (window.app) {
         window.app.renderStorefront();
@@ -285,8 +308,10 @@ class Store {
             coverUrl: coverUrl,
             availableLanguages: Array.isArray(w.available_languages) ? w.available_languages : ['Русский', 'English'],
             scriptFileName: w.script_file_name || 'script.txt',
-            sampleScriptText: w.sample_script_text || '',
-            fullScriptText: (existing && existing.fullScriptText) ? existing.fullScriptText : null,
+            sampleScriptText: (w.sample_script_text && !w.sample_script_text.startsWith('[STORED_IN_IDB'))
+              ? w.sample_script_text
+              : ((existing && existing.sampleScriptText && !existing.sampleScriptText.startsWith('[STORED_IN_IDB')) ? existing.sampleScriptText : (w.sample_script_text || '')),
+            fullScriptText: (existing && existing.fullScriptText && !existing.fullScriptText.startsWith('[STORED_IN_IDB')) ? existing.fullScriptText : null,
             demoImages: demoImages,
             createdAt: w.created_at ? w.created_at.split('T')[0] : ''
           };
@@ -1064,7 +1089,23 @@ class Store {
       return work.fullScriptText;
     }
 
-    // 1.1. Если пользователь не покупал работу и не администратор, не делаем запрос к серверу (защита от 403 Forbidden и задержек)
+    // 2. Мгновенная проверка в локальной базе IndexedDB (~5-15 мс)
+    if (typeof IDBStorage !== 'undefined') {
+      try {
+        const idbData = await IDBStorage.get('main_store');
+        if (idbData && Array.isArray(idbData.works)) {
+          const idbWork = idbData.works.find(w => w && w.id === workId);
+          if (idbWork && idbWork.fullScriptText && !idbWork.fullScriptText.startsWith('[STORED_IN_IDB')) {
+            if (work) work.fullScriptText = idbWork.fullScriptText;
+            return idbWork.fullScriptText;
+          }
+        }
+      } catch (e) {
+        console.warn('Ошибка чтения fullScriptText из IDB:', e);
+      }
+    }
+
+    // 3. Если пользователь не покупал работу и не администратор, не делаем запрос к серверу (защита от 403 Forbidden и задержек)
     const isAllowed = this.isAdmin() || this.hasPurchased(workId);
     if (!isAllowed) {
       if (work && work.sampleScriptText && !work.sampleScriptText.startsWith('[STORED_IN_IDB')) {
@@ -1073,7 +1114,7 @@ class Store {
       return null;
     }
 
-    // 2. Запрашиваем через серверную Edge Function get-work-script
+    // 4. Запрашиваем через серверную Edge Function get-work-script
     if (window.supabaseClient) {
       try {
         if (window.supabaseClient.functions) {
@@ -1092,7 +1133,7 @@ class Store {
         console.warn('Edge Function недоступна, пробуем прямой запрос:', fnErr);
       }
 
-      // 3. Резервный запрос в закрытую таблицу work_scripts из Supabase (RLS базы данных)
+      // 5. Резервный запрос в закрытую таблицу work_scripts из Supabase (RLS базы данных)
       try {
         const { data, error } = await window.supabaseClient
           .from('work_scripts')
@@ -1112,23 +1153,7 @@ class Store {
       }
     }
 
-    // 3.5. Проверка в локальной базе IndexedDB (для офлайн-доступа и кэша)
-    if (typeof IDBStorage !== 'undefined') {
-      try {
-        const idbData = await IDBStorage.get('main_store');
-        if (idbData && Array.isArray(idbData.works)) {
-          const idbWork = idbData.works.find(w => w && w.id === workId);
-          if (idbWork && idbWork.fullScriptText && !idbWork.fullScriptText.startsWith('[STORED_IN_IDB')) {
-            if (work) work.fullScriptText = idbWork.fullScriptText;
-            return idbWork.fullScriptText;
-          }
-        }
-      } catch (e) {
-        console.warn('Ошибка чтения fullScriptText из IDB:', e);
-      }
-    }
-
-    // 4. Резерв: если скрипт хранится в sampleScriptText (для локального офлайн-режима)
+    // 6. Резерв: если скрипт хранится в sampleScriptText (для локального офлайн-режима)
     if (work && work.sampleScriptText && !work.sampleScriptText.startsWith('[STORED_IN_IDB')) {
       return work.sampleScriptText;
     }
@@ -1393,20 +1418,7 @@ class Store {
       return work.sampleScriptText;
     }
 
-    // 1. Ожидаем завершения асинхронной инициализации хранилища
-    if (this.initPromise) {
-      try {
-        await this.initPromise;
-      } catch (e) {
-        console.warn('Ошибка ожидания initPromise в getSampleScript:', e);
-      }
-      work = this.getWorkById(workId);
-      if (work && work.sampleScriptText && !work.sampleScriptText.startsWith('[STORED_IN_IDB')) {
-        return work.sampleScriptText;
-      }
-    }
-
-    // 2. Прямая проверка в IndexedDB
+    // 1. Мгновенная прямая проверка в IndexedDB (~5-15 мс)
     if (typeof IDBStorage !== 'undefined') {
       try {
         const idbData = await IDBStorage.get('main_store');
@@ -1419,6 +1431,19 @@ class Store {
         }
       } catch (e) {
         console.warn('Ошибка прямого чтения sampleScriptText из IDB:', e);
+      }
+    }
+
+    // 2. Если в локальном IDB нет — ожидаем завершения сетевой инициализации
+    if (this.initPromise) {
+      try {
+        await this.initPromise;
+      } catch (e) {
+        console.warn('Ошибка ожидания initPromise в getSampleScript:', e);
+      }
+      work = this.getWorkById(workId);
+      if (work && work.sampleScriptText && !work.sampleScriptText.startsWith('[STORED_IN_IDB')) {
+        return work.sampleScriptText;
       }
     }
 

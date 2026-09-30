@@ -532,7 +532,7 @@ class AdminService {
         <td style="padding: 0.85rem 1rem;">
           <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
             <button class="btn btn-small btn-secondary" onclick="window.admin.editWork('${w.id}')" title="${isEn ? 'Edit release' : 'Редактировать работу'}">${isEn ? '✏️ Edit' : '✏️ Правка'}</button>
-            <button class="btn btn-small btn-secondary" onclick="window.reader.openPreview('${w.id}')" title="${isEn ? 'Preview' : 'Проверить превью'}">${isEn ? '👁️ Preview' : '👁️ Превью'}</button>
+            <button class="btn btn-small btn-secondary" onclick="window.reader.openPreview('${w.id}', event)" title="${isEn ? 'Preview' : 'Проверить превью'}">${isEn ? '👁️ Preview' : '👁️ Превью'}</button>
             ${Array.isArray(w.demoImages) && w.demoImages.some(d => d && d.url) ? `<button class="btn btn-small btn-accent" onclick="window.reader.loadDemoImagesForWork('${w.id}')" title="${isEn ? 'Open Demo Preview (Web)' : 'Открыть демо-превью (веб-ссылки)'}">🌐 ${isEn ? 'Demo' : 'Демо'} (${w.demoImages.filter(d => d && d.url).length})</button>` : ''}
             <button class="btn btn-small btn-danger" onclick="window.admin.handleDeleteWork('${w.id}')" title="${isEn ? 'Delete' : 'Удалить'}">🗑️</button>
           </div>
