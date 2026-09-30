@@ -47,12 +47,12 @@ class ReaderService {
     { // Рамка 1: портрет слева, текст справа
       portraitZones: [{ x: 0.2, y: 0.5, w: 18.0, h: 99.0 }],
       bgZone: { x: 17.5, y: 0.5, w: 82.3, h: 99.0 },
-      textZone: { x: 21.5, y: 7.5, w: 75.5, h: 81.0 }
+      textZone: { x: 18.5, y: 3.5, w: 79.5, h: 88.0 }
     },
     { // Рамка 2: текст слева, портрет справа
       portraitZones: [{ x: 82.0, y: 0.5, w: 17.8, h: 99.0 }],
       bgZone: { x: 0.2, y: 0.5, w: 82.3, h: 99.0 },
-      textZone: { x: 3.5, y: 7.5, w: 76.5, h: 81.0 }
+      textZone: { x: 2.0, y: 3.5, w: 79.5, h: 88.0 }
     },
     { // Рамка 3: портреты слева и справа, текст в центре
       portraitZones: [
@@ -60,12 +60,12 @@ class ReaderService {
         { x: 82.0, y: 0.5, w: 17.8, h: 99.0 }
       ],
       bgZone: { x: 18.0, y: 0.5, w: 64.0, h: 99.0 },
-      textZone: { x: 21.5, y: 7.5, w: 57.0, h: 81.0 }
+      textZone: { x: 18.5, y: 3.5, w: 63.0, h: 88.0 }
     },
     { // Рамка 4: без портретов, сплошной текст по всей ширине
       portraitZones: [],
       bgZone: { x: 0.8, y: 2.0, w: 98.4, h: 96.0 },
-      textZone: { x: 3.5, y: 7.5, w: 93.0, h: 81.0 }
+      textZone: { x: 1.8, y: 3.5, w: 96.4, h: 88.0 }
     }
   ];
 
@@ -1361,6 +1361,189 @@ class ReaderService {
   }
 
   /**
+   * Проверка на висячие предлоги и союзы для правил типографики
+   */
+  static isHangingWord(word) {
+    if (!word) return false;
+    const clean = word.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()«»""'']/g, '').trim();
+    return /^[a-zA-Zа-яА-ЯёЁ]$|^([вксоуия]|не|на|но|за|из|до|по|со|ко|во|ли|бы|же|то|in|on|at|to|by|of|an|or|as|if|so|no|is)$/i.test(clean);
+  }
+
+  /**
+   * Получение контекста canvas для точного измерения ширины текста
+   */
+  getMeasureContext(fontStr) {
+    if (!this._measureCanvas) {
+      this._measureCanvas = document.createElement('canvas');
+      this._measureCtx = this._measureCanvas.getContext('2d');
+    }
+    if (fontStr && this._measureCtx) {
+      this._measureCtx.font = fontStr;
+    }
+    return this._measureCtx;
+  }
+
+  /**
+   * Перенос текста по словам с учетом типографики и висячих предлогов
+   */
+  wrapDialogText(text, maxWidth, fontStr) {
+    if (!text || maxWidth <= 0) return [''];
+    const ctx = this.getMeasureContext(fontStr || '22px Arial, sans-serif');
+    const safeMaxWidth = Math.max(20, maxWidth - 16);
+
+    const inputLines = text.split('\n');
+    const result = [];
+
+    for (const inputLine of inputLines) {
+      const trimmed = inputLine.trim();
+      if (!trimmed) {
+        result.push('');
+        continue;
+      }
+
+      const words = trimmed.split(/\s+/).filter(Boolean);
+      let currentLine = '';
+
+      for (let i = 0; i < words.length; i++) {
+        const word = words[i].trim();
+        if (!word) continue;
+
+        const testLine = currentLine ? (currentLine + ' ' + word) : word;
+        const testWidth = ctx.measureText(testLine).width;
+
+        if (testWidth > safeMaxWidth && currentLine) {
+          let lineToPush = currentLine.trim();
+          let carryOver = '';
+          while (true) {
+            const lastSpaceIdx = lineToPush.lastIndexOf(' ');
+            if (lastSpaceIdx <= 0) break;
+            const candidateWord = lineToPush.slice(lastSpaceIdx + 1).trim();
+            if (ReaderService.isHangingWord(candidateWord)) {
+              const before = lineToPush.slice(0, lastSpaceIdx).trim();
+              if (before) {
+                lineToPush = before;
+                carryOver = candidateWord + (carryOver ? ' ' + carryOver : '');
+                continue;
+              }
+            }
+            break;
+          }
+
+          if (carryOver) {
+            result.push(lineToPush);
+            currentLine = carryOver + ' ' + word;
+          } else {
+            result.push(lineToPush);
+            currentLine = word;
+          }
+        } else {
+          currentLine = testLine;
+        }
+      }
+
+      if (currentLine) {
+        result.push(currentLine.trim());
+      }
+    }
+
+    return result.length > 0 ? result : [''];
+  }
+
+  /**
+   * Разбить все диалоговые блоки сцены на пошаговые экраны со строгим ограничением в 4 строки
+   */
+  getDialogStepsForPage(page) {
+    if (!page || page.isLocked || this.isPageCleanFrame(page)) {
+      return [{ blockIndex: 0, pageIndex: 0, totalPages: 1, lines: [], charName: '', speechText: '', borderIdx: 3 }];
+    }
+
+    const rawText = (page.entry && page.entry.text) || '';
+    const blocks = ScriptParser.getBlocks(rawText);
+    if (!blocks || blocks.length === 0) {
+      return [{ blockIndex: 0, pageIndex: 0, totalPages: 1, lines: [], charName: '', speechText: '', borderIdx: 3 }];
+    }
+
+    const overlayData = (this.parsedScript && this.parsedScript.overlayData) || {};
+    const presets = this.normalizePresets(overlayData.presets);
+    const dialogData = overlayData.dialogData || {};
+    const cleanBase = (page.key || '').split(/[\/\\]/).pop().replace(/\.[^/.]+$/, '');
+
+    const candKeys = [
+      page.key,
+      cleanBase,
+      page.targetKey,
+      page.subfolder ? `${page.subfolder}/${cleanBase}` : null,
+      page.subfolder ? `${page.subfolder}/${page.key}` : null,
+      `Image-M/${cleanBase}`,
+      `Image-M/${page.key}`,
+      `Image/${cleanBase}`,
+      `Image/${page.key}`
+    ].filter(Boolean);
+
+    const steps = [];
+
+    blocks.forEach((rawBlock, bIdx) => {
+      const cleanBlock = ScriptParser.stripComments(rawBlock).trim();
+      if (!cleanBlock) return;
+
+      const charMatch = cleanBlock.match(/^[\(（【]([^)）】]+)[\)）】]/);
+      const charName = charMatch ? charMatch[1].trim() : '';
+      const speechText = charMatch ? cleanBlock.replace(/^[\(（【][^)）】]+[\)）】]\s*/, '').trim() : cleanBlock;
+
+      let bSettings = {};
+      for (const k of candKeys) {
+        const fullKey = `${k}_block_${bIdx}`;
+        if (dialogData[fullKey]) {
+          bSettings = dialogData[fullKey];
+          break;
+        }
+      }
+
+      const defBorderIdx = charName ? 0 : 3;
+      let borderIdx = defBorderIdx;
+      if (bSettings.borderIndex !== undefined && bSettings.borderIndex !== null) {
+        borderIdx = typeof bSettings.borderIndex === 'number' 
+          ? bSettings.borderIndex 
+          : parseInt(bSettings.borderIndex, 10);
+        if (isNaN(borderIdx)) borderIdx = defBorderIdx;
+      }
+
+      const preset = presets.find(p => p.name === bSettings.preset) || {};
+      const fontSize = preset.fontSize || 22;
+      const fontFamily = preset.fontFamily || 'Arial, sans-serif';
+      const fontStr = `${fontSize}px ${fontFamily}`;
+
+      const bCfg = ReaderService.BORDER_CONFIGS[borderIdx] || ReaderService.BORDER_CONFIGS[0];
+      const customTz = (overlayData.borderZones && overlayData.borderZones[borderIdx]) || bCfg.textZone;
+      const textWidth = Math.max(50, (customTz.w / 100) * 1000 - 45);
+
+      const textToWrap = charName ? `${charName}: ${speechText}` : speechText;
+      const wrappedLines = this.wrapDialogText(textToWrap, textWidth, fontStr);
+
+      const MAX_LINES = 4;
+      const totalPages = Math.max(1, Math.ceil(wrappedLines.length / MAX_LINES));
+
+      for (let pIdx = 0; pIdx < totalPages; pIdx++) {
+        const pageLines = wrappedLines.slice(pIdx * MAX_LINES, (pIdx + 1) * MAX_LINES);
+        steps.push({
+          blockIndex: bIdx,
+          pageIndex: pIdx,
+          totalPages: totalPages,
+          charName: charName,
+          lines: pageLines,
+          speechText: speechText,
+          borderIdx: borderIdx,
+          preset: preset,
+          bSettings: bSettings,
+          customTz: customTz
+        });
+      }
+    });
+
+    return steps.length > 0 ? steps : [{ blockIndex: 0, pageIndex: 0, totalPages: 1, lines: [], charName: '', speechText: '', borderIdx: 3 }];
+  }
+
+  /**
    * Разрешение URL источника изображения для портрета (поддержка локальных файлов, демо-сцен и фонов)
    */
   async resolvePortraitSourceUrl(portrait) {
@@ -1997,8 +2180,8 @@ class ReaderService {
     const curPage = this.pages[this.currentIndex];
     const isClean = this.isPageCleanFrame(curPage);
     if (curPage && !curPage.isLocked && !isClean) {
-      const blocks = ScriptParser.getBlocks((curPage.entry && curPage.entry.text) || '');
-      if (blocks.length > 1 && this.currentDialogBlockIndex < blocks.length - 1) {
+      const steps = this.getDialogStepsForPage(curPage);
+      if (steps.length > 1 && this.currentDialogBlockIndex < steps.length - 1) {
         this.currentDialogBlockIndex++;
         this.updateReaderDisplay();
         return;
@@ -2041,8 +2224,8 @@ class ReaderService {
       const prevPage = this.pages[this.currentIndex];
       const prevIsClean = this.isPageCleanFrame(prevPage);
       if (prevPage && !prevIsClean) {
-        const blocks = ScriptParser.getBlocks((prevPage.entry && prevPage.entry.text) || '');
-        this.currentDialogBlockIndex = Math.max(0, blocks.length - 1);
+        const prevSteps = this.getDialogStepsForPage(prevPage);
+        this.currentDialogBlockIndex = Math.max(0, prevSteps.length - 1);
       } else {
         this.currentDialogBlockIndex = 0;
       }
@@ -2153,13 +2336,17 @@ class ReaderService {
     if (dialogStepCounter) {
       const curPage = this.pages[this.currentIndex];
       const isClean = this.isPageCleanFrame(curPage);
-      const blocks = (curPage && !curPage.isLocked && !isClean && curPage.entry && curPage.entry.text)
-        ? ScriptParser.getBlocks(curPage.entry.text)
+      const steps = (curPage && !curPage.isLocked && !isClean)
+        ? this.getDialogStepsForPage(curPage)
         : [];
-      if (blocks.length > 1) {
-        const safeIdx = Math.max(0, Math.min(this.currentDialogBlockIndex, blocks.length - 1));
-        dialogStepCounter.textContent = `${safeIdx + 1} / ${blocks.length} ▾`;
+      if (steps.length > 1) {
+        const safeIdx = Math.max(0, Math.min(this.currentDialogBlockIndex, steps.length - 1));
+        dialogStepCounter.textContent = `${safeIdx + 1} / ${steps.length} ▾`;
         dialogStepCounter.style.display = 'inline-flex';
+        dialogStepCounter.onclick = (e) => {
+          e.stopPropagation();
+          this.nextPage();
+        };
       } else {
         dialogStepCounter.style.display = 'none';
       }
@@ -2552,45 +2739,14 @@ class ReaderService {
     // 2. Нижняя диалоговая рамка Visual Novel (Рамка 1 .. Рамка 4)
     // =========================================================================
     else if (blocks.length > 0) {
-      const safeBlockIdx = Math.max(0, Math.min(dialogBlockIdx, blocks.length - 1));
-      const activeRawBlock = blocks[safeBlockIdx] || '';
-      const cleanBlockText = ScriptParser.stripComments(activeRawBlock);
+      const steps = this.getDialogStepsForPage(page);
+      const safeStepIdx = Math.max(0, Math.min(dialogBlockIdx, Math.max(0, steps.length - 1)));
+      const activeStep = steps[safeStepIdx] || steps[0] || {};
 
-      // Распознавание имени говорящего персонажа: (Таюн), (Хасами) и т.д.
-      const charMatch = cleanBlockText.match(/^[\(（【]([^)）】]+)[\)）】]/);
-      let charName = charMatch ? charMatch[1].trim() : '';
-      let speechText = charMatch ? cleanBlockText.replace(/^[\(（【][^)）】]+[\)）】]\s*/, '') : cleanBlockText;
-
-      const candKeys = [
-        page.key,
-        cleanBase,
-        page.targetKey,
-        page.subfolder ? `${page.subfolder}/${cleanBase}` : null,
-        page.subfolder ? `${page.subfolder}/${page.key}` : null,
-        `Image-M/${cleanBase}`,
-        `Image-M/${page.key}`,
-        `Image/${cleanBase}`,
-        `Image/${page.key}`
-      ].filter(Boolean);
-      let bSettings = {};
-      for (const k of candKeys) {
-        const fullKey = `${k}_block_${safeBlockIdx}`;
-        if (dialogData[fullKey]) {
-          bSettings = dialogData[fullKey];
-          break;
-        }
-      }
-
-      const defBorderIdx = charName ? 0 : 3;
-      let borderIdx = defBorderIdx;
-      if (bSettings.borderIndex !== undefined && bSettings.borderIndex !== null) {
-        borderIdx = typeof bSettings.borderIndex === 'number' 
-          ? bSettings.borderIndex 
-          : parseInt(bSettings.borderIndex, 10);
-        if (isNaN(borderIdx)) borderIdx = defBorderIdx;
-      }
-      const presetName = bSettings.preset;
-      const preset = presets.find(p => p.name === presetName) || {};
+      const borderIdx = (activeStep.borderIdx !== undefined) ? activeStep.borderIdx : (activeStep.charName ? 0 : 3);
+      const preset = activeStep.preset || {};
+      const charName = activeStep.charName || '';
+      const bSettings = activeStep.bSettings || {};
 
       const frameWrapper = document.createElement('div');
       frameWrapper.className = 'dialog-frame-wrapper';
@@ -2602,6 +2758,7 @@ class ReaderService {
       });
 
       const bCfg = ReaderService.BORDER_CONFIGS[borderIdx] || ReaderService.BORDER_CONFIGS[0];
+      const tz = activeStep.customTz || bCfg.textZone;
 
       // 1. Белая подложка под текст
       const bgSlot = document.createElement('div');
@@ -2648,27 +2805,38 @@ class ReaderService {
       frameBorderImg.src = this.getBorderUrl(borderIdx);
       frameWrapper.appendChild(frameBorderImg);
 
-      // 4. Текстовый слот диалога с безопасным отступом от фаски рамки
+      // 4. Текстовый слот диалога с безопасным отступом от фаски рамки (строго не более 4 строк)
       const textSlot = document.createElement('div');
       textSlot.className = 'dialog-text-slot';
-      textSlot.style.left = `${bCfg.textZone.x}%`;
-      textSlot.style.top = `${bCfg.textZone.y}%`;
-      textSlot.style.width = `${bCfg.textZone.w}%`;
-      textSlot.style.height = `${bCfg.textZone.h}%`;
+      textSlot.style.left = `${tz.x}%`;
+      textSlot.style.top = `${tz.y}%`;
+      textSlot.style.width = `${tz.w}%`;
+      textSlot.style.height = `${tz.h}%`;
 
       const textContent = document.createElement('div');
       textContent.className = 'dialog-text-content';
 
-      // Выделение имени говорящего с четкой контрастной обводкой и отступом
-      if (charName) {
-        textContent.innerHTML = `<span class="dialog-char-name">${charName}:</span> ${speechText}`;
+      const pageLines = (activeStep.lines && activeStep.lines.length > 0)
+        ? activeStep.lines.slice(0, 4)
+        : [];
+
+      // Выделение имени говорящего с четкой контрастной обводкой и отступом (только на первой странице реплики)
+      if (charName && activeStep.pageIndex === 0) {
+        const line0 = pageLines[0] || '';
+        const prefix = `${charName}:`;
+        let line0Text = line0;
+        if (line0.startsWith(prefix)) {
+          line0Text = line0.slice(prefix.length).trimStart();
+        }
+        const rest = pageLines.slice(1).join('\n');
+        textContent.innerHTML = `<span class="dialog-char-name">${charName}:</span> ${line0Text}${rest ? '\n' + rest : ''}`;
       } else {
-        textContent.textContent = speechText;
+        textContent.textContent = pageLines.join('\n');
       }
 
       textContent.style.fontFamily = preset.fontFamily || 'Arial, sans-serif';
       textContent.style.fontSize = preset.fontSize ? `${preset.fontSize}px` : '22px';
-      textContent.style.lineHeight = preset.lineHeight || 1.4;
+      textContent.style.lineHeight = preset.lineHeight || 1.35;
       textContent.style.color = preset.color || '#000000';
       textContent.style.textAlign = preset.textAlign || 'left';
 
