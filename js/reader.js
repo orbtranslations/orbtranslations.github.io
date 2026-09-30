@@ -2778,15 +2778,23 @@ class ReaderService {
           const boundEl = layerElements.find(le => le.layer === boundLayer) || layerElements[layerElements.length - 1];
           const bImg = boundEl ? boundEl.img : null;
 
-          const bScale = (boundLayer.scale !== undefined ? boundLayer.scale : (fData.scale !== undefined ? fData.scale : 100)) / 100;
-          const bScaleX = (boundLayer.scaleX !== undefined ? boundLayer.scaleX : bScale);
-          const bScaleY = (boundLayer.scaleY !== undefined ? boundLayer.scaleY : bScale);
-
           const isTzStretchX = !!(boundLayer.stretchX || boundLayer.stretch);
           const isTzStretchY = !!(boundLayer.stretchY || boundLayer.stretch);
 
           const bNatW = boundLayer._frameNatW || (bImg && bImg.naturalWidth) || fData._frameNatW || (isTitleOrGraphic ? curSceneW : 313);
           const bNatH = boundLayer._frameNatH || (bImg && bImg.naturalHeight) || fData._frameNatH || (isTitleOrGraphic ? curSceneH : 470);
+
+          const baseScale = boundLayer.scale !== undefined ? boundLayer.scale : (fData.scale !== undefined ? fData.scale : 100);
+          let bScaleX = (boundLayer.scaleX !== undefined ? boundLayer.scaleX : baseScale) / 100;
+          let bScaleY = (boundLayer.scaleY !== undefined ? boundLayer.scaleY : baseScale) / 100;
+
+          if (!boundLayer._frameNatW && bNatW <= 550 && bScaleX <= 0.4) {
+            const assumedOriginalW = bNatW / bScaleX;
+            if (assumedOriginalW >= 700 && assumedOriginalW <= 1600) {
+              bScaleX = 1.0;
+              bScaleY = 1.0;
+            }
+          }
 
           const frameDrawW = isTzStretchX ? curSceneW : (bNatW * bScaleX);
           const frameDrawH = isTzStretchY ? curSceneH : (bNatH * bScaleY);
