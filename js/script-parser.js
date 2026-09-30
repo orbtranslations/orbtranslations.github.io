@@ -764,11 +764,22 @@ class ScriptParser {
             const baseTarget = blockKey.split('_block_')[0];
             const normBase = baseTarget.replace(/\\/g, '/');
             const pureBase = normBase.split('/').pop();
+            const cleanNormBase = normBase.replace(/__occ\d+$/, '');
+            const cleanPureBase = pureBase.replace(/__occ\d+$/, '');
 
-            if (keptKeys.has(baseTarget) || keptKeys.has(normBase) || keptKeys.has(pureBase)) {
+            if (
+              keptKeys.has(baseTarget) ||
+              keptKeys.has(normBase) ||
+              keptKeys.has(pureBase) ||
+              keptKeys.has(cleanNormBase) ||
+              keptKeys.has(cleanPureBase)
+            ) {
               filteredDialogData[blockKey] = bSettings;
               if (bSettings && bSettings.portraitName) {
                 usedPortraits.add(bSettings.portraitName);
+              }
+              if (bSettings && bSettings.portrait2Name) {
+                usedPortraits.add(bSettings.portrait2Name);
               }
             }
           }

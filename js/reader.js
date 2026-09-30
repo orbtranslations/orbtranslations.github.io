@@ -131,32 +131,96 @@ class ReaderService {
     if (!charName) return null;
 
     const cLower = charName.toLowerCase().trim();
-    const cleanScene = (sceneKey || '').split(/[\/\\]/).pop().replace(/\.[^/.]+$/, '').toLowerCase();
+    const cleanScene = (sceneKey || '').split(/[\/\\]/).pop().replace(/\.[^/.]+$/, '').replace(/__occ\d+$/, '').toLowerCase();
     const sceneMatch = cleanScene.match(/^([a-z]*\d+)[-](\d+|[a-z]+)/);
     const sceneNum = sceneMatch ? sceneMatch[1] : cleanScene;
 
     // Таблица алиасов имен для сопоставления английских и русских вариантов
     const aliases = {
-      'hasami': ['хасами', 'hasami'],
-      'хасами': ['хасами', 'hasami'],
+      // Vol 1
+      'hasami': ['хасами', 'hasami', 'chichibu'],
+      'хасами': ['хасами', 'hasami', 'chichibu'],
       'tayun': ['таюн', 'tayun', 'комунэ', 'komune', 'yun'],
       'таюн': ['таюн', 'tayun', 'комунэ', 'komune', 'yun'],
-      'yuurin': ['юрин', 'yuurin', 'никё', 'nikyou'],
-      'юрин': ['юрин', 'yuurin', 'никё', 'nikyou'],
-      'momimomi': ['момимоми', 'momimomi', 'оомомо', 'oomomo'],
-      'момимоми': ['момимоми', 'momimomi', 'оомомо', 'oomomo'],
-      'kureha': ['куреха', 'kureha'],
-      'куреха': ['куреха', 'kureha']
+      'yuurin': ['юрин', 'yuurin', 'yurin', 'никё', 'nikyou'],
+      'yurin': ['юрин', 'yuurin', 'yurin', 'никё', 'nikyou'],
+      'юрин': ['юрин', 'yuurin', 'yurin', 'никё', 'nikyou'],
+      // Vol 2
+      'momimomi': ['момимоми', 'momimomi', 'оомомо', 'oomomo', 'мимоми', 'mimomi'],
+      'момимоми': ['момимоми', 'momimomi', 'оомомо', 'oomomo', 'мимоми', 'mimomi'],
+      'kureha': ['куреха', 'kureha', 'идзури', 'izuri'],
+      'куреха': ['куреха', 'kureha', 'идзури', 'izuri'],
+      'kureha-sensei': ['куреха', 'kureha', 'куреха-сэнсэй', 'куреха-сенсей'],
+      'куреха-сенсей': ['куреха', 'kureha', 'куреха-сэнсэй', 'куреха-сенсей'],
+      // Vol 3
+      'hazumi': ['хазуми', 'hazumi'],
+      'хазуми': ['хазуми', 'hazumi'],
+      'shidaki': ['сидаки', 'shidaki', 'сида', 'shida', 'кимихо', 'kimiho'],
+      'сидаки': ['сидаки', 'shidaki', 'сида', 'shida', 'кимихо', 'kimiho'],
+      'oochi': ['оочи', 'oochi', 'ochi', 'чио', 'chio'],
+      'оочи': ['оочи', 'oochi', 'ochi', 'чио', 'chio'],
+      // Vol 4-10+
+      'ippa': ['иппа', 'ippa'],
+      'иппа': ['иппа', 'ippa'],
+      'ippa-sensei': ['иппа', 'ippa', 'иппа-сенсей', 'иппа-сэнсэй'],
+      'иппа-сенсей': ['иппа', 'ippa', 'иппа-сенсей', 'иппа-сэнсэй'],
+      'niko': ['нико', 'niko'],
+      'нико': ['нико', 'niko'],
+      'mako': ['мако', 'mako'],
+      'мако': ['мако', 'mako'],
+      'milk': ['милка', 'милк', 'milk', 'milka'],
+      'милка': ['милка', 'милк', 'milk', 'milka'],
+      'yuki': ['юки', 'yuki'],
+      'юки': ['юки', 'yuki'],
+      'horyu': ['хорю', 'horyu'],
+      'хорю': ['хорю', 'horyu'],
+      'chanyu': ['чаню', 'chanyu'],
+      'чаню': ['чаню', 'chanyu'],
+      'erochi': ['эрочи', 'erochi'],
+      'эрочи': ['эрочи', 'erochi'],
+      'painuki': ['пайнуки', 'painuki'],
+      'пайнуки': ['пайнуки', 'painuki'],
+      'boin': ['боин', 'boin'],
+      'боин': ['боин', 'boin'],
+      'jagu': ['джагу', 'jagu'],
+      'джагу': ['джагу', 'jagu'],
+      'rakku': ['ракку', 'rakku'],
+      'ракку': ['ракку', 'rakku'],
+      'nokka': ['нокка', 'nokka'],
+      'нокка': ['нокка', 'nokka'],
+      'futa': ['фута', 'futa'],
+      'фута': ['фута', 'futa'],
+      'barun': ['барун', 'barun'],
+      'барун': ['барун', 'barun'],
+      'bancho': ['банчё', 'банче', 'bancho'],
+      'банчё': ['банчё', 'банче', 'bancho'],
+      'sante': ['санте', 'sante'],
+      'санте': ['санте', 'sante'],
+      'sante-sensei': ['санте', 'sante', 'санте-сенсей'],
+      'санте-сенсей': ['санте', 'sante', 'санте-сенсей'],
+      'kohaku': ['кохаку', 'kohaku'],
+      'кохаку': ['кохаку', 'kohaku'],
+      'kohaku-sensei': ['кохаку', 'kohaku', 'кохаку-сенсей'],
+      'кохаку-сенсей': ['кохаку', 'kohaku', 'кохаку-сенсей'],
+      'washizuka': ['вашидзука', 'washizuka'],
+      'вашидзука': ['вашидзука', 'washizuka'],
+      'washizuka-sensei': ['вашидзука', 'washizuka', 'вашидзука-сенсей'],
+      'вашидзука-сенсей': ['вашидзука', 'washizuka', 'вашидзука-сенсей']
     };
 
-    const targetAliases = aliases[cLower] || [cLower];
+    const targetAliases = new Set(aliases[cLower] || [cLower]);
+    const translitRu = this.transliterateEnToRu(cLower);
+    if (translitRu) targetAliases.add(translitRu);
+    const translitEn = this.transliterateRuToEn(cLower);
+    if (translitEn) targetAliases.add(translitEn);
+    const aliasArr = Array.from(targetAliases);
 
     // Приоритет 1: Имя + сцена (например, Хасами для сцены 10-02 -> Хасами 10-01A)
     const matchScene = portraits.find(p => {
       if (!p || !p.name) return false;
       const pLower = p.name.toLowerCase();
       const sLower = (p.sourceImage || '').toLowerCase();
-      const hasChar = targetAliases.some(a => pLower.includes(a));
+      const hasChar = aliasArr.some(a => pLower.includes(a));
       const hasScene = pLower.includes(cleanScene) || sLower.includes(cleanScene) ||
                        (sceneNum && (pLower.includes(sceneNum) || sLower.includes(sceneNum)));
       return hasChar && hasScene;
@@ -167,9 +231,117 @@ class ReaderService {
     const matchAny = portraits.find(p => {
       if (!p || !p.name) return false;
       const pLower = p.name.toLowerCase();
-      return targetAliases.some(a => pLower.includes(a));
+      return aliasArr.some(a => pLower.includes(a));
     });
     return matchAny || null;
+  }
+
+  /**
+   * Нормализация ключа файла для нечувствительного сопоставления (устраняет расхождения между дефисами, подчеркиваниями и префиксами)
+   */
+  normalizeKeyForMatching(k) {
+    if (!k) return '';
+    return String(k)
+      .split(/[\/\\]/).pop()
+      .replace(/\.[^/.]+$/, '')
+      .replace(/^[a-z]_/i, '')
+      .replace(/[_\s]+/g, '-')
+      .replace(/__occ\d+$/i, '')
+      .toLowerCase()
+      .trim();
+  }
+
+  /**
+   * Вычисление индекса повторного появления сцены с одним фоном (__occ1, __occ2)
+   */
+  getSceneOccurrence(pageKey, pageIndex) {
+    if (!pageKey || pageIndex === undefined || pageIndex === null || pageIndex <= 0 || !this.pages || this.pages.length === 0) {
+      return 0;
+    }
+    const cleanKey = this.normalizeKeyForMatching(pageKey);
+    let occ = 0;
+    for (let i = 0; i < pageIndex; i++) {
+      const prevP = this.pages[i];
+      if (prevP) {
+        const prevClean = this.normalizeKeyForMatching(prevP.key || prevP.targetKey || prevP.name);
+        if (prevClean === cleanKey) {
+          occ++;
+        }
+      }
+    }
+    return occ;
+  }
+
+  /**
+   * Получить список ключей кандидатов для поиска в dialogData и frames с учетом __occ
+   */
+  getCandidateSceneKeys(page) {
+    if (!page) return [];
+    const cleanBase = (page.key || '').split(/[\/\\]/).pop().replace(/\.[^/.]+$/, '').replace(/__occ\d+$/, '');
+    const cleanTarget = (page.targetKey || '').split(/[\/\\]/).pop().replace(/\.[^/.]+$/, '').replace(/__occ\d+$/, '');
+
+    const occ = (page.occurrence !== undefined && page.occurrence !== null)
+      ? page.occurrence
+      : this.getSceneOccurrence(page.key, page.index);
+    const occSuffix = occ > 0 ? `__occ${occ}` : '';
+
+    const baseKeys = [
+      page.key,
+      cleanBase,
+      page.targetKey,
+      cleanTarget,
+      page.subfolder ? `${page.subfolder}/${cleanBase}` : null,
+      page.subfolder ? `${page.subfolder}/${page.key}` : null,
+      `Image-M/${cleanBase}`,
+      `Image-M/${page.key}`,
+      `Image/${cleanBase}`,
+      `Image/${page.key}`
+    ].filter(Boolean);
+
+    const result = [];
+    if (occSuffix) {
+      baseKeys.forEach(k => {
+        const cleanK = k.replace(/__occ\d+$/, '');
+        result.push(`${cleanK}${occSuffix}`);
+      });
+    }
+    baseKeys.forEach(k => {
+      if (!result.includes(k)) result.push(k);
+    });
+
+    return result;
+  }
+
+  /**
+   * Транслитерация с русского на английский для сопоставления персонажей
+   */
+  transliterateRuToEn(str) {
+    if (!str) return '';
+    const map = {
+      'а':'a','б':'b','в':'v','г':'g','д':'d','е':'e','ё':'yo','ж':'zh','з':'z','и':'i','й':'y',
+      'к':'k','л':'l','м':'m','н':'n','о':'o','п':'p','р':'r','с':'s','т':'t','у':'u','ф':'f',
+      'х':'h','ц':'ts','ч':'ch','ш':'sh','щ':'shch','ъ':'','ы':'y','ь':'','э':'e','ю':'yu','я':'ya'
+    };
+    return str.toLowerCase().split('').map(c => map[c] !== undefined ? map[c] : c).join('');
+  }
+
+  /**
+   * Транслитерация с английского на русский для сопоставления персонажей
+   */
+  transliterateEnToRu(str) {
+    if (!str) return '';
+    const s = str.toLowerCase();
+    const map = [
+      ['shch','щ'],['zh','ж'],['ts','ц'],['ch','ч'],['sh','ш'],['ya','я'],['yu','ю'],['yo','ё'],
+      ['kh','х'],['a','а'],['b','б'],['v','в'],['g','г'],['d','д'],['e','е'],['z','з'],['i','и'],
+      ['y','й'],['k','к'],['l','л'],['m','м'],['n','н'],['o','о'],['p','п'],['r','р'],['s','с'],
+      ['t','т'],['u','у'],['f','ф'],['h','х']
+    ];
+    let res = s;
+    for (const [en, ru] of map) {
+      res = res.split(en).join(ru);
+    }
+    return res;
   }
 
   /**
@@ -245,18 +417,7 @@ class ReaderService {
                     cleanTarget.toLowerCase().includes('title') ||
                     page.index === 0;
 
-    const candidateKeys = [
-      page.key, 
-      cleanBase, 
-      page.targetKey, 
-      cleanTarget, 
-      page.subfolder ? `${page.subfolder}/${cleanBase}` : null,
-      page.subfolder ? `${page.subfolder}/${cleanTarget}` : null,
-      `Image-M/${cleanBase}`,
-      `Image-M/${cleanTarget}`,
-      `Image/${cleanBase}`, 
-      `Image/${cleanTarget}`
-    ].filter(Boolean);
+    const candidateKeys = this.getCandidateSceneKeys(page);
 
     if (isTitle) {
       candidateKeys.push('Title', '001_Title', '01_Title', 'title', '001_title', '01_title');
@@ -1082,10 +1243,12 @@ class ReaderService {
       // 2. Поиск по ключу/имени сцены (Title, 00-00 и т.д.)
       if (pageKey) {
         const cleanKey = String(pageKey).split(/[\/\\]/).pop().replace(/\.[^/.]+$/, '').toLowerCase();
+        const normKey = this.normalizeKeyForMatching(pageKey);
         const foundByKey = work.demoImages.find(item => {
           if (!item || !item.url) return false;
           const p = String(item.page !== undefined ? item.page : (item.key || item.name || '')).trim().toLowerCase();
-          return p === cleanKey || p === String(pageKey).toLowerCase();
+          const normItem = this.normalizeKeyForMatching(p || item.url);
+          return p === cleanKey || p === String(pageKey).toLowerCase() || (normKey && normItem === normKey);
         });
         if (foundByKey) return foundByKey.url.trim();
       }
@@ -1471,17 +1634,7 @@ class ReaderService {
     const dialogData = overlayData.dialogData || {};
     const cleanBase = (page.key || '').split(/[\/\\]/).pop().replace(/\.[^/.]+$/, '');
 
-    const candKeys = [
-      page.key,
-      cleanBase,
-      page.targetKey,
-      page.subfolder ? `${page.subfolder}/${cleanBase}` : null,
-      page.subfolder ? `${page.subfolder}/${page.key}` : null,
-      `Image-M/${cleanBase}`,
-      `Image-M/${page.key}`,
-      `Image/${cleanBase}`,
-      `Image/${page.key}`
-    ].filter(Boolean);
+    const candKeys = this.getCandidateSceneKeys(page);
 
     const steps = [];
 
@@ -1655,12 +1808,14 @@ class ReaderService {
       // 2a. Ищем страницу по имени файла/сцены (например, 02-0, 03-01)
       if (srcKey) {
         const cleanSrc = srcKey.split(/[\/\\]/).pop().replace(/\.[^/.]+$/, '').toLowerCase();
+        const normSrc = this.normalizeKeyForMatching(srcKey);
         const matchedPage = this.pages.find(p => {
           if (!p || !p.url) return false;
           const pKey = (p.key || '').split(/[\/\\]/).pop().replace(/\.[^/.]+$/, '').toLowerCase();
           const pTarget = (p.targetKey || '').split(/[\/\\]/).pop().replace(/\.[^/.]+$/, '').toLowerCase();
           const pName = (p.name || '').split(/[\/\\]/).pop().replace(/\.[^/.]+$/, '').toLowerCase();
-          return pKey === cleanSrc || pTarget === cleanSrc || pName === cleanSrc || pKey.includes(cleanSrc);
+          const normP = this.normalizeKeyForMatching(p.key || p.targetKey || p.name);
+          return pKey === cleanSrc || pTarget === cleanSrc || pName === cleanSrc || pKey.includes(cleanSrc) || (normSrc && normP === normSrc);
         });
         if (matchedPage && matchedPage.url) {
           return matchedPage.url;
@@ -1678,10 +1833,10 @@ class ReaderService {
       const curPage = this.pages[this.currentIndex];
       if (curPage && curPage.url) {
         if (srcKey) {
-          const cleanSrc = srcKey.split(/[\/\\]/).pop().replace(/\.[^/.]+$/, '').toLowerCase();
-          const curClean = (curPage.key || '').split(/[\/\\]/).pop().replace(/\.[^/.]+$/, '').toLowerCase();
-          const srcScene = cleanSrc.match(/^([a-z]*\d+)/);
-          const curScene = curClean.match(/^([a-z]*\d+)/);
+          const normSrc = this.normalizeKeyForMatching(srcKey);
+          const normCur = this.normalizeKeyForMatching(curPage.key || curPage.targetKey || curPage.name);
+          const srcScene = normSrc.match(/^([a-z]*\d+)/);
+          const curScene = normCur.match(/^([a-z]*\d+)/);
           if (srcScene && curScene && srcScene[1] === curScene[1]) {
             return curPage.url;
           }
@@ -2733,17 +2888,7 @@ class ReaderService {
       let textContent = null;
 
       // Определение настроек диалога и пресета из dialogData
-      const candKeys = [
-        page.key,
-        cleanBase,
-        page.targetKey,
-        page.subfolder ? `${page.subfolder}/${cleanBase}` : null,
-        page.subfolder ? `${page.subfolder}/${page.key}` : null,
-        `Image-M/${cleanBase}`,
-        `Image-M/${page.key}`,
-        `Image/${cleanBase}`,
-        `Image/${page.key}`
-      ].filter(Boolean);
+      const candKeys = this.getCandidateSceneKeys(page);
 
       let bSettings = {};
       for (const k of candKeys) {
