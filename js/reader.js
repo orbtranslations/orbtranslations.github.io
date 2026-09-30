@@ -240,6 +240,11 @@ class ReaderService {
 
     const cleanBase = (page.key || '').split(/[\/\\]/).pop().replace(/\.[^/.]+$/, '');
     const cleanTarget = (page.targetKey || '').split(/[\/\\]/).pop().replace(/\.[^/.]+$/, '');
+    const isTitle = (page.entry && page.entry.isTitle) || 
+                    cleanBase.toLowerCase().includes('title') || 
+                    cleanTarget.toLowerCase().includes('title') ||
+                    page.index === 0;
+
     const candidateKeys = [
       page.key, 
       cleanBase, 
@@ -252,6 +257,16 @@ class ReaderService {
       `Image/${cleanBase}`, 
       `Image/${cleanTarget}`
     ].filter(Boolean);
+
+    if (isTitle) {
+      candidateKeys.push('Title', '001_Title', '01_Title', 'title', '001_title', '01_title');
+      for (const k of Object.keys(frames)) {
+        const kClean = k.split(/[\/\\]/).pop().replace(/\.[^/.]+$/, '').replace(/__lang_.*$/i, '').toLowerCase();
+        if (kClean.includes('title')) {
+          candidateKeys.push(k, k.replace(/__lang_.*$/i, ''));
+        }
+      }
+    }
     const langCodes = this.getNormalizedLangCodes(lang);
 
     // 1. Поиск по ключам с точным суффиксом языка (__lang_RUS, __lang_ENG)
@@ -1179,8 +1194,20 @@ class ReaderService {
           const kLower = (e.key || '').toLowerCase();
           const tLower = (e.targetKey || '').toLowerCase();
           const pure = kLower.split(/[\/\\]/).pop().replace(/\.[^/.]+$/, '');
-          return kLower === rawStr || tLower === rawStr || pure === rawStr;
+          const pureTarget = tLower.split(/[\/\\]/).pop().replace(/\.[^/.]+$/, '');
+          const isTitleMatch = (rawStr === 'title' || rawStr === 'титул' || rawStr.includes('title')) && 
+                               (e.isTitle || pure.includes('title') || pureTarget.includes('title'));
+          return kLower === rawStr || tLower === rawStr || pure === rawStr || pureTarget === rawStr || isTitleMatch;
         });
+      }
+
+      // Если первая страница превью и в скрипте есть титул — привязываем к титулу скрипта
+      if (!matchedEntry && (itemIdx === 0 || String(rawPage).trim() === '1') && allEntries.length > 0) {
+        const first = allEntries[0];
+        const pureFirst = (first.key || '').toLowerCase();
+        if (first.isTitle || pureFirst.includes('title')) {
+          matchedEntry = first;
+        }
       }
 
       const pageKey = matchedEntry ? matchedEntry.key : String(rawPage || (itemIdx + 1));
@@ -2258,7 +2285,14 @@ class ReaderService {
     const imagesData = overlayData.images || {};
 
     const cleanBase = (page.key || '').split(/[\/\\]/).pop().replace(/\.[^/.]+$/, '');
+    const cleanTarget = (page.targetKey || '').split(/[\/\\]/).pop().replace(/\.[^/.]+$/, '');
+    const isTitle = (page.entry && page.entry.isTitle) || 
+                    cleanBase.toLowerCase().includes('title') || 
+                    cleanTarget.toLowerCase().includes('title') ||
+                    page.index === 0;
+
     const fData = this.getFrameForPage(page, this.currentLang);
+    const langCodes = this.getNormalizedLangCodes(this.currentLang);
 
     const rawText = (page.entry && page.entry.text) || '';
     const blocks = ScriptParser.getBlocks(rawText);
@@ -2317,12 +2351,14 @@ class ReaderService {
         const ly = layer.y !== undefined ? layer.y : posY;
         const lOpacity = (layer.opacity !== undefined ? layer.opacity : (fData.opacity !== undefined ? fData.opacity : 100)) / 100;
         const isStretch = !!(layer.stretch || (layer.stretchX && layer.stretchY));
+        const isStretchX = !!(layer.stretchX || layer.stretch);
+        const isStretchY = !!(layer.stretchY || layer.stretch);
 
-        layerImg.style.left = isStretch ? '0%' : `${lx}%`;
-        layerImg.style.top = isStretch ? '0%' : `${ly}%`;
+        layerImg.style.left = isStretchX ? '0%' : `${lx}%`;
+        layerImg.style.top = isStretchY ? '0%' : `${ly}%`;
         layerImg.style.opacity = lOpacity;
         layerImg.style.zIndex = layer.layer !== undefined ? layer.layer : (10 + lIdx);
-        layerImg.style.objectFit = isStretch ? 'fill' : 'fill';
+        layerImg.style.objectFit = 'fill';
 
         layerImg.onload = () => {
           layer._frameNatW = layerImg.naturalWidth;
@@ -2334,17 +2370,19 @@ class ReaderService {
           layer._frameNatH = layerImg.naturalHeight;
         }
 
-        layerElements.push({ img: layerImg, layer, isStretch, lx, ly });
+        layerElements.push({ img: layerImg, layer, isStretch, isStretchX, isStretchY, lx, ly });
         sceneStage.appendChild(layerImg);
       });
 
       // Поиск слоя с текстовой зоной для позиционирования текста
       let textBoundLayer = renderLayers.slice().reverse().find(l => l && l.textZone) || renderLayers[renderLayers.length - 1] || fData;
-      const isTitleOrGraphic = (!fData.textZone && !textBoundLayer.textZone && fData.customImage) || cleanBase.toLowerCase().includes('title');
-      const isInternalCleanFrame = (fData.image && String(fData.image).toLowerCase().includes('рамка 5')) || 
-                                  cleanBase.startsWith('002_') || cleanBase.startsWith('003_') || cleanBase.startsWith('004_') ||
-                                  cleanBase.startsWith('02_') || cleanBase.startsWith('03_') || cleanBase.startsWith('04_') ||
-                                  (overlayData.framePresets && (overlayData.framePresets[fData.image] === 'CharaTable' || overlayData.framePresets['internal'] === 'CharaTable'));
+      const isInternalCleanFrame = !isTitle && (
+        (fData.image && String(fData.image).toLowerCase().includes('рамка 5')) || 
+        cleanBase.startsWith('002_') || cleanBase.startsWith('003_') || cleanBase.startsWith('004_') ||
+        cleanBase.startsWith('02_') || cleanBase.startsWith('03_') || cleanBase.startsWith('04_') ||
+        (overlayData.framePresets && overlayData.framePresets[fData.image] === 'CharaTable')
+      );
+      const isTitleOrGraphic = isTitle || (!fData.textZone && !textBoundLayer.textZone && (fData.customImage || !isInternalCleanFrame));
 
       let textSlot = null;
       let textContent = null;
@@ -2413,14 +2451,16 @@ class ReaderService {
       }
 
       // Функция динамического расчета геометрии слоев рамки и адаптивного шрифта
-      const updateFrameLayout = () => {
+      function updateFrameLayout() {
         const curSceneW = baseImg.naturalWidth || 640;
         const curSceneH = baseImg.naturalHeight || 480;
 
-        layerElements.forEach(({ img, layer, isStretch, lx, ly }) => {
-          if (isStretch) {
+        layerElements.forEach(({ img, layer, isStretchX, isStretchY, lx, ly }) => {
+          if (isStretchX && isStretchY) {
             img.style.width = '100%';
             img.style.height = '100%';
+            img.style.left = '0%';
+            img.style.top = '0%';
             return;
           }
 
@@ -2428,26 +2468,37 @@ class ReaderService {
           const lScaleX = (layer.scaleX !== undefined ? layer.scaleX : (layer.scale !== undefined ? layer.scale : (fData.scale !== undefined ? fData.scale : 100))) / 100;
           const lScaleY = (layer.scaleY !== undefined ? layer.scaleY : (layer.scale !== undefined ? layer.scale : (fData.scale !== undefined ? fData.scale : 100))) / 100;
 
+          const natW = layer._frameNatW || img.naturalWidth || fData._frameNatW;
+          const natH = layer._frameNatH || img.naturalHeight || fData._frameNatH;
+
           let widthPercent = 50.4 * lScaleX;
           let heightPercent = 100 * lScaleY;
 
-          const natW = layer._frameNatW || fData._frameNatW;
-          const natH = layer._frameNatH || fData._frameNatH;
-
-          if (natW && curSceneW > 0) {
-            widthPercent = ((natW * lScaleX) / curSceneW) * 100;
-          } else if (fData.customImage && isTitleOrGraphic) {
-            widthPercent = 100 * lScaleX;
+          if (isStretchX) {
+            img.style.width = '100%';
+            img.style.left = '0%';
+          } else {
+            if (natW && curSceneW > 0) {
+              widthPercent = ((natW * lScaleX) / curSceneW) * 100;
+            } else if (fData.customImage && isTitleOrGraphic) {
+              widthPercent = 100 * lScaleX;
+            }
+            img.style.width = `${widthPercent}%`;
+            img.style.left = `${lx}%`;
           }
 
-          if (natH && curSceneH > 0 && isTitleOrGraphic) {
-            heightPercent = ((natH * lScaleY) / curSceneH) * 100;
-          } else if (isTitleOrGraphic) {
-            heightPercent = 100 * lScaleY;
+          if (isStretchY) {
+            img.style.height = '100%';
+            img.style.top = '0%';
+          } else {
+            if (natH && curSceneH > 0) {
+              heightPercent = ((natH * lScaleY) / curSceneH) * 100;
+            } else if (isTitleOrGraphic) {
+              heightPercent = 100 * lScaleY;
+            }
+            img.style.height = isTitleOrGraphic ? 'auto' : `${heightPercent}%`;
+            img.style.top = `${ly}%`;
           }
-
-          img.style.width = `${widthPercent}%`;
-          img.style.height = isTitleOrGraphic ? 'auto' : `${heightPercent}%`;
         });
 
         if (textSlot) {
@@ -2484,7 +2535,7 @@ class ReaderService {
             textContent.style.fontSize = `${effectiveFontSize}px`;
           }
         }
-      };
+      }
 
       if (baseImg.complete && baseImg.naturalWidth > 0) {
         updateFrameLayout();
