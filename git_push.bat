@@ -11,7 +11,7 @@ git add .
 
 echo.
 echo [2/3] Committing changes...
-git commit -m "feat: robust resolve-preview edge function with e-hentai fallback (v3.6.4)"
+git commit -m "fix: high-contrast opaque price badges on cover cards (v3.6.5)"
 
 echo.
 echo [3/3] Pushing to GitHub (main)...

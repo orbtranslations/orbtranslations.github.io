@@ -363,16 +363,69 @@
   transform: scale(1.03);
 }
 
+.work-card-media::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 76px;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.75) 0%, rgba(0, 0, 0, 0.3) 65%, rgba(0, 0, 0, 0) 100%);
+  pointer-events: none;
+  z-index: 3;
+}
+
 .work-badge-overlay {
   position: absolute;
-  top: 12px;
-  left: 12px;
-  right: 12px;
+  top: 10px;
+  left: 10px;
+  right: 10px;
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
+  gap: 8px;
   pointer-events: none;
-  z-index: 3;
+  z-index: 4;
+}
+
+.work-badge-overlay .badge {
+  font-size: 0.8rem;
+  font-weight: 700;
+  padding: 0.35rem 0.75rem;
+  border-radius: var(--radius-full);
+  letter-spacing: 0.02em;
+  opacity: 1 !important;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.95);
+}
+
+/* Полная непрозрачность и безупречная читаемость цены на любом фоне обложки (светлом, белом, цветном) */
+.work-badge-overlay .badge-accent,
+.work-badge-overlay .badge-price,
+.badge-price {
+  background: #150d28 !important; /* 100% непрозрачный глубокий фиолетово-черный фон */
+  color: #ffffff !important;       /* Яркий чистый белый текст */
+  border: 1.5px solid #a855f7 !important; /* Четкий фиолетовый контур */
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.95), 0 0 12px rgba(168, 85, 247, 0.45) !important;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.95);
+  font-weight: 800;
+}
+
+.work-badge-overlay .badge-glass {
+  background: #111420 !important; /* 100% непрозрачный темный фон */
+  color: #ffffff !important;
+  border: 1.5px solid rgba(255, 255, 255, 0.28) !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.95) !important;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.95);
+  font-weight: 700;
+}
+
+.work-badge-overlay .badge-success {
+  background: #062817 !important; /* 100% непрозрачный изумрудный фон */
+  color: #34d399 !important;
+  border: 1.5px solid #10b981 !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.95), 0 0 12px rgba(16, 185, 129, 0.4) !important;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.95);
+  font-weight: 800;
 }
 
 .work-card-body {

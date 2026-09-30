@@ -368,7 +368,7 @@ class App {
               ${isPurchased ? `
                 <span class="badge badge-success">${accessTxt}</span>
               ` : `
-                <span class="badge badge-accent">💎 ${work.price} ${orbTxt} ($${work.price})</span>
+                <span class="badge badge-accent badge-price">💎 ${work.price} ${orbTxt} ($${work.price})</span>
                 <span class="badge badge-glass">👁️ ${freePagesTxt}</span>
               `}
             </div>
