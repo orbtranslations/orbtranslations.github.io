@@ -1,7 +1,7 @@
 // @ts-nocheck
 // Supabase Edge Function: resolve-preview
 // Автоматическое получение актуальной прямой ссылки на изображение с ExHentai / E-Hentai по короткой ссылке (/s/...)
-// Поддерживает ротацию зеркала Hath (nl), фоллбек на E-Hentai и защиту от циклов редиректа
+// Поддерживает ротацию зеркала Hath (nl), фоллбек на E-Hentai и детальную диагностику ошибок
 
 declare const Deno: any;
 
@@ -65,14 +65,15 @@ const handler = async (req: Request): Promise<Response> => {
       headers["Cookie"] = exCookies;
     }
 
-    // 4. Попытка запроса: сначала исходный адрес (ExHentai), с автоматическим фоллбеком на зеркало E-Hentai
+    // 4. Попытка запроса: сначала исходный адрес, при сбое — автоматический переход на зеркало e-hentai
     const targets = [fetchUrl];
     if (fetchUrl.includes("exhentai.org")) {
       targets.push(fetchUrl.replace("exhentai.org", "e-hentai.org"));
     }
 
     let foundHtml = "";
-    let lastError = "";
+    let foundImg = "";
+    const targetResults: any[] = [];
 
     for (const target of targets) {
       try {
@@ -82,51 +83,64 @@ const handler = async (req: Request): Promise<Response> => {
           redirect: "follow"
         });
 
-        if (!pageResp.ok) {
-          lastError = `HTTP ${pageResp.status} ${pageResp.statusText}`;
-          continue;
-        }
-
+        const status = pageResp.status;
         const text = await pageResp.text();
+        const textLen = text.length;
 
-        // Проверка на Sad Panda или бесконечный редирект poni=no
-        if (text.includes("sadpanda.jpg") || text.includes("Sad Panda") || (text.length < 1000 && text.includes("poni=no"))) {
-          lastError = "ExHentai вернул Sad Panda / poni=no. Проверьте актуальность кук EX_COOKIES в Supabase Secrets.";
-          continue;
-        }
+        // Извлекаем заголовок HTML
+        const titleMatch = text.match(/<title>([^<]+)<\/title>/i);
+        const title = titleMatch ? titleMatch[1].trim() : "";
 
+        // Поиск прямой ссылки на изображение
         const imgMatch = text.match(/<img[^>]+id=["']img["'][^>]+src=["']([^"']+)["']/i) 
-                      || text.match(/<img[^>]+src=["']([^"']+)["'][^>]+id=["']img["']/i);
+                      || text.match(/<img[^>]+src=["']([^"']+)["'][^>]+id=["']img["']/i)
+                      || text.match(/src=["'](https?:\/\/[^"']+\.hath\.network[^"']+)["']/i)
+                      || text.match(/src=["'](https?:\/\/[^"']+\/h\/[a-f0-9]+-[0-9]+-[0-9]+-[0-9]+-[a-z0-9]+\/[^"']+)["']/i);
 
         if (imgMatch && imgMatch[1]) {
           foundHtml = text;
-          break; // Успешно найдено
+          foundImg = imgMatch[1].replace(/&amp;/g, '&');
+          break; // Успешно найдено!
         }
+
+        // Если изображение не найдено, классифицируем точную причину
+        let reason = `HTTP ${status}`;
+        const lower = text.toLowerCase();
+        if (lower.includes("sad panda") || lower.includes("sadpanda")) {
+          reason = "Sad Panda (ExHentai отклонил доступ — проверьте куки EX_COOKIES, особенно igneous)";
+        } else if (lower.includes("viewing limit") || lower.includes("image limit") || lower.includes("exceeded")) {
+          reason = "ExHentai Viewing Limit (исчерпан лимит просмотра изображений аккаунта)";
+        } else if (lower.includes("temporarily banned") || lower.includes("excessive pageloads") || lower.includes("banned")) {
+          reason = "IP Ban (слишком много запросов подряд / бан по IP)";
+        } else if (lower.includes("just a moment") || lower.includes("cloudflare") || lower.includes("turnstile")) {
+          reason = "Cloudflare Challenge (проверка человека Cloudflare)";
+        } else if (lower.includes("this gallery has been removed") || lower.includes("gallery has been removed")) {
+          reason = "Галерея удалена или скрыта";
+        } else if (title) {
+          reason = `Заголовок: "${title}" (HTML: ${textLen} байт)`;
+        } else {
+          reason = `HTTP ${status}, длина: ${textLen} байт, начало: ${text.slice(0, 120).replace(/\s+/g, ' ')}`;
+        }
+
+        targetResults.push({ target, status, reason, title });
       } catch (err: any) {
-        lastError = `Ошибка запроса к ${target}: ${err.message}`;
-        console.warn(lastError);
+        targetResults.push({ target, reason: `Сетевой сбой: ${err.message}` });
       }
     }
 
-    if (!foundHtml) {
+    if (!foundImg) {
+      const summaryReason = targetResults.map(r => `[${r.target.includes("exhentai") ? "ExHentai" : "E-Hentai"}: ${r.reason}]`).join(" | ");
+      console.warn(`[resolve-preview] Не удалось извлечь изображение: ${summaryReason}`);
       return new Response(
-        JSON.stringify({ error: lastError || "Не удалось получить страницу сцены с ExHentai/E-Hentai" }),
+        JSON.stringify({ 
+          error: summaryReason || "Не удалось получить страницу сцены с ExHentai/E-Hentai",
+          details: targetResults 
+        }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // 5. Извлечение прямой ссылки на изображение из тега <img id="img" src="...">
-    const imgMatch = foundHtml.match(/<img[^>]+id=["']img["'][^>]+src=["']([^"']+)["']/i) 
-                  || foundHtml.match(/<img[^>]+src=["']([^"']+)["'][^>]+id=["']img["']/i);
-
-    if (!imgMatch || !imgMatch[1]) {
-      return new Response(
-        JSON.stringify({ error: "Не удалось найти изображение <img id='img'> на странице" }),
-        { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    const imageUrl = imgMatch[1].replace(/&amp;/g, '&');
+    const imageUrl = foundImg;
 
     // Извлекаем failover ключ nl(...) для случая, если нода Hath недоступна
     const nlMatch = foundHtml.match(/nl\(['"]([^'"]+)['"]\)/i) || foundHtml.match(/[?&]nl=([^&"']+)/i);
@@ -149,7 +163,7 @@ const handler = async (req: Request): Promise<Response> => {
     );
 
   } catch (err: any) {
-    console.error("[resolve-preview] Ошибка выполнения функции:", err);
+    console.error("[resolve-preview] Критическая ошибка выполнения функции:", err);
     return new Response(
       JSON.stringify({ error: err.message || "Внутренняя ошибка сервера" }),
       { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -157,7 +171,6 @@ const handler = async (req: Request): Promise<Response> => {
   }
 };
 
-// Запуск сервера в зависимости от среды Supabase
 if (typeof Deno !== "undefined" && typeof Deno.serve === "function") {
   Deno.serve(handler);
 } else {
