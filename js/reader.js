@@ -114,6 +114,119 @@ class ReaderService {
   }
 
   /**
+   * Разрешение пресета текста с поддержкой встроенных шаблонов, сопоставления имен и переопределений fontSettings
+   */
+  resolvePresetForBlock(presetName, bSettings = {}, isInternalCleanFrame = false, overlayData = {}, presets = []) {
+    const defaultPresets = [
+      {
+        name: 'Default',
+        fontFamily: 'Arial',
+        fontSize: 24,
+        fontWeight: '400',
+        fontStyle: 'normal',
+        color: '#000000',
+        strokeColor: '#ffffff',
+        strokeWidth: 0,
+        letterSpacing: 0,
+        lineHeight: 1.4,
+        textAlign: 'left'
+      },
+      {
+        name: 'Манга (Японский стиль)',
+        fontFamily: 'Rubik',
+        fontSize: 26,
+        fontWeight: '900',
+        fontStyle: 'normal',
+        color: '#000000',
+        strokeColor: '#ffffff',
+        strokeWidth: 3.5,
+        letterSpacing: 0.5,
+        lineHeight: 1.35,
+        textAlign: 'left'
+      },
+      {
+        name: 'Субтитры (Белый)',
+        fontFamily: 'Montserrat',
+        fontSize: 26,
+        fontWeight: '800',
+        fontStyle: 'normal',
+        color: '#ffffff',
+        strokeColor: '#000000',
+        strokeWidth: 3.5,
+        letterSpacing: 0.5,
+        lineHeight: 1.35,
+        textAlign: 'left'
+      },
+      {
+        name: 'Субтитры (Желтый)',
+        fontFamily: 'Rubik',
+        fontSize: 26,
+        fontWeight: '900',
+        fontStyle: 'normal',
+        color: '#ffe600',
+        strokeColor: '#000000',
+        strokeWidth: 3.5,
+        letterSpacing: 0.5,
+        lineHeight: 1.35,
+        textAlign: 'left'
+      },
+      {
+        name: 'CharaTable',
+        fontFamily: 'Arial',
+        fontSize: 24,
+        fontWeight: 'bold',
+        fontStyle: 'normal',
+        color: '#000000',
+        strokeColor: '#ffffff',
+        strokeWidth: 0,
+        letterSpacing: 0,
+        lineHeight: 1.4,
+        textAlign: 'center'
+      }
+    ];
+
+    const cleanPName = (n) => String(n || '').replace(/\s*\(импорт\s*\d*\)/gi, '').trim().toLowerCase();
+    const targetName = presetName || (isInternalCleanFrame ? 'CharaTable' : 'Default');
+    const targetClean = cleanPName(targetName);
+
+    // 1. Поиск в переданных пресетах скрипта
+    let matched = presets.find(p => p && p.name === targetName);
+    if (!matched && targetClean) {
+      matched = presets.find(p => p && cleanPName(p.name) === targetClean);
+    }
+    if (!matched && targetClean) {
+      matched = presets.find(p => p && (cleanPName(p.name).includes(targetClean) || targetClean.includes(cleanPName(p.name))));
+    }
+
+    // 2. Поиск во встроенных системных пресетах
+    if (!matched) {
+      matched = defaultPresets.find(p => p.name === targetName)
+        || defaultPresets.find(p => cleanPName(p.name) === targetClean);
+    }
+
+    // 3. Fallback пресет
+    if (!matched) {
+      matched = isInternalCleanFrame 
+        ? defaultPresets.find(p => p.name === 'CharaTable')
+        : (presets[0] || defaultPresets[0]);
+    }
+
+    matched = matched ? { ...matched } : {};
+
+    // 4. Применение точных переопределений fontSettings из блока dialogData
+    if (bSettings && bSettings.fontSettings && typeof bSettings.fontSettings === 'object') {
+      const fs = bSettings.fontSettings;
+      for (const [k, v] of Object.entries(fs)) {
+        if (v !== undefined && v !== null && v !== '') {
+          matched[k] = v;
+        }
+      }
+    }
+
+    return matched;
+  }
+
+  /**
    * Поиск наиболее подходящего портрета с поддержкой русских и английских алиасов
    */
   findBestPortrait(rawPortraits, charName, sceneKey, explicitName = '') {
@@ -1789,7 +1902,7 @@ class ReaderService {
         if (isNaN(borderIdx)) borderIdx = defBorderIdx;
       }
 
-      const preset = presets.find(p => p.name === bSettings.preset) || {};
+      const preset = this.resolvePresetForBlock(bSettings.preset, bSettings, false, overlayData, presets);
       const bCfg = ReaderService.BORDER_CONFIGS[borderIdx] || ReaderService.BORDER_CONFIGS[0];
       const customTz = (overlayData.borderZones && overlayData.borderZones[borderIdx]) || bCfg.textZone;
 
@@ -3028,6 +3141,9 @@ class ReaderService {
           layer._frameNatH = layerImg.naturalHeight;
           if (typeof updateFrameLayout === 'function') updateFrameLayout();
         };
+        layerImg.onerror = () => {
+          layerImg.style.display = 'none';
+        };
         if (layerImg.complete && layerImg.naturalWidth > 0) {
           layer._frameNatW = layerImg.naturalWidth;
           layer._frameNatH = layerImg.naturalHeight;
@@ -3055,10 +3171,19 @@ class ReaderService {
 
       let bSettings = {};
       for (const k of candKeys) {
-        const fullKey = `${k}_block_0`;
+        const fullKey = `${k}_block_${dialogBlockIdx}`;
         if (dialogData[fullKey]) {
           bSettings = dialogData[fullKey];
           break;
+        }
+      }
+      if (!bSettings.preset && !bSettings.fontSettings && dialogBlockIdx !== 0) {
+        for (const k of candKeys) {
+          const fullKey = `${k}_block_0`;
+          if (dialogData[fullKey]) {
+            bSettings = dialogData[fullKey];
+            break;
+          }
         }
       }
 
@@ -3066,7 +3191,7 @@ class ReaderService {
       const hasTextZone = !!(textBoundLayer && textBoundLayer.textZone) || !!fData.textZone;
       const shouldRenderText = blocks.length > 0 && (hasTextZone || isInternalCleanFrame || !isTitleOrGraphic);
 
-      let matchedPreset = {};
+      let effectivePreset = {};
       if (shouldRenderText) {
         textSlot = document.createElement('div');
         textSlot.className = 'clean-frame-text-slot';
@@ -3083,21 +3208,41 @@ class ReaderService {
           || (overlayData.framePresets && (overlayData.framePresets[fData.image] || overlayData.framePresets['internal']))
           || (isInternalCleanFrame ? 'CharaTable' : '_style_1');
 
-        matchedPreset = presets.find(p => p.name === presetName)
-          || presets.find(p => p.name === 'CharaTable')
-          || presets.find(p => p.name === '_style_1' || p.name.startsWith('_style'))
-          || presets[0]
-          || {};
+        effectivePreset = this.resolvePresetForBlock(presetName, bSettings, isInternalCleanFrame, overlayData, presets);
 
-        textContent.style.color = matchedPreset.color || (isInternalCleanFrame ? '#000000' : '#ffffff');
-        textContent.style.fontFamily = matchedPreset.fontFamily || 'Arial, sans-serif';
-        textContent.style.textAlign = matchedPreset.textAlign || (isInternalCleanFrame ? 'center' : 'left');
-        textContent.style.lineHeight = matchedPreset.lineHeight || 1.4;
-        if (matchedPreset.fontWeight === 'bold') textContent.style.fontWeight = 'bold';
+        let cleanWeight = '400';
+        if (effectivePreset.fontWeight === 'bold' || effectivePreset.fontBold) cleanWeight = '700';
+        else if (effectivePreset.fontWeight && !isNaN(parseInt(effectivePreset.fontWeight))) cleanWeight = String(effectivePreset.fontWeight);
+        else if (effectivePreset.fontWeight) cleanWeight = String(effectivePreset.fontWeight);
 
-        if (matchedPreset.strokeWidth > 0) {
-          textContent.style.webkitTextStroke = `${matchedPreset.strokeWidth}px ${matchedPreset.strokeColor || '#000000'}`;
-          textContent.style.textShadow = `-${matchedPreset.strokeWidth}px -${matchedPreset.strokeWidth}px 0 ${matchedPreset.strokeColor || '#000'}, ${matchedPreset.strokeWidth}px ${matchedPreset.strokeWidth}px 0 ${matchedPreset.strokeColor || '#000'}`;
+        textContent.style.color = effectivePreset.color || (isInternalCleanFrame ? '#000000' : '#ffffff');
+        textContent.style.fontFamily = `"${effectivePreset.fontFamily || 'Arial'}", sans-serif`;
+        textContent.style.textAlign = effectivePreset.textAlign || (isInternalCleanFrame ? 'center' : 'left');
+        textContent.style.lineHeight = effectivePreset.lineHeight || 1.35;
+        textContent.style.fontWeight = cleanWeight;
+        textContent.style.fontStyle = (effectivePreset.fontStyle === 'italic' || effectivePreset.fontItalic) ? 'italic' : 'normal';
+        textContent.style.paintOrder = 'stroke fill';
+        textContent.style.strokeLinejoin = 'round';
+        textContent.style.webkitFontSmoothing = 'antialiased';
+
+        const baseFontSize = effectivePreset.fontSize || 24;
+        textContent.style.fontSize = `${baseFontSize}px`;
+
+        if (effectivePreset.strokeWidth > 0) {
+          textContent.style.webkitTextStroke = `${effectivePreset.strokeWidth}px ${effectivePreset.strokeColor || '#ffffff'}`;
+        }
+
+        if (effectivePreset.shadowEnabled) {
+          const sX = effectivePreset.shadowOffsetX !== undefined ? effectivePreset.shadowOffsetX : 2;
+          const sY = effectivePreset.shadowOffsetY !== undefined ? effectivePreset.shadowOffsetY : 2;
+          const sB = effectivePreset.shadowBlur !== undefined ? effectivePreset.shadowBlur : 4;
+          textContent.style.textShadow = `${sX}px ${sY}px ${sB}px ${effectivePreset.shadowColor || '#000000'}`;
+        } else {
+          textContent.style.textShadow = 'none';
+        }
+
+        if (effectivePreset.letterSpacing) {
+          textContent.style.letterSpacing = `${effectivePreset.letterSpacing}px`;
         }
 
         textSlot.appendChild(textContent);
@@ -3200,12 +3345,32 @@ class ReaderService {
           textSlot.style.height = `${(zonePixelH / curSceneH) * 100}%`;
           textSlot.scrollTop = 0;
 
-          // Масштабирование шрифта под реальное разрешение сцены
+          // Масштабирование шрифта под реальное разрешение сцены (базовый эталон 1000px)
           const scaleRatio = curSceneW / 1000;
-          const baseFontSize = matchedPreset.fontSize || 24;
+          const baseFontSize = effectivePreset.fontSize || 24;
           const effectiveFontSize = Math.max(12, Math.round(baseFontSize * scaleRatio));
           if (textContent) {
             textContent.style.fontSize = `${effectiveFontSize}px`;
+
+            if (effectivePreset.strokeWidth > 0) {
+              const effectiveStrokeWidth = Math.max(0.5, +(effectivePreset.strokeWidth * scaleRatio).toFixed(1));
+              textContent.style.webkitTextStroke = `${effectiveStrokeWidth}px ${effectivePreset.strokeColor || '#ffffff'}`;
+            } else {
+              textContent.style.webkitTextStroke = '0px transparent';
+            }
+
+            if (effectivePreset.shadowEnabled) {
+              const sX = ((effectivePreset.shadowOffsetX !== undefined ? effectivePreset.shadowOffsetX : 2) * scaleRatio).toFixed(1);
+              const sY = ((effectivePreset.shadowOffsetY !== undefined ? effectivePreset.shadowOffsetY : 2) * scaleRatio).toFixed(1);
+              const sB = ((effectivePreset.shadowBlur !== undefined ? effectivePreset.shadowBlur : 4) * scaleRatio).toFixed(1);
+              textContent.style.textShadow = `${sX}px ${sY}px ${sB}px ${effectivePreset.shadowColor || '#000000'}`;
+            } else {
+              textContent.style.textShadow = 'none';
+            }
+
+            if (effectivePreset.letterSpacing) {
+              textContent.style.letterSpacing = `${(effectivePreset.letterSpacing * scaleRatio).toFixed(1)}px`;
+            }
           }
         }
       }
@@ -3376,7 +3541,7 @@ class ReaderService {
         boxEl.style.width = `${box.w || 20}%`;
         boxEl.style.height = `${box.h || 10}%`;
 
-        const bPreset = presets.find(p => p.name === box.preset) || {};
+        const bPreset = this.resolvePresetForBlock(box.preset, box, false, overlayData, presets);
         if (box.text) boxEl.textContent = ScriptParser.stripComments(box.text);
         if (bPreset.color) boxEl.style.color = bPreset.color;
         if (bPreset.fontSize) boxEl.style.fontSize = `${bPreset.fontSize}px`;

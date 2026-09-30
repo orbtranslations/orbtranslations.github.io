@@ -196,6 +196,8 @@
 
 .clean-frame-text-content {
   width: 100%;
+  min-height: auto;
+  margin: auto 0;
   word-break: break-word;
   box-sizing: border-box;
   white-space: pre-line;

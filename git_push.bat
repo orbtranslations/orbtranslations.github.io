@@ -11,7 +11,7 @@ git add .
 
 echo.
 echo [2/3] Committing changes...
-git commit -m "fix: robust URL regex sanitization to strip accidental text prefixes (v3.6.6)"
+git commit -m "fix: restore clean frame fontSettings overrides, stroke and typography (v3.6.7)"
 
 echo.
 echo [3/3] Pushing to GitHub (main)...
