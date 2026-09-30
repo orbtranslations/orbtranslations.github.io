@@ -47,12 +47,12 @@ class ReaderService {
     { // Рамка 1: портрет слева, текст справа
       portraitZones: [{ x: 0.2, y: 0.5, w: 18.0, h: 99.0 }],
       bgZone: { x: 17.5, y: 0.5, w: 82.3, h: 99.0 },
-      textZone: { x: 18.5, y: 3.5, w: 79.5, h: 88.0 }
+      textZone: { x: 18.5, y: 2.0, w: 79.5, h: 89.0 }
     },
     { // Рамка 2: текст слева, портрет справа
       portraitZones: [{ x: 82.0, y: 0.5, w: 17.8, h: 99.0 }],
       bgZone: { x: 0.2, y: 0.5, w: 82.3, h: 99.0 },
-      textZone: { x: 2.0, y: 3.5, w: 79.5, h: 88.0 }
+      textZone: { x: 2.0, y: 2.0, w: 79.5, h: 89.0 }
     },
     { // Рамка 3: портреты слева и справа, текст в центре
       portraitZones: [
@@ -60,12 +60,12 @@ class ReaderService {
         { x: 82.0, y: 0.5, w: 17.8, h: 99.0 }
       ],
       bgZone: { x: 18.0, y: 0.5, w: 64.0, h: 99.0 },
-      textZone: { x: 18.5, y: 3.5, w: 63.0, h: 88.0 }
+      textZone: { x: 18.5, y: 2.0, w: 63.0, h: 89.0 }
     },
     { // Рамка 4: без портретов, сплошной текст по всей ширине
       portraitZones: [],
       bgZone: { x: 0.8, y: 2.0, w: 98.4, h: 96.0 },
-      textZone: { x: 1.8, y: 3.5, w: 96.4, h: 88.0 }
+      textZone: { x: 1.8, y: 2.0, w: 96.4, h: 89.0 }
     }
   ];
 
@@ -1452,15 +1452,18 @@ class ReaderService {
   /**
    * Разбить все диалоговые блоки сцены на пошаговые экраны со строгим ограничением в 4 строки
    */
+  /**
+   * Разбить все диалоговые блоки сцены на пошаговые экраны со строгим ограничением в 4 строки
+   */
   getDialogStepsForPage(page) {
     if (!page || page.isLocked || this.isPageCleanFrame(page)) {
-      return [{ blockIndex: 0, pageIndex: 0, totalPages: 1, lines: [], charName: '', speechText: '', borderIdx: 3 }];
+      return [{ blockIndex: 0, stepIndex: 0, text: '', charName: '', isFirstOfSpeaker: true, borderIdx: 3 }];
     }
 
     const rawText = (page.entry && page.entry.text) || '';
     const blocks = ScriptParser.getBlocks(rawText);
     if (!blocks || blocks.length === 0) {
-      return [{ blockIndex: 0, pageIndex: 0, totalPages: 1, lines: [], charName: '', speechText: '', borderIdx: 3 }];
+      return [{ blockIndex: 0, stepIndex: 0, text: '', charName: '', isFirstOfSpeaker: true, borderIdx: 3 }];
     }
 
     const overlayData = (this.parsedScript && this.parsedScript.overlayData) || {};
@@ -1482,13 +1485,29 @@ class ReaderService {
 
     const steps = [];
 
+    const getEstimatedLines = (text, hasSpeakerPrefix = false, speakerName = '') => {
+      if (!text) return 0;
+      const lines = text.split('\n');
+      let total = 0;
+      for (let i = 0; i < lines.length; i++) {
+        let len = lines[i].length;
+        if (i === 0 && hasSpeakerPrefix && speakerName) {
+          len += speakerName.length + 2;
+        }
+        total += Math.max(1, Math.ceil(len / 40));
+      }
+      return total;
+    };
+
     blocks.forEach((rawBlock, bIdx) => {
       const cleanBlock = ScriptParser.stripComments(rawBlock).trim();
       if (!cleanBlock) return;
 
       const charMatch = cleanBlock.match(/^[\(（【]([^)）】]+)[\)）】]/);
       const charName = charMatch ? charMatch[1].trim() : '';
-      const speechText = charMatch ? cleanBlock.replace(/^[\(（【][^)）】]+[\)）】]\s*/, '').trim() : cleanBlock;
+      const speechWithoutSpeaker = charMatch 
+        ? cleanBlock.replace(/^[\(（【][^)）】]+[\)）】]\s*/, '').trim() 
+        : cleanBlock.trim();
 
       let bSettings = {};
       for (const k of candKeys) {
@@ -1509,38 +1528,104 @@ class ReaderService {
       }
 
       const preset = presets.find(p => p.name === bSettings.preset) || {};
-      const fontSize = preset.fontSize || 22;
-      const fontFamily = preset.fontFamily || 'Arial, sans-serif';
-      const fontStr = `${fontSize}px ${fontFamily}`;
-
       const bCfg = ReaderService.BORDER_CONFIGS[borderIdx] || ReaderService.BORDER_CONFIGS[0];
       const customTz = (overlayData.borderZones && overlayData.borderZones[borderIdx]) || bCfg.textZone;
-      const textWidth = Math.max(50, (customTz.w / 100) * 1000 - 45);
 
-      const textToWrap = charName ? `${charName}: ${speechText}` : speechText;
-      const wrappedLines = this.wrapDialogText(textToWrap, textWidth, fontStr);
+      const rawLines = speechWithoutSpeaker.split('\n').map(l => l.trim()).filter(Boolean);
+      if (rawLines.length === 0) return;
 
-      const MAX_LINES = 4;
-      const totalPages = Math.max(1, Math.ceil(wrappedLines.length / MAX_LINES));
+      // Если отдельная строка превышает 160 символов, аккуратно разбиваем её по предложениям
+      const atomLines = [];
+      for (const line of rawLines) {
+        if (line.length <= 160) {
+          atomLines.push(line);
+        } else {
+          const sentences = line.split(/(?<=[.!?♥…])\s+/);
+          let cur = '';
+          for (const s of sentences) {
+            if (s.length <= 160) {
+              if (!cur) {
+                cur = s;
+              } else if ((cur + ' ' + s).length <= 160) {
+                cur += ' ' + s;
+              } else {
+                atomLines.push(cur);
+                cur = s;
+              }
+            } else {
+              if (cur) {
+                atomLines.push(cur);
+                cur = '';
+              }
+              const words = s.split(/\s+/);
+              let wCur = '';
+              for (const w of words) {
+                if (!wCur) {
+                  wCur = w;
+                } else if ((wCur + ' ' + w).length <= 160) {
+                  wCur += ' ' + w;
+                } else {
+                  atomLines.push(wCur);
+                  wCur = w;
+                }
+              }
+              if (wCur) cur = wCur;
+            }
+          }
+          if (cur) atomLines.push(cur);
+        }
+      }
 
-      for (let pIdx = 0; pIdx < totalPages; pIdx++) {
-        const pageLines = wrappedLines.slice(pIdx * MAX_LINES, (pIdx + 1) * MAX_LINES);
+      const blockSteps = [];
+      let currentStepLines = [];
+
+      for (let i = 0; i < atomLines.length; i++) {
+        const line = atomLines[i];
+        const isFirstInStep = currentStepLines.length === 0;
+        const isFirstOfSpeaker = blockSteps.length === 0 && isFirstInStep;
+
+        const candidateLines = [...currentStepLines, line];
+        const candidateText = candidateLines.join('\n');
+        const estLines = getEstimatedLines(candidateText, isFirstOfSpeaker, charName);
+
+        if (!isFirstInStep && (estLines > 4 || candidateText.length > 165)) {
+          blockSteps.push({
+            text: currentStepLines.join('\n'),
+            charName: charName,
+            isFirstOfSpeaker: blockSteps.length === 0
+          });
+          currentStepLines = [line];
+        } else {
+          currentStepLines.push(line);
+        }
+      }
+
+      if (currentStepLines.length > 0) {
+        blockSteps.push({
+          text: currentStepLines.join('\n'),
+          charName: charName,
+          isFirstOfSpeaker: blockSteps.length === 0
+        });
+      }
+
+      blockSteps.forEach((subStep, sIdx) => {
         steps.push({
           blockIndex: bIdx,
-          pageIndex: pIdx,
-          totalPages: totalPages,
+          stepIndex: sIdx,
+          totalStepsInBlock: blockSteps.length,
           charName: charName,
-          lines: pageLines,
-          speechText: speechText,
+          isFirstOfSpeaker: subStep.isFirstOfSpeaker,
+          text: subStep.text,
+          speechText: speechWithoutSpeaker,
           borderIdx: borderIdx,
           preset: preset,
           bSettings: bSettings,
           customTz: customTz
         });
-      }
+      });
     });
 
-    return steps.length > 0 ? steps : [{ blockIndex: 0, pageIndex: 0, totalPages: 1, lines: [], charName: '', speechText: '', borderIdx: 3 }];
+    return steps.length > 0 ? steps : [{ blockIndex: 0, stepIndex: 0, text: '', charName: '', isFirstOfSpeaker: true, borderIdx: 3 }];
   }
 
   /**
@@ -2816,22 +2901,20 @@ class ReaderService {
       const textContent = document.createElement('div');
       textContent.className = 'dialog-text-content';
 
-      const pageLines = (activeStep.lines && activeStep.lines.length > 0)
-        ? activeStep.lines.slice(0, 4)
-        : [];
+      const stepText = activeStep.text !== undefined 
+        ? activeStep.text 
+        : (Array.isArray(activeStep.lines) ? activeStep.lines.join('\n') : '');
 
       // Выделение имени говорящего с четкой контрастной обводкой и отступом (только на первой странице реплики)
-      if (charName && activeStep.pageIndex === 0) {
-        const line0 = pageLines[0] || '';
+      if (charName && (activeStep.isFirstOfSpeaker || activeStep.pageIndex === 0)) {
         const prefix = `${charName}:`;
-        let line0Text = line0;
-        if (line0.startsWith(prefix)) {
-          line0Text = line0.slice(prefix.length).trimStart();
+        let cleanText = stepText;
+        if (cleanText.startsWith(prefix)) {
+          cleanText = cleanText.slice(prefix.length).trimStart();
         }
-        const rest = pageLines.slice(1).join('\n');
-        textContent.innerHTML = `<span class="dialog-char-name">${charName}:</span> ${line0Text}${rest ? '\n' + rest : ''}`;
+        textContent.innerHTML = `<span class="dialog-char-name">${charName}:</span> ${cleanText}`;
       } else {
-        textContent.textContent = pageLines.join('\n');
+        textContent.textContent = stepText;
       }
 
       textContent.style.fontFamily = preset.fontFamily || 'Arial, sans-serif';
