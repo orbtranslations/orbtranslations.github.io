@@ -11,7 +11,7 @@ git add .
 
 echo.
 echo [2/3] Committing changes...
-git commit -m "fix: high-contrast opaque price badges on cover cards (v3.6.5)"
+git commit -m "fix: robust URL regex sanitization to strip accidental text prefixes (v3.6.6)"
 
 echo.
 echo [3/3] Pushing to GitHub (main)...

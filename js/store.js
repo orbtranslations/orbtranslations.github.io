@@ -117,6 +117,21 @@ class IDBStorage {
 class Store {
   static STORAGE_KEY = 'orb_marketplace_data_v3';
 
+  /**
+   * Очистка списка демо-изображений от случайного текста перед ссылкой, опечаток и раскладки
+   */
+  sanitizeDemoImages(demoImages) {
+    if (!Array.isArray(demoImages)) return [];
+    return demoImages.filter(item => item && item.url).map(item => {
+      const raw = String(item.url || '').trim();
+      const m = raw.match(/https?:\/\/[^\s"'<>]+/i);
+      return {
+        ...item,
+        url: m ? m[0] : raw
+      };
+    });
+  }
+
   constructor() {
     // 1. Быстрая синхронная загрузка кэша из localStorage для мгновенной отрисовки UI
     this.data = this.loadFromStorage();
@@ -250,7 +265,7 @@ class Store {
 
           const coverUrl = w.cover_url || '';
           const previewPages = Number(w.preview_pages_count) || 3;
-          const demoImages = Array.isArray(w.demo_images) ? w.demo_images.filter(item => item && item.url) : [];
+          const demoImages = this.sanitizeDemoImages(w.demo_images);
 
           return {
             id: w.id,
@@ -796,7 +811,7 @@ class Store {
       scriptFileName: workData.scriptFileName || 'script.txt',
       sampleScriptText: previewSlice,
       fullScriptText: fullScript,
-      demoImages: workData.demoImages || [],
+      demoImages: this.sanitizeDemoImages(workData.demoImages),
       createdAt: new Date().toISOString().split('T')[0]
     };
 
@@ -823,7 +838,7 @@ class Store {
       fullScript = updatedData.sampleScriptText;
     }
 
-    const effectiveDemoImages = updatedData.demoImages !== undefined ? updatedData.demoImages : (current.demoImages || []);
+    const effectiveDemoImages = this.sanitizeDemoImages(updatedData.demoImages !== undefined ? updatedData.demoImages : (current.demoImages || []));
     const previewSlice = (typeof ScriptParser !== 'undefined' && ScriptParser.generatePreviewSlice && fullScript)
       ? ScriptParser.generatePreviewSlice(fullScript, previewPagesCount, effectiveDemoImages)
       : (updatedData.sampleScriptText !== undefined ? updatedData.sampleScriptText : current.sampleScriptText);
@@ -848,7 +863,7 @@ class Store {
       previewPagesCount: previewPagesCount,
       tags: updatedData.tags !== undefined ? updatedData.tags : current.tags,
       coverUrl: updatedData.coverUrl !== undefined ? updatedData.coverUrl : (current.coverUrl || 'assets/demo/cover-1.svg'),
-      demoImages: updatedData.demoImages !== undefined ? updatedData.demoImages : (current.demoImages || []),
+      demoImages: effectiveDemoImages,
       sampleScriptText: previewSlice,
       fullScriptText: fullScript,
       updatedAt: new Date().toISOString().split('T')[0]

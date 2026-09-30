@@ -105,7 +105,17 @@ class AdminService {
 
     if (coverUrlInput) {
       coverUrlInput.addEventListener('input', () => {
-        this.updateCoverPreview(coverUrlInput.value.trim());
+        const val = coverUrlInput.value.trim();
+        const m = val.match(/https?:\/\/[^\s"'<>]+/i);
+        this.updateCoverPreview(m ? m[0] : val);
+      });
+      coverUrlInput.addEventListener('blur', () => {
+        const val = coverUrlInput.value.trim();
+        const m = val.match(/https?:\/\/[^\s"'<>]+/i);
+        if (m && m[0] !== val) {
+          coverUrlInput.value = m[0];
+          this.updateCoverPreview(m[0]);
+        }
       });
     }
 
@@ -421,7 +431,9 @@ class AdminService {
     const descEn = document.getElementById('admin-work-desc-en').value.trim();
     const tagsRaw = document.getElementById('admin-work-tags').value.trim();
     const coverUrlInput = document.getElementById('admin-work-cover-url');
-    const coverUrl = coverUrlInput ? coverUrlInput.value.trim() : '';
+    const rawCover = coverUrlInput ? coverUrlInput.value.trim() : '';
+    const coverMatch = rawCover.match(/https?:\/\/[^\s"'<>]+/i);
+    const coverUrl = coverMatch ? coverMatch[0] : rawCover;
     const sampleScriptText = document.getElementById('admin-script-text').value.trim();
     const isEn = window.i18n && window.i18n.getLang() === 'en';
 
@@ -975,6 +987,17 @@ class AdminService {
       <button type="button" class="btn btn-secondary btn-small" style="padding: 4px 8px; color: var(--accent-danger);" onclick="this.closest('.demo-image-row').remove()" title="${isEn ? 'Remove' : 'Удалить'}">🗑️</button>
     `;
 
+    const urlInput = row.querySelector('.demo-image-url');
+    if (urlInput) {
+      urlInput.addEventListener('blur', (e) => {
+        const val = e.target.value.trim();
+        const m = val.match(/https?:\/\/[^\s"'<>]+/i);
+        if (m && m[0] !== val) {
+          e.target.value = m[0];
+        }
+      });
+    }
+
     container.appendChild(row);
   }
 
@@ -1021,9 +1044,11 @@ class AdminService {
       const urlInput = row.querySelector('.demo-image-url');
 
       const rawPage = pageInput ? pageInput.value.trim() : '';
-      const url = urlInput ? urlInput.value.trim() : '';
+      const rawUrl = urlInput ? urlInput.value.trim() : '';
 
-      if (url) {
+      if (rawUrl) {
+        const m = rawUrl.match(/https?:\/\/[^\s"'<>]+/i);
+        const url = m ? m[0] : rawUrl;
         const pageNum = rawPage ? (isNaN(Number(rawPage)) ? rawPage : Number(rawPage)) : (idx + 1);
         result.push({
           page: pageNum,

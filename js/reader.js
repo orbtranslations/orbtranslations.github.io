@@ -1228,6 +1228,28 @@ class ReaderService {
   /**
    * Получение ссылки на демо-изображение из интернета для заданной страницы/сцены
    */
+  /**
+   * Очистка веб-ссылки от случайного текста перед или после URL
+   */
+  cleanWebUrl(raw) {
+    if (!raw || typeof raw !== 'string') return '';
+    const m = raw.match(/https?:\/\/[^\s"'<>]+/i);
+    return m ? m[0] : raw.trim();
+  }
+
+  /**
+   * Извлечение чистой короткой ссылки ExHentai / E-Hentai (/s/...) из любой строки,
+   * игнорируя любые ошибочные префиксы (например, "Оцу https://...")
+   */
+  extractShortLink(url) {
+    if (!url || typeof url !== 'string') return null;
+    const match = url.match(/https?:\/\/(?:exhentai\.org|e-hentai\.org)\/s\/[a-f0-9]+\/[0-9]+-[0-9]+/i);
+    return match ? match[0] : null;
+  }
+
+  /**
+   * Поиск ссылки на изображение для сцены по номеру или ключу
+   */
   getDemoImageUrl(work, pageIndex, pageKey = '') {
     if (!work || !work.demoImages) return null;
     const pageNum = pageIndex + 1; // 1-based номер страницы
@@ -1239,7 +1261,7 @@ class ReaderService {
         const p = String(item.page !== undefined ? item.page : (item.num || '')).trim();
         return p === String(pageNum);
       });
-      if (foundByNum) return foundByNum.url.trim();
+      if (foundByNum) return this.cleanWebUrl(foundByNum.url);
 
       // 2. Поиск по ключу/имени сцены (Title, 00-00 и т.д.)
       if (pageKey) {
@@ -1251,15 +1273,16 @@ class ReaderService {
           const normItem = this.normalizeKeyForMatching(p || item.url);
           return p === cleanKey || p === String(pageKey).toLowerCase() || (normKey && normItem === normKey);
         });
-        if (foundByKey) return foundByKey.url.trim();
+        if (foundByKey) return this.cleanWebUrl(foundByKey.url);
       }
       return null;
     }
 
     if (typeof work.demoImages === 'object') {
-      return work.demoImages[pageNum] 
+      const url = work.demoImages[pageNum] 
         || (pageKey && work.demoImages[pageKey]) 
         || null;
+      return url ? this.cleanWebUrl(url) : null;
     }
 
     if (typeof work.demoImages === 'string') {
@@ -1270,7 +1293,7 @@ class ReaderService {
           const key = parts[0].trim();
           const url = parts[1].trim();
           if (key === String(pageNum) || (pageKey && key.toLowerCase() === pageKey.toLowerCase())) {
-            return url;
+            return this.cleanWebUrl(url);
           }
         }
       }
@@ -1283,9 +1306,7 @@ class ReaderService {
    * Проверка, является ли ссылка короткой ссылкой на страницу ExHentai / E-Hentai (/s/...)
    */
   isShortLink(url) {
-    if (!url || typeof url !== 'string') return false;
-    const clean = url.trim().toLowerCase();
-    return clean.includes('exhentai.org/s/') || clean.includes('e-hentai.org/s/');
+    return !!this.extractShortLink(url);
   }
 
   /**
@@ -1293,9 +1314,8 @@ class ReaderService {
    * При сбое Hath-ноды или истечении keystamp передается forceFresh=true и failover nl.
    */
   async resolveImageUrl(shortUrl, forceFresh = false, nl = null) {
-    if (!this.isShortLink(shortUrl)) return shortUrl;
-
-    const cleanShort = shortUrl.trim();
+    const cleanShort = this.extractShortLink(shortUrl);
+    if (!cleanShort) return shortUrl;
 
     // 1. Поиск в кэше памяти и sessionStorage (если не запрошено принудительное обновление)
     if (!forceFresh && !nl) {
@@ -1406,18 +1426,22 @@ class ReaderService {
     if (Array.isArray(demoImages)) {
       demoImages.forEach((item, idx) => {
         if (item && item.url && String(item.url).trim()) {
+          const rawUrl = String(item.url).trim();
+          const cleanUrl = this.cleanWebUrl(rawUrl);
           normalizedList.push({
             page: item.page !== undefined ? item.page : (item.num || (idx + 1)),
-            url: String(item.url).trim()
+            url: cleanUrl || rawUrl
           });
         }
       });
     } else if (typeof demoImages === 'object') {
       Object.entries(demoImages).forEach(([k, v]) => {
         if (v && String(v).trim()) {
+          const rawUrl = String(v).trim();
+          const cleanUrl = this.cleanWebUrl(rawUrl);
           normalizedList.push({
             page: k,
-            url: String(v).trim()
+            url: cleanUrl || rawUrl
           });
         }
       });
@@ -2835,7 +2859,7 @@ class ReaderService {
 
       // 2. Если ссылка на изображение устарела (Hath keystamp) или сервер недоступен:
       // Запрашиваем актуальную прямую ссылку у Supabase Edge Function по исходной короткой ссылке
-      const shortUrl = (this.isShortLink(page.sourceUrl) ? page.sourceUrl : null) || (this.isShortLink(page.url) ? page.url : null);
+      const shortUrl = this.extractShortLink(page.sourceUrl) || this.extractShortLink(page.url);
       if (shortUrl && (!page._refreshAttempts || page._refreshAttempts < 2)) {
         page._refreshAttempts = (page._refreshAttempts || 0) + 1;
         console.warn(`[Reader] Картинка недоступна (${baseImg.src}). Запрашиваем актуальную ссылку у Supabase... (попытка ${page._refreshAttempts})`);
@@ -2879,7 +2903,7 @@ class ReaderService {
         return;
       }
     } else if (this.isShortLink(page.sourceUrl || page.url)) {
-      const shortUrl = page.sourceUrl || page.url;
+      const shortUrl = this.extractShortLink(page.sourceUrl || page.url);
       const cached = this.resolvedUrlCache.get(shortUrl);
       let targetUrl = cached?.imageUrl;
 

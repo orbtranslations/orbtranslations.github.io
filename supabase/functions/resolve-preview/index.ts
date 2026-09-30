@@ -68,10 +68,14 @@ const handler = async (req: Request): Promise<Response> => {
       );
     }
 
-    const cleanUrl = url.trim();
+    const rawUrl = url.trim();
+    // Извлекаем чистую ссылку по регулярному выражению, отсекая случайный текст или символы раскладки (например "Оцу https://...")
+    const urlMatch = rawUrl.match(/https?:\/\/[^\s"'<>]+/i);
+    const cleanUrl = urlMatch ? urlMatch[0] : rawUrl;
+
     if (!cleanUrl.includes("/s/")) {
       return new Response(
-        JSON.stringify({ error: "Ссылка должна быть ссылкой на страницу просмотра (/s/...)" }),
+        JSON.stringify({ error: `Ссылка должна быть ссылкой на страницу просмотра (/s/...): получено '${cleanUrl}'` }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
