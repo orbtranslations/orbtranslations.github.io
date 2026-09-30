@@ -1330,7 +1330,16 @@ class ReaderService {
       });
 
       if (error || !data || !data.success || !data.imageUrl) {
-        console.warn('[Reader] Ошибка функции resolve-preview:', error || data?.error);
+        let errorDetails = (data && data.error) || error?.message;
+        if (error && error.context) {
+          try {
+            const errJson = await error.context.json();
+            if (errJson && errJson.error) errorDetails = errJson.error;
+          } catch (_) {
+            try { errorDetails = await error.context.text(); } catch (_) {}
+          }
+        }
+        console.warn('[Reader] Ошибка функции resolve-preview:', errorDetails || error);
         return null;
       }
 
@@ -2826,7 +2835,7 @@ class ReaderService {
 
       // 2. Если ссылка на изображение устарела (Hath keystamp) или сервер недоступен:
       // Запрашиваем актуальную прямую ссылку у Supabase Edge Function по исходной короткой ссылке
-      const shortUrl = page.sourceUrl || (this.isShortLink(page.url) ? page.url : null);
+      const shortUrl = (this.isShortLink(page.sourceUrl) ? page.sourceUrl : null) || (this.isShortLink(page.url) ? page.url : null);
       if (shortUrl && (!page._refreshAttempts || page._refreshAttempts < 2)) {
         page._refreshAttempts = (page._refreshAttempts || 0) + 1;
         console.warn(`[Reader] Картинка недоступна (${baseImg.src}). Запрашиваем актуальную ссылку у Supabase... (попытка ${page._refreshAttempts})`);

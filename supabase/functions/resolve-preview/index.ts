@@ -1,11 +1,9 @@
 // @ts-nocheck
 // Supabase Edge Function: resolve-preview
 // Автоматическое получение актуальной прямой ссылки на изображение с ExHentai / E-Hentai по короткой ссылке (/s/...)
-// Поддерживает ротацию и обновление ссылки при истечении срока действия (keystamp) или сбое Hath-ноды
+// Поддерживает ротацию зеркала Hath (nl), фоллбек на E-Hentai и защиту от циклов редиректа
 
 declare const Deno: any;
-
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -13,7 +11,7 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-serve(async (req: Request) => {
+const handler = async (req: Request): Promise<Response> => {
   // 1. CORS Preflight
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -51,10 +49,11 @@ serve(async (req: Request) => {
     }
 
     // 3. Получаем секретные cookie ExHentai из переменных окружения
-    const rawCookies = Deno.env.get("EX_COOKIES") || Deno.env.get("EX_COOKIE") || "";
+    const rawCookies = (typeof Deno !== "undefined" && Deno.env) 
+      ? (Deno.env.get("EX_COOKIES") || Deno.env.get("EX_COOKIE") || "") 
+      : "";
     const exCookies = rawCookies.replace(/\r?\n/g, "; ").trim();
 
-    // 4. Запрос к странице новеллы/манги на ExHentai / E-Hentai
     const headers: Record<string, string> = {
       "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
       "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
@@ -66,32 +65,59 @@ serve(async (req: Request) => {
       headers["Cookie"] = exCookies;
     }
 
-    const pageResp = await fetch(fetchUrl, { headers });
+    // 4. Попытка запроса: сначала исходный адрес (ExHentai), с автоматическим фоллбеком на зеркало E-Hentai
+    const targets = [fetchUrl];
+    if (fetchUrl.includes("exhentai.org")) {
+      targets.push(fetchUrl.replace("exhentai.org", "e-hentai.org"));
+    }
 
-    if (!pageResp.ok) {
+    let foundHtml = "";
+    let lastError = "";
+
+    for (const target of targets) {
+      try {
+        console.log(`[resolve-preview] Fetching ${target}`);
+        const pageResp = await fetch(target, {
+          headers,
+          redirect: "follow"
+        });
+
+        if (!pageResp.ok) {
+          lastError = `HTTP ${pageResp.status} ${pageResp.statusText}`;
+          continue;
+        }
+
+        const text = await pageResp.text();
+
+        // Проверка на Sad Panda или бесконечный редирект poni=no
+        if (text.includes("sadpanda.jpg") || text.includes("Sad Panda") || (text.length < 1000 && text.includes("poni=no"))) {
+          lastError = "ExHentai вернул Sad Panda / poni=no. Проверьте актуальность кук EX_COOKIES в Supabase Secrets.";
+          continue;
+        }
+
+        const imgMatch = text.match(/<img[^>]+id=["']img["'][^>]+src=["']([^"']+)["']/i) 
+                      || text.match(/<img[^>]+src=["']([^"']+)["'][^>]+id=["']img["']/i);
+
+        if (imgMatch && imgMatch[1]) {
+          foundHtml = text;
+          break; // Успешно найдено
+        }
+      } catch (err: any) {
+        lastError = `Ошибка запроса к ${target}: ${err.message}`;
+        console.warn(lastError);
+      }
+    }
+
+    if (!foundHtml) {
       return new Response(
-        JSON.stringify({ 
-          error: `Ошибка запроса к источнику: HTTP ${pageResp.status} ${pageResp.statusText}` 
-        }),
-        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        JSON.stringify({ error: lastError || "Не удалось получить страницу сцены с ExHentai/E-Hentai" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    const html = await pageResp.text();
-
-    // 5. Проверка на Sad Panda или пустой ответ
-    if (html.includes("sadpanda.jpg") || html.includes("Sad Panda") || html.length < 500) {
-      return new Response(
-        JSON.stringify({ 
-          error: "ExHentai вернул Sad Panda. Убедитесь, что в Supabase Secrets задан валидный EX_COOKIES (ipb_member_id, ipb_pass_hash, igneous)." 
-        }),
-        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    // 6. Извлечение прямой ссылки на изображение из тега <img id="img" src="...">
-    const imgMatch = html.match(/<img[^>]+id=["']img["'][^>]+src=["']([^"']+)["']/i) 
-                  || html.match(/<img[^>]+src=["']([^"']+)["'][^>]+id=["']img["']/i);
+    // 5. Извлечение прямой ссылки на изображение из тега <img id="img" src="...">
+    const imgMatch = foundHtml.match(/<img[^>]+id=["']img["'][^>]+src=["']([^"']+)["']/i) 
+                  || foundHtml.match(/<img[^>]+src=["']([^"']+)["'][^>]+id=["']img["']/i);
 
     if (!imgMatch || !imgMatch[1]) {
       return new Response(
@@ -103,11 +129,11 @@ serve(async (req: Request) => {
     const imageUrl = imgMatch[1].replace(/&amp;/g, '&');
 
     // Извлекаем failover ключ nl(...) для случая, если нода Hath недоступна
-    const nlMatch = html.match(/nl\(['"]([^'"]+)['"]\)/i) || html.match(/[?&]nl=([^&"']+)/i);
+    const nlMatch = foundHtml.match(/nl\(['"]([^'"]+)['"]\)/i) || foundHtml.match(/[?&]nl=([^&"']+)/i);
     const failoverNl = nlMatch ? nlMatch[1] : null;
 
     // Извлекаем имя файла (если есть в описании страницы #i2)
-    const nameMatch = html.match(/<div[^>]*>([a-zA-Z0-9_\-\.]+\.(?:jpg|png|webp|jpeg))\s*::/i);
+    const nameMatch = foundHtml.match(/<div[^>]*>([a-zA-Z0-9_\-\.]+\.(?:jpg|png|webp|jpeg))\s*::/i);
     const fileName = nameMatch ? nameMatch[1] : "";
 
     return new Response(
@@ -123,9 +149,18 @@ serve(async (req: Request) => {
     );
 
   } catch (err: any) {
+    console.error("[resolve-preview] Ошибка выполнения функции:", err);
     return new Response(
       JSON.stringify({ error: err.message || "Внутренняя ошибка сервера" }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
-});
+};
+
+// Запуск сервера в зависимости от среды Supabase
+if (typeof Deno !== "undefined" && typeof Deno.serve === "function") {
+  Deno.serve(handler);
+} else {
+  const { serve } = await import("https://deno.land/std@0.168.0/http/server.ts");
+  serve(handler);
+}

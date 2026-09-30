@@ -455,14 +455,28 @@ class Store {
     } catch (e) {
       console.warn('Переполнение квоты localStorage. Сохраняем компактный индекс:', e);
       try {
-        // Экстренный компактный режим: убираем все скрипты из localStorage
+        // Экстренный компактный режим: убираем все скрипты и тяжелые данные из localStorage
         const ultraSafeData = {
           ...this.data,
-          works: (this.data.works || []).map(w => ({ ...w, sampleScriptText: '' }))
+          works: (this.data.works || []).map(w => ({
+            ...w,
+            sampleScriptText: '',
+            fullScriptText: '',
+            rawFiles: undefined
+          })),
+          workArchives: undefined,
+          workScripts: undefined
         };
         localStorage.setItem(Store.STORAGE_KEY, JSON.stringify(ultraSafeData));
       } catch (err2) {
-        console.error('Критическая ошибка сохранения в localStorage:', err2);
+        try {
+          const minimalData = {
+            currentRole: this.data.currentRole,
+            currentUser: this.data.currentUser,
+            purchasedWorks: this.data.purchasedWorks
+          };
+          localStorage.setItem(Store.STORAGE_KEY, JSON.stringify(minimalData));
+        } catch (_) {}
       }
     }
   }

@@ -11,7 +11,7 @@ git add .
 
 echo.
 echo [2/3] Committing changes...
-git commit -m "feat: auto-resolve and refresh ExHentai demo images via Supabase Edge Function (v3.6.3)"
+git commit -m "feat: robust resolve-preview edge function with e-hentai fallback (v3.6.4)"
 
 echo.
 echo [3/3] Pushing to GitHub (main)...
