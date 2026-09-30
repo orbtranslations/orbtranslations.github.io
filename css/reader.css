@@ -269,27 +269,29 @@
   flex-direction: column;
   justify-content: center;
   padding: 0.35rem 1.4rem;
-  overflow-y: auto !important;
-  overflow-x: hidden !important;
+  overflow: hidden !important;
   pointer-events: auto !important;
-  scrollbar-width: thin;
-  scrollbar-color: #6366f1 rgba(0, 0, 0, 0.25);
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
 }
 
-/* Фирменная светящаяся полоса прокрутки (как в Overlaying text on graphics) */
-.dialog-text-slot::-webkit-scrollbar,
+.dialog-text-slot::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+/* Фирменная светящаяся полоса прокрутки (только для карточек персонажей Clean Frame) */
 .clean-frame-text-slot::-webkit-scrollbar {
   width: 7px;
 }
 
-.dialog-text-slot::-webkit-scrollbar-track,
 .clean-frame-text-slot::-webkit-scrollbar-track {
   background: rgba(0, 0, 0, 0.25);
   border-radius: 8px;
   margin: 4px 0;
 }
 
-.dialog-text-slot::-webkit-scrollbar-thumb,
 .clean-frame-text-slot::-webkit-scrollbar-thumb {
   background: linear-gradient(180deg, #6366f1, #06b6d4);
   border-radius: 8px;
@@ -298,7 +300,6 @@
   animation: scrollThumbGlow 2.5s infinite ease-in-out;
 }
 
-.dialog-text-slot::-webkit-scrollbar-thumb:hover,
 .clean-frame-text-slot::-webkit-scrollbar-thumb:hover {
   background: linear-gradient(180deg, #818cf8, #22d3ee);
   box-shadow: 0 0 14px rgba(6, 182, 212, 0.95);

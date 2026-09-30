@@ -2074,19 +2074,15 @@ class ReaderService {
     const container = document.getElementById('reader-stage-container');
     if (!container) return;
 
-    // Вспомогательная функция: поиск текстового слота с активным скроллом (переполнение контентом)
+    // Вспомогательная функция: поиск текстового слота с активным скроллом (только карточки персонажей)
     const getScrollableTextSlot = (target) => {
       if (!target) return null;
-      // Прямой клик/наведение на текстовый контейнер
-      const directSlot = target.closest('.clean-frame-text-slot, .dialog-text-slot');
+      const directSlot = target.closest('.clean-frame-text-slot');
       if (directSlot && directSlot.scrollHeight > directSlot.clientHeight + 4) {
         return directSlot;
       }
-      // Наведение на обертку диалога или слота
-      const wrapper = target.closest('.dialog-frame-wrapper, .clean-frame-wrapper, .reader-stage-slot, .reader-dom-box');
+      const wrapper = target.closest('.clean-frame-wrapper, .reader-stage-slot, .reader-dom-box');
       if (wrapper) {
-        const dialogSlot = wrapper.querySelector('.dialog-text-slot');
-        if (dialogSlot && dialogSlot.scrollHeight > dialogSlot.clientHeight + 4) return dialogSlot;
         const cleanSlot = wrapper.querySelector('.clean-frame-text-slot');
         if (cleanSlot && cleanSlot.scrollHeight > cleanSlot.clientHeight + 4) return cleanSlot;
       }
@@ -2450,6 +2446,49 @@ class ReaderService {
       stageRight.style.display = 'none';
       stageRight.innerHTML = '';
     }
+  }
+
+  /**
+   * Динамическое автомасштабирование шрифта в диалоговом окне:
+   * гарантирует, что текст на 100% помещается в текущие границы окна без появления скроллбара
+   */
+  autoFitDialogText(slotEl, contentEl, preferredSize = 24, minSize = 11) {
+    if (!slotEl || !contentEl) return;
+
+    const availableH = slotEl.clientHeight;
+    const availableW = slotEl.clientWidth;
+    if (availableH <= 0 || availableW <= 0) return;
+
+    const fits = () => {
+      return (
+        contentEl.offsetHeight <= availableH &&
+        contentEl.offsetWidth <= availableW &&
+        slotEl.scrollHeight <= availableH + 1 &&
+        slotEl.scrollWidth <= availableW + 1
+      );
+    };
+
+    // 1. Проверяем желаемый размер шрифта
+    contentEl.style.fontSize = `${preferredSize}px`;
+    if (fits()) return;
+
+    // 2. Бинарный поиск оптимального размера
+    let low = minSize;
+    let high = preferredSize;
+    let bestSize = minSize;
+
+    for (let iter = 0; iter < 14 && (high - low) > 0.3; iter++) {
+      const mid = (low + high) / 2;
+      contentEl.style.fontSize = `${mid}px`;
+      if (fits()) {
+        bestSize = mid;
+        low = mid;
+      } else {
+        high = mid;
+      }
+    }
+
+    contentEl.style.fontSize = `${bestSize.toFixed(1)}px`;
   }
 
   /**
@@ -2957,8 +2996,26 @@ class ReaderService {
 
       textSlot.appendChild(textContent);
       frameWrapper.appendChild(textSlot);
-
       domBox.appendChild(frameWrapper);
+
+      // Динамическое автомасштабирование: текст идеально вписывается в окно без скроллбара
+      const computeAndFit = () => {
+        const fwWidth = frameWrapper.clientWidth || 1024;
+        const scale = fwWidth / 1024;
+        const preferred = Math.max(14, Math.round(baseFontSize * scale));
+        this.autoFitDialogText(textSlot, textContent, preferred, 11);
+      };
+
+      computeAndFit();
+      requestAnimationFrame(computeAndFit);
+
+      if (typeof ResizeObserver !== 'undefined') {
+        const ro = new ResizeObserver(() => {
+          computeAndFit();
+        });
+        ro.observe(frameWrapper);
+        frameWrapper._dialogRo = ro;
+      }
     }
 
     // =========================================================================
