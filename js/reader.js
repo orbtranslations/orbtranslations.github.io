@@ -45,27 +45,27 @@ class ReaderService {
 
   static BORDER_CONFIGS = [
     { // Рамка 1: портрет слева, текст справа
-      portraitZones: [{ x: 0.2, y: 0.5, w: 18.0, h: 99.0 }],
-      bgZone: { x: 17.5, y: 0.5, w: 82.3, h: 99.0 },
-      textZone: { x: 18.5, y: 2.0, w: 79.5, h: 89.0 }
+      portraitZones: [{ x: 1.4, y: 0.5, w: 15.8, h: 99.0 }],
+      bgZone: { x: 19.5, y: 3.5, w: 79.5, h: 93.0 },
+      textZone: { x: 20.6, y: 6.0, w: 77.2, h: 85.0 }
     },
     { // Рамка 2: текст слева, портрет справа
-      portraitZones: [{ x: 82.0, y: 0.5, w: 17.8, h: 99.0 }],
-      bgZone: { x: 0.2, y: 0.5, w: 82.3, h: 99.0 },
-      textZone: { x: 2.0, y: 2.0, w: 79.5, h: 89.0 }
+      portraitZones: [{ x: 82.8, y: 0.5, w: 15.8, h: 99.0 }],
+      bgZone: { x: 0.8, y: 3.5, w: 79.5, h: 93.0 },
+      textZone: { x: 2.0, y: 6.0, w: 77.0, h: 85.0 }
     },
     { // Рамка 3: портреты слева и справа, текст в центре
       portraitZones: [
-        { x: 0.2, y: 0.5, w: 18.0, h: 99.0 },
-        { x: 82.0, y: 0.5, w: 17.8, h: 99.0 }
+        { x: 1.4, y: 0.5, w: 15.8, h: 99.0 },
+        { x: 82.8, y: 0.5, w: 15.8, h: 99.0 }
       ],
-      bgZone: { x: 18.0, y: 0.5, w: 64.0, h: 99.0 },
-      textZone: { x: 18.5, y: 2.0, w: 63.0, h: 89.0 }
+      bgZone: { x: 19.0, y: 3.5, w: 61.5, h: 93.0 },
+      textZone: { x: 20.6, y: 6.0, w: 58.8, h: 85.0 }
     },
     { // Рамка 4: без портретов, сплошной текст по всей ширине
       portraitZones: [],
-      bgZone: { x: 0.8, y: 2.0, w: 98.4, h: 96.0 },
-      textZone: { x: 1.8, y: 2.0, w: 96.4, h: 89.0 }
+      bgZone: { x: 0.8, y: 3.5, w: 98.4, h: 93.0 },
+      textZone: { x: 2.0, y: 6.8, w: 96.0, h: 84.5 }
     }
   ];
 
@@ -2863,7 +2863,13 @@ class ReaderService {
       });
 
       const bCfg = ReaderService.BORDER_CONFIGS[borderIdx] || ReaderService.BORDER_CONFIGS[0];
-      const tz = activeStep.customTz || bCfg.textZone;
+      const rawTz = activeStep.customTz || bCfg.textZone;
+      const tz = {
+        x: Math.max(bCfg.textZone.x, rawTz.x !== undefined ? rawTz.x : bCfg.textZone.x),
+        y: Math.max(bCfg.textZone.y, rawTz.y !== undefined ? rawTz.y : bCfg.textZone.y),
+        w: Math.min(bCfg.textZone.w, rawTz.w !== undefined ? rawTz.w : bCfg.textZone.w),
+        h: Math.min(bCfg.textZone.h, rawTz.h !== undefined ? rawTz.h : bCfg.textZone.h)
+      };
 
       // 1. Белая подложка под текст
       const bgSlot = document.createElement('div');
@@ -2937,9 +2943,11 @@ class ReaderService {
         textContent.textContent = stepText;
       }
 
+      const baseFontSize = preset.fontSize || 24;
       textContent.style.fontFamily = preset.fontFamily || 'Arial, sans-serif';
-      textContent.style.fontSize = preset.fontSize ? `${preset.fontSize}px` : '22px';
-      textContent.style.lineHeight = preset.lineHeight || 1.35;
+      textContent.style.fontSize = `${baseFontSize}px`;
+      textContent.style.fontSize = `clamp(${Math.round(baseFontSize * 0.7)}px, ${(baseFontSize / 10.24).toFixed(2)}cqw, ${Math.round(baseFontSize * 1.15)}px)`;
+      textContent.style.lineHeight = preset.lineHeight || 1.48;
       textContent.style.color = preset.color || '#000000';
       textContent.style.textAlign = preset.textAlign || 'left';
 
