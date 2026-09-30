@@ -200,6 +200,7 @@
   box-sizing: border-box;
   white-space: pre-line;
   line-height: 1.4;
+  padding: 0 4px 8px 4px;
 }
 
 /* Bottom Visual Novel Dialogue Frame */

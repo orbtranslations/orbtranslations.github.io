@@ -2775,33 +2775,45 @@ class ReaderService {
 
         if (textSlot) {
           const boundLayer = textBoundLayer || fData;
+          const boundEl = layerElements.find(le => le.layer === boundLayer) || layerElements[layerElements.length - 1];
+          const bImg = boundEl ? boundEl.img : null;
+
           const bScale = (boundLayer.scale !== undefined ? boundLayer.scale : (fData.scale !== undefined ? fData.scale : 100)) / 100;
-          const bScaleX = (boundLayer.scaleX !== undefined ? boundLayer.scaleX : (boundLayer.scale !== undefined ? boundLayer.scale : (fData.scale !== undefined ? fData.scale : 100))) / 100;
-          const bScaleY = (boundLayer.scaleY !== undefined ? boundLayer.scaleY : (boundLayer.scale !== undefined ? boundLayer.scale : (fData.scale !== undefined ? fData.scale : 100))) / 100;
+          const bScaleX = (boundLayer.scaleX !== undefined ? boundLayer.scaleX : bScale);
+          const bScaleY = (boundLayer.scaleY !== undefined ? boundLayer.scaleY : bScale);
 
-          const bNatW = boundLayer._frameNatW || fData._frameNatW;
+          const isTzStretchX = !!(boundLayer.stretchX || boundLayer.stretch);
+          const isTzStretchY = !!(boundLayer.stretchY || boundLayer.stretch);
 
-          let bWidthPercent = 50.4 * bScaleX;
-          let bHeightPercent = 100 * bScaleY;
+          const bNatW = boundLayer._frameNatW || (bImg && bImg.naturalWidth) || fData._frameNatW || (isTitleOrGraphic ? curSceneW : 313);
+          const bNatH = boundLayer._frameNatH || (bImg && bImg.naturalHeight) || fData._frameNatH || (isTitleOrGraphic ? curSceneH : 470);
 
-          if (bNatW && curSceneW > 0) {
-            bWidthPercent = ((bNatW * bScaleX) / curSceneW) * 100;
-          }
+          const frameDrawW = isTzStretchX ? curSceneW : (bNatW * bScaleX);
+          const frameDrawH = isTzStretchY ? curSceneH : (bNatH * bScaleY);
 
           const bX = boundLayer.x !== undefined ? boundLayer.x : posX;
           const bY = boundLayer.y !== undefined ? boundLayer.y : posY;
 
-          // Стандартная зона текста карточки героини (Рамка 5): отступы 5.2% по бокам и 3.6% сверху/снизу
-          const tz = boundLayer.textZone || fData.textZone || { x: 5.2, y: 3.6, w: 89.9, h: 93 };
-          textSlot.style.left = `${bX + (tz.x / 100) * bWidthPercent}%`;
-          textSlot.style.top = `${bY + (tz.y / 100) * bHeightPercent}%`;
-          textSlot.style.width = `${(tz.w / 100) * bWidthPercent}%`;
-          textSlot.style.height = `${(tz.h / 100) * bHeightPercent}%`;
+          const frameDrawX = isTzStretchX ? 0 : ((bX / 100) * curSceneW);
+          const frameDrawY = isTzStretchY ? 0 : ((bY / 100) * curSceneH);
+
+          // Точная зона текста карточки героини: отступы 5% по бокам и сверху/снизу как в оригинальном редакторе
+          const tz = boundLayer.textZone || fData.textZone || { x: 5, y: 5, w: 90, h: 90 };
+
+          const zonePixelX = frameDrawX + (tz.x / 100) * frameDrawW;
+          const zonePixelY = frameDrawY + (tz.y / 100) * frameDrawH;
+          const zonePixelW = (tz.w / 100) * frameDrawW;
+          const zonePixelH = (tz.h / 100) * frameDrawH;
+
+          textSlot.style.left = `${(zonePixelX / curSceneW) * 100}%`;
+          textSlot.style.top = `${(zonePixelY / curSceneH) * 100}%`;
+          textSlot.style.width = `${(zonePixelW / curSceneW) * 100}%`;
+          textSlot.style.height = `${(zonePixelH / curSceneH) * 100}%`;
           textSlot.scrollTop = 0;
 
           // Масштабирование шрифта под реальное разрешение сцены
           const scaleRatio = curSceneW / 1000;
-          const baseFontSize = matchedPreset.fontSize || 22;
+          const baseFontSize = matchedPreset.fontSize || 24;
           const effectiveFontSize = Math.max(12, Math.round(baseFontSize * scaleRatio));
           if (textContent) {
             textContent.style.fontSize = `${effectiveFontSize}px`;
