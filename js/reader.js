@@ -608,69 +608,77 @@ class ReaderService {
    * Открытие бесплатного превью работы с автоматической проверкой сохраненного архива/папки
    */
   async openPreview(workId) {
-    let work = this.store.getWorkById(workId);
-    if (!work && this.store.initPromise) {
-      try { await this.store.initPromise; } catch (e) {}
-      work = this.store.getWorkById(workId);
+    if (this._isOpeningPreview) return;
+    this._isOpeningPreview = true;
+
+    try {
+      let work = this.store.getWorkById(workId);
+      if (!work && this.store.initPromise) {
+        try { await this.store.initPromise; } catch (e) {}
+        work = this.store.getWorkById(workId);
+      }
+      if (!work) return;
+
+      this.currentWork = work;
+      this.isFullMode = false;
+
+      // Гарантированно получаем готовый скрипт превью (разворачивая [STORED_IN_IDB] при необходимости)
+      const sampleScript = await this.store.getSampleScript(workId);
+      if (sampleScript && !sampleScript.startsWith('[STORED_IN_IDB')) {
+        this.parseWorkScript(work, sampleScript);
+      } else {
+        this.parseWorkScript(work);
+      }
+
+      const availableLangs = (this.parsedScript && this.parsedScript.languages && this.parsedScript.languages.length > 0)
+        ? this.parsedScript.languages
+        : (work.availableLanguages || ['Русский', 'English']);
+      this.currentLang = this.getPriorityLanguage(availableLangs);
+
+      // Проверяем наличие настроенных демо-изображений
+      const hasConfiguredDemoImages = Array.isArray(work.demoImages)
+        ? work.demoImages.some(item => item && item.url)
+        : (work.demoImages && typeof work.demoImages === 'object' && Object.keys(work.demoImages).length > 0);
+
+      // 1. Если настроены интернет-ссылки для превью — сразу мгновенно запускаем демо-сцены без лишних задержек!
+      if (hasConfiguredDemoImages) {
+        await this.loadDemoImages(null, sampleScript);
+        return;
+      }
+
+      // 2. Если в памяти сессии уже загружен архив
+      if (this.workArchives[workId]) {
+        this.isDemoMode = false;
+        this.activeDemoImages = null;
+        this.rebuildPagesFromScript();
+        this.currentIndex = 0;
+        this.currentDialogBlockIndex = 0;
+        this.renderReaderUI();
+        return;
+      }
+
+      // 3. Проверяем сохраненный на клиенте архив или дескриптор папки
+      const saved = await this.tryLoadSavedClientArchive(workId);
+      if (saved && (saved.type === 'zip' || saved.status === 'loaded')) {
+        const isEn = window.i18n && window.i18n.getLang() === 'en';
+        const name = saved.fileName || saved.folderName || '';
+        window.app.showToast(
+          isEn ? `⚡ Loaded saved graphics: ${name}` : `⚡ Загружена сохраненная графика: ${name}`,
+          'info'
+        );
+        this.isDemoMode = false;
+        this.activeDemoImages = null;
+        this.rebuildPagesFromScript();
+        this.currentIndex = 0;
+        this.currentDialogBlockIndex = 0;
+        this.renderReaderUI();
+        return;
+      }
+
+      window.app.showArchiveUploadModal(work, 'preview', saved);
+    } finally {
+      this._isOpeningPreview = false;
     }
-    if (!work) return;
-
-    this.currentWork = work;
-    this.isFullMode = false;
-
-    // Гарантированно получаем готовый скрипт превью (разворачивая [STORED_IN_IDB] при необходимости)
-    const sampleScript = await this.store.getSampleScript(workId);
-    if (sampleScript && !sampleScript.startsWith('[STORED_IN_IDB')) {
-      this.parseWorkScript(work, sampleScript);
-    } else {
-      this.parseWorkScript(work);
-    }
-
-    const availableLangs = (this.parsedScript && this.parsedScript.languages && this.parsedScript.languages.length > 0)
-      ? this.parsedScript.languages
-      : (work.availableLanguages || ['Русский', 'English']);
-    this.currentLang = this.getPriorityLanguage(availableLangs);
-
-    // Проверяем наличие настроенных демо-изображений
-    const hasConfiguredDemoImages = Array.isArray(work.demoImages)
-      ? work.demoImages.some(item => item && item.url)
-      : (work.demoImages && typeof work.demoImages === 'object' && Object.keys(work.demoImages).length > 0);
-
-    if (this.workArchives[workId]) {
-      this.isDemoMode = false;
-      this.activeDemoImages = null;
-      this.rebuildPagesFromScript();
-      this.currentIndex = 0;
-      this.currentDialogBlockIndex = 0;
-      this.renderReaderUI();
-      return;
-    }
-
-    // Проверяем сохраненный на клиенте архив или дескриптор папки
-    const saved = await this.tryLoadSavedClientArchive(workId);
-    if (saved && (saved.type === 'zip' || saved.status === 'loaded')) {
-      const isEn = window.i18n && window.i18n.getLang() === 'en';
-      const name = saved.fileName || saved.folderName || '';
-      window.app.showToast(
-        isEn ? `⚡ Loaded saved graphics: ${name}` : `⚡ Загружена сохраненная графика: ${name}`,
-        'info'
-      );
-      this.isDemoMode = false;
-      this.activeDemoImages = null;
-      this.rebuildPagesFromScript();
-      this.currentIndex = 0;
-      this.currentDialogBlockIndex = 0;
-      this.renderReaderUI();
-      return;
-    }
-
-    // Если локального архива нет, но настроены интернет-ссылки для превью — сразу запускаем демо-сцены!
-    if (hasConfiguredDemoImages) {
-      await this.loadDemoImages();
-      return;
-    }
-
-    window.app.showArchiveUploadModal(work, 'preview', saved);
   }
 
   /**
@@ -1630,19 +1638,23 @@ class ReaderService {
     this.isDemoMode = true;
     this.activeDemoImages = customDemoImages || work.demoImages || [];
 
-    // 1. Получаем и парсим актуальный скрипт этой работы
+    // 1. Получаем и парсим актуальный скрипт этой работы (для демо-режима берем только доступный sampleScript)
     let scriptText = customScript || '';
     if (!scriptText) {
-      if (work.fullScriptText && !work.fullScriptText.startsWith('[STORED_IN_IDB')) {
+      if (this.parsedScript && this.parsedScript.rawText) {
+        scriptText = this.parsedScript.rawText;
+      } else if (work.sampleScriptText && !work.sampleScriptText.startsWith('[STORED_IN_IDB')) {
+        scriptText = work.sampleScriptText;
+      } else if (work.fullScriptText && !work.fullScriptText.startsWith('[STORED_IN_IDB')) {
         scriptText = work.fullScriptText;
-      } else {
+      } else if (this.store.hasPurchased(work.id) || this.store.isAdmin()) {
         scriptText = await this.store.getFullScript(work.id);
       }
       if (!scriptText || scriptText.startsWith('[STORED_IN_IDB')) {
-        scriptText = work.sampleScriptText || (await this.store.getSampleScript(work.id));
+        scriptText = await this.store.getSampleScript(work.id);
       }
     }
-    if (scriptText) {
+    if (scriptText && (!this.parsedScript || this.parsedScript.rawText !== scriptText)) {
       this.parseWorkScript(work, scriptText);
     }
 

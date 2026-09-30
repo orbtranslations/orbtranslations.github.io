@@ -11,7 +11,7 @@ git add .
 
 echo.
 echo [2/3] Committing changes...
-git commit -m "fix: restore clean frame fontSettings overrides, stroke and typography (v3.6.7)"
+git commit -m "perf: instant preview opening and eliminate unauthorized getFullScript 403 calls (v3.6.8)"
 
 echo.
 echo [3/3] Pushing to GitHub (main)...

@@ -1064,6 +1064,15 @@ class Store {
       return work.fullScriptText;
     }
 
+    // 1.1. Если пользователь не покупал работу и не администратор, не делаем запрос к серверу (защита от 403 Forbidden и задержек)
+    const isAllowed = this.isAdmin() || this.hasPurchased(workId);
+    if (!isAllowed) {
+      if (work && work.sampleScriptText && !work.sampleScriptText.startsWith('[STORED_IN_IDB')) {
+        return work.sampleScriptText;
+      }
+      return null;
+    }
+
     // 2. Запрашиваем через серверную Edge Function get-work-script
     if (window.supabaseClient) {
       try {
