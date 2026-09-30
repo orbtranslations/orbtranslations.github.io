@@ -180,15 +180,18 @@
 
 .clean-frame-text-slot {
   position: absolute;
-  z-index: 15;
+  z-index: 30;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
   justify-content: flex-start;
   overflow-y: auto !important;
   overflow-x: hidden !important;
+  pointer-events: auto !important;
   scrollbar-width: thin;
   scrollbar-color: #6366f1 rgba(0, 0, 0, 0.25);
+  line-height: 1.4;
+  background: transparent !important;
 }
 
 .clean-frame-text-content {
@@ -196,7 +199,7 @@
   word-break: break-word;
   box-sizing: border-box;
   white-space: pre-line;
-  line-height: 1.35;
+  line-height: 1.4;
 }
 
 /* Bottom Visual Novel Dialogue Frame */

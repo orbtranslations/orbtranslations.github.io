@@ -2281,8 +2281,14 @@ class ReaderService {
         if (layer.customImage) return layer.customImage;
         const imgName = layer.image;
         if (!imgName) return '';
-        if (overlayData.frameAssets && overlayData.frameAssets[imgName]) {
-          return overlayData.frameAssets[imgName];
+        if (overlayData.frameAssets) {
+          if (overlayData.frameAssets[imgName]) return overlayData.frameAssets[imgName];
+          const cleanTarget = imgName.replace(/\.[^/.]+$/, '').toLowerCase();
+          for (const [k, dURL] of Object.entries(overlayData.frameAssets)) {
+            if (k.toLowerCase() === imgName.toLowerCase() || k.replace(/\.[^/.]+$/, '').toLowerCase() === cleanTarget) {
+              return dURL;
+            }
+          }
         }
         const imgStr = String(imgName).toLowerCase();
         if (imgStr.includes('рамка') || imgStr.includes('border') || imgStr.includes('frame')) {
@@ -2319,17 +2325,13 @@ class ReaderService {
         layerImg.style.objectFit = isStretch ? 'fill' : 'fill';
 
         layerImg.onload = () => {
-          if (!layer._frameNatW || layer._frameNatW <= 0) {
-            layer._frameNatW = layerImg.naturalWidth;
-            layer._frameNatH = layerImg.naturalHeight;
-          }
+          layer._frameNatW = layerImg.naturalWidth;
+          layer._frameNatH = layerImg.naturalHeight;
           if (typeof updateFrameLayout === 'function') updateFrameLayout();
         };
         if (layerImg.complete && layerImg.naturalWidth > 0) {
-          if (!layer._frameNatW || layer._frameNatW <= 0) {
-            layer._frameNatW = layerImg.naturalWidth;
-            layer._frameNatH = layerImg.naturalHeight;
-          }
+          layer._frameNatW = layerImg.naturalWidth;
+          layer._frameNatH = layerImg.naturalHeight;
         }
 
         layerElements.push({ img: layerImg, layer, isStretch, lx, ly });
@@ -2352,6 +2354,8 @@ class ReaderService {
         page.key,
         cleanBase,
         page.targetKey,
+        page.subfolder ? `${page.subfolder}/${cleanBase}` : null,
+        page.subfolder ? `${page.subfolder}/${page.key}` : null,
         `Image-M/${cleanBase}`,
         `Image-M/${page.key}`,
         `Image/${cleanBase}`,
@@ -2376,6 +2380,7 @@ class ReaderService {
         textSlot = document.createElement('div');
         textSlot.className = 'clean-frame-text-slot';
         textSlot.style.zIndex = '30';
+        textSlot.style.pointerEvents = 'auto';
 
         textContent = document.createElement('div');
         textContent.className = 'clean-frame-text-content';
@@ -2396,7 +2401,7 @@ class ReaderService {
         textContent.style.color = matchedPreset.color || (isInternalCleanFrame ? '#000000' : '#ffffff');
         textContent.style.fontFamily = matchedPreset.fontFamily || 'Arial, sans-serif';
         textContent.style.textAlign = matchedPreset.textAlign || (isInternalCleanFrame ? 'center' : 'left');
-        textContent.style.lineHeight = matchedPreset.lineHeight || 1.35;
+        textContent.style.lineHeight = matchedPreset.lineHeight || 1.4;
         if (matchedPreset.fontWeight === 'bold') textContent.style.fontWeight = 'bold';
 
         if (matchedPreset.strokeWidth > 0) {
@@ -2435,7 +2440,7 @@ class ReaderService {
             widthPercent = 100 * lScaleX;
           }
 
-          if (natH && curSceneH > 0) {
+          if (natH && curSceneH > 0 && isTitleOrGraphic) {
             heightPercent = ((natH * lScaleY) / curSceneH) * 100;
           } else if (isTitleOrGraphic) {
             heightPercent = 100 * lScaleY;
@@ -2452,7 +2457,6 @@ class ReaderService {
           const bScaleY = (boundLayer.scaleY !== undefined ? boundLayer.scaleY : (boundLayer.scale !== undefined ? boundLayer.scale : (fData.scale !== undefined ? fData.scale : 100))) / 100;
 
           const bNatW = boundLayer._frameNatW || fData._frameNatW;
-          const bNatH = boundLayer._frameNatH || fData._frameNatH;
 
           let bWidthPercent = 50.4 * bScaleX;
           let bHeightPercent = 100 * bScaleY;
@@ -2460,19 +2464,17 @@ class ReaderService {
           if (bNatW && curSceneW > 0) {
             bWidthPercent = ((bNatW * bScaleX) / curSceneW) * 100;
           }
-          if (bNatH && curSceneH > 0) {
-            bHeightPercent = ((bNatH * bScaleY) / curSceneH) * 100;
-          }
 
           const bX = boundLayer.x !== undefined ? boundLayer.x : posX;
           const bY = boundLayer.y !== undefined ? boundLayer.y : posY;
 
-          // Стандартная зона текста карточки героини (Рамка 5): отступы 6% сверху/снизу и 6% по бокам
-          const tz = boundLayer.textZone || fData.textZone || { x: 6, y: 5, w: 88, h: 90 };
+          // Стандартная зона текста карточки героини (Рамка 5): отступы 5.2% по бокам и 3.6% сверху/снизу
+          const tz = boundLayer.textZone || fData.textZone || { x: 5.2, y: 3.6, w: 89.9, h: 93 };
           textSlot.style.left = `${bX + (tz.x / 100) * bWidthPercent}%`;
           textSlot.style.top = `${bY + (tz.y / 100) * bHeightPercent}%`;
           textSlot.style.width = `${(tz.w / 100) * bWidthPercent}%`;
           textSlot.style.height = `${(tz.h / 100) * bHeightPercent}%`;
+          textSlot.scrollTop = 0;
 
           // Масштабирование шрифта под реальное разрешение сцены
           const scaleRatio = curSceneW / 1000;
