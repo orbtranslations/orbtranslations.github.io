@@ -1807,7 +1807,7 @@ class ReaderService {
       if (!scriptText || scriptText.startsWith('[STORED_IN_IDB')) {
         if (work.fullScriptText && !work.fullScriptText.startsWith('[STORED_IN_IDB')) {
           scriptText = work.fullScriptText;
-        } else if (this.store.hasPurchased(work.id) || this.store.isAdmin()) {
+        } else if (this.store.hasPurchased(work.id) || (typeof this.store.isAdmin === 'function' ? this.store.isAdmin() : this.store.getRole() === 'admin')) {
           scriptText = await this.store.getFullScript(work.id);
         }
       }

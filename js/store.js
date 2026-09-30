@@ -531,6 +531,10 @@ class Store {
     this.saveToStorage();
   }
 
+  isAdmin() {
+    return this.getRole() === 'admin' || (window.auth && typeof window.auth.isAdmin === 'function' && window.auth.isAdmin());
+  }
+
   // Пользователь и Баланс
   getCurrentUser() {
     if (!this.data.currentUser) {
@@ -1106,7 +1110,8 @@ class Store {
     }
 
     // 3. Если пользователь не покупал работу и не администратор, не делаем запрос к серверу (защита от 403 Forbidden и задержек)
-    const isAllowed = this.isAdmin() || this.hasPurchased(workId);
+    const isAdminUser = (typeof this.isAdmin === 'function' ? this.isAdmin() : this.getRole() === 'admin');
+    const isAllowed = isAdminUser || this.hasPurchased(workId);
     if (!isAllowed) {
       if (work && work.sampleScriptText && !work.sampleScriptText.startsWith('[STORED_IN_IDB')) {
         return work.sampleScriptText;

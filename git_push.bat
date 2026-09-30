@@ -11,7 +11,7 @@ git add .
 
 echo.
 echo [2/3] Committing changes...
-git commit -m "perf: instant preview opening with real-time loading progress and fast IDB hydration (v3.6.9)"
+git commit -m "fix: define Store.isAdmin and resilient role checks for purchased works (v3.7.0)"
 
 echo.
 echo [3/3] Pushing to GitHub (main)...
