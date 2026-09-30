@@ -250,6 +250,14 @@
   object-fit: cover;
 }
 
+.dialog-portrait-slot img.portrait-crop-css {
+  position: absolute !important;
+  max-width: none !important;
+  max-height: none !important;
+  object-fit: fill !important;
+  pointer-events: none !important;
+}
+
 .dialog-frame-img {
   position: absolute;
   top: 0;

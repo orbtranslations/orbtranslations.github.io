@@ -1840,6 +1840,13 @@ class ReaderService {
    */
   cropImageToDataUrl(imgSrc, crop, portrait = null) {
     return new Promise((resolve) => {
+      const isLocal = imgSrc.startsWith('data:') || imgSrc.startsWith('blob:') || imgSrc.startsWith('/') || imgSrc.startsWith(window.location.origin);
+      if (!isLocal) {
+        // Для внешних изображений не используем Canvas с crossOrigin во избежание CORS блокировки браузером
+        resolve(null);
+        return;
+      }
+
       const img = new Image();
       img.crossOrigin = 'anonymous';
       img.onload = () => {
@@ -1863,7 +1870,6 @@ class ReaderService {
           try {
             resolve(cvs.toDataURL('image/png'));
           } catch (corsErr) {
-            // Tainted canvas (CORS не разрешен внешним сервером)
             resolve(null);
           }
         } catch (e) {
@@ -1921,13 +1927,61 @@ class ReaderService {
       return;
     }
 
-    // 4. Загружаем изображение и вычисляем нарезку
+    const isLocalOrData = srcUrl.startsWith('data:') || srcUrl.startsWith('blob:') || srcUrl.startsWith('/') || srcUrl.startsWith(window.location.origin);
+
+    // Функция гарантированного DOM/CSS кропа: работает для ЛЮБЫХ внешних URL без CORS!
+    const renderDomCssCrop = () => {
+      slot.innerHTML = '';
+      const cssImg = document.createElement('img');
+      cssImg.className = 'portrait-crop-css';
+      cssImg.alt = portraitObj.name || '';
+
+      const applyCrop = () => {
+        const natW = cssImg.naturalWidth || 1280;
+        const natH = cssImg.naturalHeight || 720;
+        const norm = this.getNormalizedCrop(portraitObj.crop, natW, natH, portraitObj);
+
+        const scaleW = norm.w > 0 ? (1 / norm.w) * 100 : 100;
+        const scaleH = norm.h > 0 ? (1 / norm.h) * 100 : 100;
+        const leftPercent = norm.w > 0 ? (-norm.x * scaleW) : 0;
+        const topPercent = norm.h > 0 ? (-norm.y * scaleH) : 0;
+
+        cssImg.style.setProperty('position', 'absolute', 'important');
+        cssImg.style.setProperty('left', `${leftPercent}%`, 'important');
+        cssImg.style.setProperty('top', `${topPercent}%`, 'important');
+        cssImg.style.setProperty('width', `${scaleW}%`, 'important');
+        cssImg.style.setProperty('height', `${scaleH}%`, 'important');
+        cssImg.style.setProperty('max-width', 'none', 'important');
+        cssImg.style.setProperty('max-height', 'none', 'important');
+        cssImg.style.setProperty('object-fit', 'fill', 'important');
+        cssImg.style.setProperty('pointer-events', 'none', 'important');
+      };
+
+      cssImg.onload = applyCrop;
+      cssImg.onerror = () => {
+        slot.innerHTML = '';
+      };
+      cssImg.src = srcUrl;
+      slot.appendChild(cssImg);
+
+      if (cssImg.complete && cssImg.naturalWidth > 0) {
+        applyCrop();
+      }
+    };
+
+    // Если ресурс внешний (http/https с внешнего хостинга), сразу рендерим через CSS без crossOrigin,
+    // чтобы браузер ни в коем случае не заблокировал изображение политикой CORS!
+    if (!isLocalOrData) {
+      renderDomCssCrop();
+      return;
+    }
+
+    // Для локальных blob / data URL используем нарезку через Canvas
     const img = new Image();
     img.crossOrigin = 'anonymous';
     img.onload = () => {
       const norm = this.getNormalizedCrop(portraitObj.crop, img.naturalWidth, img.naturalHeight, portraitObj);
 
-      // Пытаемся нарезать через Canvas
       let croppedDataUrl = null;
       try {
         const cvs = document.createElement('canvas');
@@ -1942,12 +1996,11 @@ class ReaderService {
         croppedDataUrl = cvs.toDataURL('image/png');
         this.portraitCache.set(cacheKey, croppedDataUrl);
       } catch (canvasErr) {
-        // Tainted canvas (CORS внешнего сервера)
         croppedDataUrl = null;
       }
 
-      slot.innerHTML = '';
       if (croppedDataUrl) {
+        slot.innerHTML = '';
         const pImg = document.createElement('img');
         pImg.src = croppedDataUrl;
         pImg.alt = '';
@@ -1956,30 +2009,11 @@ class ReaderService {
         pImg.style.objectFit = 'cover';
         slot.appendChild(pImg);
       } else {
-        // Надежный DOM/CSS fallback: масштабируем и позиционируем исходное изображение в слоте без Canvas!
-        // Правила CORS не блокируют отображение DOM img
-        const cssImg = document.createElement('img');
-        cssImg.src = srcUrl;
-        cssImg.alt = '';
-        const scaleW = norm.w > 0 ? (1 / norm.w) * 100 : 100;
-        const scaleH = norm.h > 0 ? (1 / norm.h) * 100 : 100;
-        const leftPercent = norm.w > 0 ? (-norm.x * scaleW) : 0;
-        const topPercent = norm.h > 0 ? (-norm.y * scaleH) : 0;
-
-        cssImg.style.position = 'absolute';
-        cssImg.style.left = `${leftPercent}%`;
-        cssImg.style.top = `${topPercent}%`;
-        cssImg.style.width = `${scaleW}%`;
-        cssImg.style.height = `${scaleH}%`;
-        cssImg.style.maxWidth = 'none';
-        cssImg.style.maxHeight = 'none';
-        cssImg.style.objectFit = 'fill';
-        cssImg.style.pointerEvents = 'none';
-        slot.appendChild(cssImg);
+        renderDomCssCrop();
       }
     };
     img.onerror = () => {
-      slot.innerHTML = '';
+      renderDomCssCrop();
     };
     img.src = srcUrl;
   }
