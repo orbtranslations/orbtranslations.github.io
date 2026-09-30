@@ -11,7 +11,7 @@ git add .
 
 echo.
 echo [2/3] Committing changes...
-git commit -m "fix: match clean-frame font scaling, stroke and responsive layout with original editor (v3.7.4)"
+git commit -m "perf: instant reader modal opening, startup loading feedback and prevent 403 latency (v3.7.5)"
 
 echo.
 echo [3/3] Pushing to GitHub (main)...

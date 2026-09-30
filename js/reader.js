@@ -608,10 +608,13 @@ class ReaderService {
    * Управление состоянием загрузки кнопки в каталоге
    */
   setButtonLoading(workId, isLoading, event = null) {
-    let btn = (event && (event.currentTarget || event.target));
-    if (!btn || !btn.tagName || btn.tagName.toLowerCase() !== 'button') {
-      btn = document.querySelector(`button[onclick*="openPreview('${workId}')"]`) ||
-            document.querySelector(`button[onclick*="openFullTranslationModal('${workId}')"]`);
+    let btn = (event && event.target && event.target.closest) ? event.target.closest('button') : null;
+    if (!btn && event && event.currentTarget && event.currentTarget.closest) {
+      btn = event.currentTarget.closest('button');
+    }
+    if (!btn) {
+      btn = document.querySelector(`button[onclick*="openPreview('${workId}'"]`) ||
+            document.querySelector(`button[onclick*="openFullTranslationModal('${workId}'"]`);
     }
     if (!btn) return;
 
@@ -704,18 +707,27 @@ class ReaderService {
 
     try {
       let work = this.store.getWorkById(workId);
-      if (!work && this.store.initPromise) {
-        try { await this.store.initPromise; } catch (e) {}
+      if (!work) {
+        this.showReaderLoading(null, {
+          percent: 15,
+          status: isEn ? 'Connecting to catalog...' : 'Подключение к каталогу...'
+        });
+        if (this.store.initPromise) {
+          try { await this.store.initPromise; } catch (e) {}
+        }
         work = this.store.getWorkById(workId);
       }
-      if (!work) return;
+      if (!work) {
+        this.closeReader();
+        return;
+      }
 
       this.currentWork = work;
       this.isFullMode = false;
 
       // Сразу показываем читательский экран с визуальным индикатором прогресса (0мс отклик)
       this.showReaderLoading(work, {
-        percent: 20,
+        percent: 25,
         status: isEn ? 'Reading novel script...' : 'Считывание скрипта новеллы...'
       });
 
@@ -814,11 +826,20 @@ class ReaderService {
 
     try {
       let work = this.store.getWorkById(workId);
-      if (!work && this.store.initPromise) {
-        try { await this.store.initPromise; } catch (e) {}
+      if (!work) {
+        this.showReaderLoading(null, {
+          percent: 15,
+          status: isEn ? 'Connecting to catalog...' : 'Подключение к каталогу...'
+        });
+        if (this.store.initPromise) {
+          try { await this.store.initPromise; } catch (e) {}
+        }
         work = this.store.getWorkById(workId);
       }
-      if (!work) return;
+      if (!work) {
+        this.closeReader();
+        return;
+      }
 
       const isPurchased = this.store.hasPurchased(workId);
 
@@ -901,6 +922,16 @@ class ReaderService {
             'info'
           );
         }
+        return;
+      }
+
+      // 3. Если для работы настроены демо/онлайн-изображения, мгновенно запускаем чтение по ним
+      const hasConfiguredDemoImages = Array.isArray(work.demoImages)
+        ? work.demoImages.some(item => item && item.url)
+        : (work.demoImages && typeof work.demoImages === 'object' && Object.keys(work.demoImages).length > 0);
+
+      if (hasConfiguredDemoImages) {
+        await this.loadDemoImages(null, fullScript || null);
         return;
       }
 
@@ -1501,6 +1532,7 @@ class ReaderService {
     this.pages = entries.map((entry, idx) => {
       const targetKey = entry.targetKey || entry.key;
       const rawFile = this.resolveFileForTarget(targetKey, entry.subfolder);
+      const demoUrl = this.getDemoImageUrl(this.currentWork, idx, entry.key || targetKey);
 
       return {
         index: idx,
@@ -1510,7 +1542,8 @@ class ReaderService {
         name: entry.filename || entry.key,
         entry: entry,
         rawFile: rawFile,
-        url: null,
+        url: (!rawFile && demoUrl) ? demoUrl : null,
+        sourceUrl: (!rawFile && demoUrl) ? demoUrl : null,
         isLocked: isPreview && (idx >= previewLimit)
       };
     });
@@ -1826,8 +1859,6 @@ class ReaderService {
       if (!scriptText || scriptText.startsWith('[STORED_IN_IDB')) {
         if (work.fullScriptText && !work.fullScriptText.startsWith('[STORED_IN_IDB')) {
           scriptText = work.fullScriptText;
-        } else if (this.store.hasPurchased(work.id) || (typeof this.store.isAdmin === 'function' ? this.store.isAdmin() : this.store.getRole() === 'admin')) {
-          scriptText = await this.store.getFullScript(work.id);
         }
       }
     }
@@ -3481,8 +3512,7 @@ class ReaderService {
         textContent.style.webkitFontSmoothing = 'antialiased';
 
         const baseFontSize = effectivePreset.fontSize || 24;
-        const initialCqw = (baseFontSize / 10).toFixed(2);
-        textContent.style.fontSize = `clamp(11px, ${initialCqw}cqw, ${baseFontSize}px)`;
+        textContent.style.fontSize = `${baseFontSize}px`;
 
         if (effectivePreset.strokeWidth > 0) {
           textContent.style.webkitTextStroke = `${effectivePreset.strokeWidth}px ${effectivePreset.strokeColor || '#ffffff'}`;
@@ -3612,10 +3642,9 @@ class ReaderService {
           const scaleRatio = effectiveDisplayW / 1000;
           const baseFontSize = effectivePreset.fontSize || 24;
           const effectiveFontSize = Math.max(10, Math.round(baseFontSize * scaleRatio));
-          const cqwFontSize = (baseFontSize / 10).toFixed(2);
 
           if (textContent) {
-            textContent.style.fontSize = `clamp(11px, ${cqwFontSize}cqw, ${effectiveFontSize}px)`;
+            textContent.style.fontSize = `${effectiveFontSize}px`;
 
             if (effectivePreset.strokeWidth > 0) {
               const effectiveStrokeWidth = Math.max(0.5, +(effectivePreset.strokeWidth * scaleRatio).toFixed(1));
