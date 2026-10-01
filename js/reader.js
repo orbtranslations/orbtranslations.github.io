@@ -2413,11 +2413,32 @@ class ReaderService {
   /**
    * Разрешение URL источника изображения для портрета (поддержка локальных файлов, демо-сцен и фонов)
    */
-  async resolvePortraitSourceUrl(portrait) {
+  async resolvePortraitSourceUrl(portrait, currentPage = null) {
     if (!portrait) return null;
     if (portrait.dataURL) return portrait.dataURL;
 
     const srcKey = (portrait.sourceImage || '').trim();
+    if (!srcKey) return null;
+
+    const cleanSrc = srcKey.split(/[\/\\]/).pop().replace(/\.[^/.]+$/, '').toLowerCase();
+    const normSrc = this.normalizeKeyForMatching(srcKey);
+
+    // 0. Если передан currentPage и его сцена совпадает с источником портрета — берем его URL
+    if (currentPage) {
+      const pKey = (currentPage.key || '').split(/[\/\\]/).pop().replace(/\.[^/.]+$/, '').toLowerCase();
+      const pTarget = (currentPage.targetKey || '').split(/[\/\\]/).pop().replace(/\.[^/.]+$/, '').toLowerCase();
+      const normP = this.normalizeKeyForMatching(currentPage.key || currentPage.targetKey || currentPage.name);
+      if (pKey === cleanSrc || pTarget === cleanSrc || (normSrc && normP === normSrc)) {
+        let curUrl = currentPage.url || currentPage.sourceUrl;
+        if (curUrl) {
+          if (this.isShortLink(curUrl)) {
+            curUrl = await this.resolveImageUrl(curUrl);
+            if (curUrl) currentPage.url = curUrl;
+          }
+          if (curUrl) return curUrl;
+        }
+      }
+    }
 
     // 1. Поиск в загруженном файловом архиве/папке (строго если архив принадлежит текущей открытой работе)
     const workId = this.currentWork?.id;
@@ -2437,43 +2458,65 @@ class ReaderService {
     // 2. В режиме демо-сцен или интернет-ссылок
     if (this.pages && this.pages.length > 0) {
       // 2a. Ищем страницу по имени файла/сцены (например, 02-0, 03-01)
-      if (srcKey) {
-        const cleanSrc = srcKey.split(/[\/\\]/).pop().replace(/\.[^/.]+$/, '').toLowerCase();
-        const normSrc = this.normalizeKeyForMatching(srcKey);
-        const matchedPage = this.pages.find(p => {
-          if (!p || !p.url) return false;
-          const pKey = (p.key || '').split(/[\/\\]/).pop().replace(/\.[^/.]+$/, '').toLowerCase();
-          const pTarget = (p.targetKey || '').split(/[\/\\]/).pop().replace(/\.[^/.]+$/, '').toLowerCase();
-          const pName = (p.name || '').split(/[\/\\]/).pop().replace(/\.[^/.]+$/, '').toLowerCase();
-          const normP = this.normalizeKeyForMatching(p.key || p.targetKey || p.name);
-          return pKey === cleanSrc || pTarget === cleanSrc || pName === cleanSrc || pKey.includes(cleanSrc) || (normSrc && normP === normSrc);
-        });
-        if (matchedPage && matchedPage.url) {
-          return matchedPage.url;
+      const matches = this.pages.filter(p => {
+        if (!p) return false;
+        const pKey = (p.key || '').split(/[\/\\]/).pop().replace(/\.[^/.]+$/, '').toLowerCase();
+        const pTarget = (p.targetKey || '').split(/[\/\\]/).pop().replace(/\.[^/.]+$/, '').toLowerCase();
+        const pName = (p.name || '').split(/[\/\\]/).pop().replace(/\.[^/.]+$/, '').toLowerCase();
+        const normP = this.normalizeKeyForMatching(p.key || p.targetKey || p.name);
+        return pKey === cleanSrc || pTarget === cleanSrc || pName === cleanSrc || pKey.includes(cleanSrc) || (normSrc && normP === normSrc);
+      });
+
+      // Приоритет 1: страница, у которой уже есть готовый прямой URL (не shortlink)
+      const resolvedMatch = matches.find(p => p.url && !this.isShortLink(p.url));
+      if (resolvedMatch && resolvedMatch.url) {
+        return resolvedMatch.url;
+      }
+
+      // Приоритет 2: страница с URL или sourceUrl — разрешаем через resolveImageUrl
+      for (const m of matches) {
+        const candidateUrl = m.url || m.sourceUrl;
+        if (candidateUrl) {
+          if (this.isShortLink(candidateUrl)) {
+            const fresh = await this.resolveImageUrl(candidateUrl);
+            if (fresh) {
+              m.url = fresh;
+              return fresh;
+            }
+          } else {
+            return candidateUrl;
+          }
         }
       }
 
       // 2b. Ищем в demoImages работы
       const work = this.currentWork;
       if (work && work.demoImages) {
-        const demoUrl = this.getDemoImageUrl(work, -1, srcKey);
-        if (demoUrl) return demoUrl;
+        let demoUrl = this.getDemoImageUrl(work, -1, srcKey);
+        if (demoUrl) {
+          if (this.isShortLink(demoUrl)) {
+            demoUrl = await this.resolveImageUrl(demoUrl);
+          }
+          if (demoUrl) return demoUrl;
+        }
       }
 
       // 2c. Проверяем текущую открытую сцену в читалке
       const curPage = this.pages[this.currentIndex];
-      if (curPage && curPage.url) {
-        if (srcKey) {
-          const normSrc = this.normalizeKeyForMatching(srcKey);
-          const normCur = this.normalizeKeyForMatching(curPage.key || curPage.targetKey || curPage.name);
-          const srcScene = normSrc.match(/^([a-z]*\d+)/);
-          const curScene = normCur.match(/^([a-z]*\d+)/);
-          if (srcScene && curScene && srcScene[1] === curScene[1]) {
-            return curPage.url;
+      if (curPage) {
+        const normCur = this.normalizeKeyForMatching(curPage.key || curPage.targetKey || curPage.name);
+        const srcScene = normSrc ? normSrc.match(/^([a-z]*\d+)/) : null;
+        const curScene = normCur ? normCur.match(/^([a-z]*\d+)/) : null;
+        if (!srcScene || (curScene && srcScene[1] === curScene[1])) {
+          let curUrl = curPage.url || curPage.sourceUrl;
+          if (curUrl) {
+            if (this.isShortLink(curUrl)) {
+              curUrl = await this.resolveImageUrl(curUrl);
+              if (curUrl) curPage.url = curUrl;
+            }
+            if (curUrl) return curUrl;
           }
         }
-        // Если сцена текущей реплики совпадает, используем фон текущей сцены
-        return curPage.url;
       }
     }
 
@@ -2634,7 +2677,9 @@ class ReaderService {
       }
 
       const img = new Image();
-      img.crossOrigin = 'anonymous';
+      if (!imgSrc.startsWith('blob:') && !imgSrc.startsWith('data:')) {
+        img.crossOrigin = 'anonymous';
+      }
       img.onload = () => {
         try {
           const norm = this.getNormalizedCrop(crop, img.naturalWidth, img.naturalHeight, portrait);
@@ -2670,7 +2715,7 @@ class ReaderService {
   /**
    * Надежный рендеринг портрета в слоте рамки диалога (Canvas + DOM/CSS fallback)
    */
-  async renderPortraitInSlot(slot, portraitObj, baseImg) {
+  async renderPortraitInSlot(slot, portraitObj, baseImg, page = null) {
     if (!slot || !portraitObj) return;
 
     slot.innerHTML = '';
@@ -2704,12 +2749,46 @@ class ReaderService {
     }
 
     // 3. Получаем URL исходного изображения
-    let srcUrl = await this.resolvePortraitSourceUrl(portraitObj);
-    if (!slot.isConnected) return;
-    if (!srcUrl && baseImg && baseImg.src) {
+    const srcKey = (portraitObj.sourceImage || '').trim();
+    const cleanSrc = srcKey.split(/[\/\\]/).pop().replace(/\.[^/.]+$/, '').toLowerCase();
+    const normSrc = this.normalizeKeyForMatching(srcKey);
+
+    let srcUrl = null;
+
+    // ПРИОРИТЕТ 1: Если текущая отображаемая сцена совпадает с источником портрета,
+    // используем уже загруженное и проверенное изображение baseImg текущей сцены!
+    if (baseImg && baseImg.src && !this.isShortLink(baseImg.src) && !baseImg.src.includes('cover-1.svg')) {
+      const pageKey = page ? (page.key || page.targetKey || page.name) : '';
+      const cleanPage = (pageKey || '').split(/[\/\\]/).pop().replace(/\.[^/.]+$/, '').toLowerCase();
+      const normPage = this.normalizeKeyForMatching(pageKey);
+
+      const isCurrentSceneMatch = cleanSrc && (
+        cleanSrc === cleanPage ||
+        (normSrc && normPage && normSrc === normPage) ||
+        (cleanPage && (cleanPage.includes(cleanSrc) || cleanSrc.includes(cleanPage)))
+      );
+
+      if (isCurrentSceneMatch) {
+        srcUrl = baseImg.src;
+      }
+    }
+
+    // ПРИОРИТЕТ 2: Если источник из другой сцены или baseImg не совпадает, разрешаем через resolvePortraitSourceUrl
+    if (!srcUrl) {
+      srcUrl = await this.resolvePortraitSourceUrl(portraitObj, page);
+    }
+
+    // ПРИОРИТЕТ 3: Fallback на baseImg текущей сцены
+    if (!srcUrl && baseImg && baseImg.src && !this.isShortLink(baseImg.src) && !baseImg.src.includes('cover-1.svg')) {
       srcUrl = baseImg.src;
     }
 
+    // Если получен shortlink, обязательно разрешаем его в прямой URL изображения
+    if (srcUrl && this.isShortLink(srcUrl)) {
+      srcUrl = await this.resolveImageUrl(srcUrl);
+    }
+
+    if (!slot.isConnected && !slot.closest('.dialog-frame-wrapper')) return;
     if (!srcUrl || !portraitObj.crop) {
       return;
     }
@@ -2746,7 +2825,12 @@ class ReaderService {
 
       cssImg.onload = applyCrop;
       cssImg.onerror = () => {
-        slot.innerHTML = '';
+        // Резервный fallback: если внешняя ссылка дала ошибку, пробуем baseImg
+        if (baseImg && baseImg.src && baseImg.src !== srcUrl && !this.isShortLink(baseImg.src) && !baseImg.src.includes('cover-1.svg')) {
+          cssImg.src = baseImg.src;
+        } else {
+          slot.innerHTML = '';
+        }
       };
       cssImg.src = srcUrl;
       slot.appendChild(cssImg);
@@ -2765,7 +2849,9 @@ class ReaderService {
 
     // Для локальных blob / data URL используем нарезку через Canvas
     const img = new Image();
-    img.crossOrigin = 'anonymous';
+    if (!srcUrl.startsWith('blob:') && !srcUrl.startsWith('data:')) {
+      img.crossOrigin = 'anonymous';
+    }
     img.onload = () => {
       const norm = this.getNormalizedCrop(portraitObj.crop, img.naturalWidth, img.naturalHeight, portraitObj);
 
@@ -2790,7 +2876,7 @@ class ReaderService {
         slot.innerHTML = '';
         const pImg = document.createElement('img');
         pImg.src = croppedDataUrl;
-        pImg.alt = '';
+        pImg.alt = portraitObj.name || '';
         pImg.style.width = '100%';
         pImg.style.height = '100%';
         pImg.style.objectFit = 'cover';
@@ -4066,6 +4152,7 @@ class ReaderService {
 
       const frameWrapper = document.createElement('div');
       frameWrapper.className = 'dialog-frame-wrapper';
+      domBox.appendChild(frameWrapper);
 
       // Клик по диалоговой рамке переключает на следующую реплику
       frameWrapper.addEventListener('click', (e) => {
@@ -4112,8 +4199,8 @@ class ReaderService {
               portraitSlot.style.width = `${pz.w}%`;
               portraitSlot.style.height = `${pz.h}%`;
 
-              this.renderPortraitInSlot(portraitSlot, portraitObj, baseImg);
               frameWrapper.appendChild(portraitSlot);
+              this.renderPortraitInSlot(portraitSlot, portraitObj, baseImg, page);
             }
           } catch (pErr) {
             console.warn('Ошибка рендеринга портрета:', pErr);
@@ -4168,7 +4255,6 @@ class ReaderService {
 
       textSlot.appendChild(textContent);
       frameWrapper.appendChild(textSlot);
-      domBox.appendChild(frameWrapper);
 
       // Динамическое автомасштабирование: текст идеально вписывается в окно без скроллбара
       const computeAndFit = () => {
