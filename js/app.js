@@ -135,6 +135,8 @@ class App {
         this.switchTab('storefront');
         const isEn = window.i18n && window.i18n.getLang() === 'en';
         this.showToast(isEn ? 'Admin panel is available for Administrators only' : 'Панель администратора доступна только Администраторам', 'warning');
+      } else if (hash === 'purchases' && window.auth.isGuest()) {
+        this.switchTab('storefront');
       } else {
         this.switchTab(hash);
       }
@@ -145,6 +147,11 @@ class App {
     if (tabName === 'admin' && !window.auth.isAdmin()) {
       const isEn = window.i18n && window.i18n.getLang() === 'en';
       this.showToast(isEn ? 'Admin panel is available for Administrators only' : 'Панель администратора доступна только Администраторам', 'error');
+      return;
+    }
+    if (tabName === 'purchases' && window.auth.isGuest()) {
+      this.switchTab('storefront');
+      this.showAuthModal('login');
       return;
     }
 
@@ -179,12 +186,21 @@ class App {
   }
 
   handleRoleVisibility(role) {
+    const isGuest = window.auth.isGuest();
     const adminNavLink = document.getElementById('nav-admin-link');
     if (adminNavLink) {
       adminNavLink.style.display = role === 'admin' ? 'flex' : 'none';
     }
 
+    const purchasesNavLink = document.getElementById('nav-purchases-link');
+    if (purchasesNavLink) {
+      purchasesNavLink.style.display = isGuest ? 'none' : 'flex';
+    }
+
     if (this.currentTab === 'admin' && role !== 'admin') {
+      this.switchTab('storefront');
+    }
+    if (this.currentTab === 'purchases' && isGuest) {
       this.switchTab('storefront');
     }
   }
@@ -196,6 +212,7 @@ class App {
     this.switchTab('storefront');
     this.renderUserHeader();
     this.renderStorefront();
+    this.handleRoleVisibility('guest');
   }
 
   /**
@@ -237,9 +254,6 @@ class App {
         const loginText = window.i18n ? window.i18n.t('btn_login') : (isEn ? '🔑 Sign In' : '🔑 Войти');
         userAuthBlock.innerHTML = `
           <div style="display: flex; align-items: center; gap: 8px;">
-            <button class="btn btn-secondary btn-small" onclick="window.app.showDepositHistoryModal()" title="${historyTitle}">
-              ${historyText}
-            </button>
             <button class="btn btn-primary btn-small" onclick="window.app.showAuthModal('login')">${loginText}</button>
           </div>
         `;
