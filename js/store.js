@@ -1440,52 +1440,47 @@ class Store {
   async getSampleScript(workId) {
     let work = this.getWorkById(workId);
 
-    // Если в памяти доступен полный скрипт, мгновенно генерируем актуальный срез с сохранением всех стилей
-    if (work && work.fullScriptText && !work.fullScriptText.startsWith('[STORED_IN_IDB') && typeof ScriptParser !== 'undefined' && ScriptParser.generatePreviewSlice) {
-      const pPages = Number(work.previewPagesCount) || 3;
-      const dImgs = work.demoImages || [];
-      const freshSlice = ScriptParser.generatePreviewSlice(work.fullScriptText, pPages, dImgs);
-      if (freshSlice) {
-        work.sampleScriptText = freshSlice;
-        return freshSlice;
-      }
-    }
+    // 1. Проверяем наличие полного скрипта в памяти или в IndexedDB, чтобы мгновенно сгенерировать свежий срез со всеми стилями
+    let fullScript = (work && work.fullScriptText && !work.fullScriptText.startsWith('[STORED_IN_IDB')) ? work.fullScriptText : null;
+    let idbWork = null;
 
-    if (work && work.sampleScriptText && !work.sampleScriptText.startsWith('[STORED_IN_IDB')) {
-      return work.sampleScriptText;
-    }
-
-    // 1. Мгновенная прямая проверка в IndexedDB (~5-15 мс)
     if (typeof IDBStorage !== 'undefined') {
       try {
         const idbData = await IDBStorage.get('main_store');
         if (idbData && Array.isArray(idbData.works)) {
-          const idbWork = idbData.works.find(w => w && w.id === workId);
-          if (idbWork) {
-            if (idbWork.fullScriptText && !idbWork.fullScriptText.startsWith('[STORED_IN_IDB') && typeof ScriptParser !== 'undefined' && ScriptParser.generatePreviewSlice) {
-              const pPages = Number(idbWork.previewPagesCount || (work && work.previewPagesCount)) || 3;
-              const dImgs = idbWork.demoImages || (work && work.demoImages) || [];
-              const freshSlice = ScriptParser.generatePreviewSlice(idbWork.fullScriptText, pPages, dImgs);
-              if (freshSlice) {
-                if (work) {
-                  work.fullScriptText = idbWork.fullScriptText;
-                  work.sampleScriptText = freshSlice;
-                }
-                return freshSlice;
-              }
-            }
-            if (idbWork.sampleScriptText && !idbWork.sampleScriptText.startsWith('[STORED_IN_IDB')) {
-              if (work) work.sampleScriptText = idbWork.sampleScriptText;
-              return idbWork.sampleScriptText;
-            }
+          idbWork = idbData.works.find(w => w && w.id === workId);
+          if (idbWork && idbWork.fullScriptText && !idbWork.fullScriptText.startsWith('[STORED_IN_IDB')) {
+            fullScript = idbWork.fullScriptText;
+            if (work) work.fullScriptText = fullScript;
           }
         }
       } catch (e) {
-        console.warn('Ошибка прямого чтения sampleScriptText из IDB:', e);
+        console.warn('Ошибка проверки fullScriptText в IDB:', e);
       }
     }
 
-    // 2. Если в локальном IDB нет — ожидаем завершения сетевой инициализации
+    if (fullScript && typeof ScriptParser !== 'undefined' && ScriptParser.generatePreviewSlice) {
+      const pPages = Number((work && work.previewPagesCount) || (idbWork && idbWork.previewPagesCount)) || 3;
+      const dImgs = (work && work.demoImages) || (idbWork && idbWork.demoImages) || [];
+      const freshSlice = ScriptParser.generatePreviewSlice(fullScript, pPages, dImgs);
+      if (freshSlice) {
+        if (work) work.sampleScriptText = freshSlice;
+        return freshSlice;
+      }
+    }
+
+    // 2. Если в памяти уже есть sampleScriptText (не заглушка)
+    if (work && work.sampleScriptText && !work.sampleScriptText.startsWith('[STORED_IN_IDB')) {
+      return work.sampleScriptText;
+    }
+
+    // 3. Мгновенная прямая проверка в IndexedDB (~5-15 мс)
+    if (idbWork && idbWork.sampleScriptText && !idbWork.sampleScriptText.startsWith('[STORED_IN_IDB')) {
+      if (work) work.sampleScriptText = idbWork.sampleScriptText;
+      return idbWork.sampleScriptText;
+    }
+
+    // 4. Если в локальном IDB нет — ожидаем завершения сетевой инициализации
     if (this.initPromise) {
       try {
         await this.initPromise;
@@ -1498,7 +1493,7 @@ class Store {
       }
     }
 
-    // 3. Прямая загрузка из Supabase public.works
+    // 5. Прямая загрузка из Supabase public.works
     if (window.supabaseClient) {
       try {
         const { data, error } = await window.supabaseClient

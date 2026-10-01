@@ -724,6 +724,7 @@ class ReaderService {
 
       this.currentWork = work;
       this.isFullMode = false;
+      this.parsedScript = null;
 
       // Сразу показываем читательский экран с визуальным индикатором прогресса (0мс отклик)
       this.showReaderLoading(work, {
@@ -1849,16 +1850,12 @@ class ReaderService {
     // 1. Получаем и парсим актуальный скрипт этой работы (для демо-режима берем только доступный sampleScript)
     let scriptText = customScript || '';
     if (!scriptText) {
-      if (this.parsedScript && this.parsedScript.rawText) {
-        scriptText = this.parsedScript.rawText;
-      } else if (work.sampleScriptText && !work.sampleScriptText.startsWith('[STORED_IN_IDB')) {
-        scriptText = work.sampleScriptText;
-      } else {
-        scriptText = await this.store.getSampleScript(work.id);
-      }
+      scriptText = await this.store.getSampleScript(work.id);
       if (!scriptText || scriptText.startsWith('[STORED_IN_IDB')) {
         if (work.fullScriptText && !work.fullScriptText.startsWith('[STORED_IN_IDB')) {
           scriptText = work.fullScriptText;
+        } else if (work.sampleScriptText && !work.sampleScriptText.startsWith('[STORED_IN_IDB')) {
+          scriptText = work.sampleScriptText;
         }
       }
     }
@@ -1982,12 +1979,45 @@ class ReaderService {
           blkSettings = dialogData[fullKey];
           break;
         }
+        const fullKeyLower = fullKey.toLowerCase();
+        const matchedKey = Object.keys(dialogData).find(dk => dk.toLowerCase() === fullKeyLower);
+        if (matchedKey && dialogData[matchedKey]) {
+          blkSettings = dialogData[matchedKey];
+          break;
+        }
       }
-      if (!blkSettings.preset && !blkSettings.fontSettings && blkSettings.borderIndex === undefined && idx !== 0) {
+      if (!blkSettings.preset && !blkSettings.fontSettings && blkSettings.borderIndex === undefined) {
         for (const k of candKeys) {
           const fullKey = `${k}_block_0`;
           if (dialogData[fullKey]) {
             blkSettings = { ...dialogData[fullKey], ...blkSettings };
+            break;
+          }
+          const fullKeyLower = fullKey.toLowerCase();
+          const matchedKey = Object.keys(dialogData).find(dk => dk.toLowerCase() === fullKeyLower);
+          if (matchedKey && dialogData[matchedKey]) {
+            blkSettings = { ...dialogData[matchedKey], ...blkSettings };
+            break;
+          }
+        }
+      }
+      // Дополнительный поиск по ключу рамки fData, если есть кастомный фрейм
+      if (!blkSettings.preset && !blkSettings.fontSettings && fData) {
+        const frameCandKeys = [
+          fData._frameKey,
+          fData.image ? fData.image.replace(/\.[^/.]+$/, '') : null,
+          `Image-M/${fData.image ? fData.image.replace(/\.[^/.]+$/, '') : ''}`,
+          `Image/${fData.image ? fData.image.replace(/\.[^/.]+$/, '') : ''}`
+        ].filter(Boolean);
+        for (const fk of frameCandKeys) {
+          const directK = `${fk}_block_${idx}`;
+          const direct0 = `${fk}_block_0`;
+          if (dialogData[directK]) {
+            blkSettings = { ...dialogData[directK], ...blkSettings };
+            break;
+          }
+          if (dialogData[direct0]) {
+            blkSettings = { ...dialogData[direct0], ...blkSettings };
             break;
           }
         }
@@ -3598,7 +3628,7 @@ class ReaderService {
         textContent.style.fontSize = `${baseFontSize}px`;
 
         if (effectivePreset.strokeWidth > 0) {
-          textContent.style.webkitTextStroke = `${effectivePreset.strokeWidth}px ${effectivePreset.strokeColor || '#ffffff'}`;
+          textContent.style.webkitTextStroke = `${effectivePreset.strokeWidth * 2}px ${effectivePreset.strokeColor || '#ffffff'}`;
         }
 
         if (effectivePreset.shadowEnabled) {
@@ -3746,7 +3776,7 @@ class ReaderService {
             }
 
             if (effectivePreset.strokeWidth > 0) {
-              const effectiveStrokeWidth = Math.max(0.5, +(effectivePreset.strokeWidth * scaleRatio).toFixed(1));
+              const effectiveStrokeWidth = Math.max(0.5, +(effectivePreset.strokeWidth * 2 * scaleRatio).toFixed(1));
               textContent.style.webkitTextStroke = `${effectiveStrokeWidth}px ${effectivePreset.strokeColor || '#ffffff'}`;
             } else {
               textContent.style.webkitTextStroke = '0px transparent';
