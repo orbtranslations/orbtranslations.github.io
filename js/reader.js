@@ -1777,6 +1777,25 @@ class ReaderService {
       });
     }
 
+    // Сортировка демо-страниц по номеру/ключу (Natural sort)
+    normalizedList.sort((a, b) => {
+      const valA = (a && a.page !== undefined) ? String(a.page).trim() : '';
+      const valB = (b && b.page !== undefined) ? String(b.page).trim() : '';
+      if (!valA && !valB) return 0;
+      if (!valA) return 1;
+      if (!valB) return -1;
+      try {
+        const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+        const cmp = collator.compare(valA, valB);
+        if (cmp !== 0) return cmp;
+      } catch (e) {
+        const numA = Number(valA);
+        const numB = Number(valB);
+        if (!isNaN(numA) && !isNaN(numB) && numA !== numB) return numA - numB;
+      }
+      return valA.localeCompare(valB);
+    });
+
     normalizedList.forEach((item, itemIdx) => {
       const rawPage = item.page;
       const num = Number(rawPage);

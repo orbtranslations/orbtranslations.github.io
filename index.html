@@ -266,8 +266,11 @@
               </div>
 
               <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-                <button type="button" class="btn btn-secondary btn-small" id="admin-add-demo-image-btn" onclick="window.admin.addDemoImageRow()">
+                <button type="button" class="btn btn-secondary btn-small" id="admin-add-demo-image-btn" onclick="window.admin.addDemoImageRow('', '', true)">
                   <span data-i18n="admin_add_demo_image">➕ Добавить ссылку на сцену</span>
+                </button>
+                <button type="button" class="btn btn-secondary btn-small" id="admin-sort-demo-image-btn" onclick="window.admin.sortDemoImageRows(true)">
+                  <span data-i18n="admin_sort_demo_images">↕️ Упорядочить по номерам</span>
                 </button>
                 <button type="button" class="btn btn-accent btn-small" id="admin-test-demo-image-btn" onclick="window.admin.testDemoPreviewFromForm()">
                   <span data-i18n="admin_test_demo_images">👁️ Проверить демо-превью из формы</span>

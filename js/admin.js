@@ -979,15 +979,96 @@ class AdminService {
   }
 
   /**
+   * Умное сравнение номеров страниц / ключей сцен (Natural numeric sort)
+   */
+  compareDemoPageNumbers(a, b) {
+    const valA = (a === null || a === undefined) ? '' : String(a).trim();
+    const valB = (b === null || b === undefined) ? '' : String(b).trim();
+
+    // Пустые значения всегда отправляются в конец списка
+    if (!valA && !valB) return 0;
+    if (!valA) return 1;
+    if (!valB) return -1;
+
+    try {
+      const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+      const cmp = collator.compare(valA, valB);
+      if (cmp !== 0) return cmp;
+    } catch (e) {
+      const numA = Number(valA);
+      const numB = Number(valB);
+      if (!isNaN(numA) && !isNaN(numB)) {
+        if (numA !== numB) return numA - numB;
+      }
+    }
+    return valA.localeCompare(valB);
+  }
+
+  /**
+   * Автоматическая умная сортировка строк с предпросмотром страниц в DOM
+   */
+  sortDemoImageRows(highlightMoved = true) {
+    const container = document.getElementById('admin-demo-images-container');
+    if (!container) return false;
+
+    const rows = Array.from(container.querySelectorAll('.demo-image-row'));
+    if (rows.length <= 1) return false;
+
+    const activeEl = document.activeElement;
+    const isChildFocused = activeEl && container.contains(activeEl);
+
+    // Сохраняем исходные индексы для определения смещения строк
+    const initialMap = new Map();
+    rows.forEach((row, idx) => initialMap.set(row, idx));
+
+    // Сортировка строк на основе введенного номера страницы
+    rows.sort((rowA, rowB) => {
+      const pageA = rowA.querySelector('.demo-page-num')?.value?.trim() || '';
+      const pageB = rowB.querySelector('.demo-page-num')?.value?.trim() || '';
+      const cmp = this.compareDemoPageNumbers(pageA, pageB);
+      if (cmp !== 0) return cmp;
+      return (initialMap.get(rowA) || 0) - (initialMap.get(rowB) || 0);
+    });
+
+    let movedAny = false;
+    rows.forEach((row, newIdx) => {
+      const oldIdx = initialMap.get(row);
+      container.appendChild(row);
+      if (oldIdx !== newIdx) {
+        movedAny = true;
+        if (highlightMoved) {
+          row.style.borderColor = 'var(--accent-primary, #6366f1)';
+          row.style.backgroundColor = 'rgba(99, 102, 241, 0.15)';
+          setTimeout(() => {
+            row.style.borderColor = 'rgba(255, 255, 255, 0.05)';
+            row.style.backgroundColor = 'rgba(255, 255, 255, 0.02)';
+          }, 800);
+        }
+      }
+    });
+
+    // Сохраняем фокус на поле ввода при перемещении узла DOM
+    if (isChildFocused && activeEl && typeof activeEl.focus === 'function') {
+      try {
+        if (document.activeElement !== activeEl) {
+          activeEl.focus();
+        }
+      } catch (err) {}
+    }
+
+    return movedAny;
+  }
+
+  /**
    * Добавление строки привязки веб-изображения к номеру страницы превью
    */
-  addDemoImageRow(page = '', url = '') {
+  addDemoImageRow(page = '', url = '', focusNew = false) {
     const container = document.getElementById('admin-demo-images-container');
     if (!container) return;
 
     const row = document.createElement('div');
     row.className = 'demo-image-row';
-    row.style.cssText = 'display: flex; gap: 8px; align-items: center; background: rgba(255, 255, 255, 0.02); padding: 6px 10px; border-radius: var(--radius-sm); border: 1px solid rgba(255, 255, 255, 0.05);';
+    row.style.cssText = 'display: flex; gap: 8px; align-items: center; background: rgba(255, 255, 255, 0.02); padding: 6px 10px; border-radius: var(--radius-sm); border: 1px solid rgba(255, 255, 255, 0.05); transition: background-color 0.3s ease, border-color 0.3s ease;';
 
     const isEn = window.i18n && window.i18n.getLang() === 'en';
     const pagePlaceholder = window.i18n ? window.i18n.t('admin_demo_page_placeholder') : 'Стр. № (1, 2...)';
@@ -1001,6 +1082,24 @@ class AdminService {
       <button type="button" class="btn btn-secondary btn-small" style="padding: 4px 8px; color: var(--accent-danger);" onclick="this.closest('.demo-image-row').remove()" title="${isEn ? 'Remove' : 'Удалить'}">🗑️</button>
     `;
 
+    const pageInput = row.querySelector('.demo-page-num');
+    if (pageInput) {
+      pageInput.addEventListener('change', () => {
+        this.sortDemoImageRows();
+      });
+      pageInput.addEventListener('blur', () => {
+        this.sortDemoImageRows();
+      });
+      pageInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          this.sortDemoImageRows();
+          const nextInput = row.querySelector('.demo-image-url');
+          if (nextInput) nextInput.focus();
+        }
+      });
+    }
+
     const urlInput = row.querySelector('.demo-image-url');
     if (urlInput) {
       urlInput.addEventListener('blur', (e) => {
@@ -1013,6 +1112,16 @@ class AdminService {
     }
 
     container.appendChild(row);
+
+    // Если передан номер страницы, автоматически сортируем строку по позиции
+    if (page !== '' && page !== undefined && page !== null) {
+      this.sortDemoImageRows(false);
+    }
+
+    // Если запрошена установка фокуса на новую строку
+    if (focusNew && pageInput) {
+      setTimeout(() => pageInput.focus(), 50);
+    }
   }
 
   /**
@@ -1023,23 +1132,32 @@ class AdminService {
     if (!container) return;
     container.innerHTML = '';
 
+    const list = [];
     if (Array.isArray(demoImages) && demoImages.length > 0) {
       demoImages.forEach(item => {
         if (item) {
           const page = item.page !== undefined ? item.page : (item.num || '');
           const url = item.url || '';
-          this.addDemoImageRow(page, url);
+          list.push({ page, url });
         }
       });
     } else if (typeof demoImages === 'object' && demoImages !== null && Object.keys(demoImages).length > 0) {
       Object.entries(demoImages).forEach(([page, url]) => {
-        this.addDemoImageRow(page, url);
+        list.push({ page, url });
+      });
+    }
+
+    if (list.length > 0) {
+      // Умная сортировка перед выводом строк
+      list.sort((a, b) => this.compareDemoPageNumbers(a.page, b.page));
+      list.forEach(item => {
+        this.addDemoImageRow(item.page, item.url, false);
       });
     } else {
       // По умолчанию создаем 3 пустые строки для удобства (стр. 1, 2, 3)
-      this.addDemoImageRow('1', '');
-      this.addDemoImageRow('2', '');
-      this.addDemoImageRow('3', '');
+      this.addDemoImageRow('1', '', false);
+      this.addDemoImageRow('2', '', false);
+      this.addDemoImageRow('3', '', false);
     }
   }
 
@@ -1049,6 +1167,9 @@ class AdminService {
   getDemoImagesFromForm() {
     const container = document.getElementById('admin-demo-images-container');
     if (!container) return [];
+
+    // Упорядочиваем строки в DOM перед сбором
+    this.sortDemoImageRows(false);
 
     const rows = container.querySelectorAll('.demo-image-row');
     const result = [];
@@ -1071,6 +1192,7 @@ class AdminService {
       }
     });
 
+    result.sort((a, b) => this.compareDemoPageNumbers(a.page, b.page));
     return result;
   }
 
