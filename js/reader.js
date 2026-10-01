@@ -2276,29 +2276,12 @@ class ReaderService {
 
     const steps = [];
 
-    const getEstimatedLines = (text, hasSpeakerPrefix = false, speakerName = '') => {
-      if (!text) return 0;
-      const lines = text.split('\n');
-      let total = 0;
-      for (let i = 0; i < lines.length; i++) {
-        let len = lines[i].length;
-        if (i === 0 && hasSpeakerPrefix && speakerName) {
-          len += speakerName.length + 2;
-        }
-        total += Math.max(1, Math.ceil(len / 40));
-      }
-      return total;
-    };
-
     externalBlocks.forEach((extBlock) => {
       const cleanBlock = extBlock.cleanText;
       if (!cleanBlock) return;
       const bIdx = extBlock.index;
       const bSettings = extBlock.settings || {};
       const charName = extBlock.charName || '';
-      const speechWithoutSpeaker = charName 
-        ? cleanBlock.replace(/^[\(（【][^)）】]+[\)）】]\s*/, '').trim() 
-        : cleanBlock.trim();
 
       const defBorderIdx = charName ? 0 : 3;
       let borderIdx = defBorderIdx;
@@ -2313,92 +2296,56 @@ class ReaderService {
       const bCfg = ReaderService.BORDER_CONFIGS[borderIdx] || ReaderService.BORDER_CONFIGS[0];
       const customTz = (overlayData.borderZones && overlayData.borderZones[borderIdx]) || bCfg.textZone;
 
-      const rawLines = speechWithoutSpeaker.split('\n').map(l => l.trim()).filter(Boolean);
-      if (rawLines.length === 0) return;
+      const baseW = 1024;
+      const scaleRatio = baseW / 1000;
+      let leftPadRem = 1.5;
+      let rightPadRem = 1.5;
+      if (borderIdx === 0) { leftPadRem = 1.8; rightPadRem = 1.25; }
+      else if (borderIdx === 1) { leftPadRem = 1.25; rightPadRem = 1.8; }
+      else if (borderIdx === 2) { leftPadRem = 1.25; rightPadRem = 1.25; }
 
-      // Если отдельная строка превышает 160 символов, аккуратно разбиваем её по предложениям
-      const atomLines = [];
-      for (const line of rawLines) {
-        if (line.length <= 160) {
-          atomLines.push(line);
-        } else {
-          const sentences = line.split(/(?<=[.!?♥…])\s+/);
-          let cur = '';
-          for (const s of sentences) {
-            if (s.length <= 160) {
-              if (!cur) {
-                cur = s;
-              } else if ((cur + ' ' + s).length <= 160) {
-                cur += ' ' + s;
-              } else {
-                atomLines.push(cur);
-                cur = s;
-              }
-            } else {
-              if (cur) {
-                atomLines.push(cur);
-                cur = '';
-              }
-              const words = s.split(/\s+/);
-              let wCur = '';
-              for (const w of words) {
-                if (!wCur) {
-                  wCur = w;
-                } else if ((wCur + ' ' + w).length <= 160) {
-                  wCur += ' ' + w;
-                } else {
-                  atomLines.push(wCur);
-                  wCur = w;
-                }
-              }
-              if (wCur) cur = wCur;
-            }
-          }
-          if (cur) atomLines.push(cur);
+      const padPx = (leftPadRem + rightPadRem) * 16 * scaleRatio;
+      const borderBoxW = baseW;
+      const textWidth = Math.max(50, ((customTz.w / 100) * borderBoxW) - padPx - 10);
+      const fontSize = (preset.fontSize || 24) * scaleRatio;
+      const fontStr = `${preset.fontStyle || 'normal'} ${preset.fontWeight || 'normal'} ${fontSize}px ${preset.fontFamily || 'Arial, sans-serif'}`;
+
+      let textToWrap = cleanBlock.trim();
+      const speakerRegex = /^[\(（【]([^)）】]+)[\)）】]\s*/;
+      const hasSpeakerInText = speakerRegex.test(textToWrap);
+
+      if (!hasSpeakerInText && charName) {
+        textToWrap = `${charName}: ${textToWrap}`;
+      }
+
+      const wrappedLines = this.wrapDialogText(textToWrap, textWidth, fontStr);
+
+      const maxLinesPerPage = 4;
+      const rawPages = [];
+      if (wrappedLines.length <= maxLinesPerPage) {
+        rawPages.push(wrappedLines);
+      } else {
+        for (let i = 0; i < wrappedLines.length; i += maxLinesPerPage) {
+          rawPages.push(wrappedLines.slice(i, i + maxLinesPerPage));
         }
       }
 
-      const blockSteps = [];
-      let currentStepLines = [];
+      rawPages.forEach((pLines, pIdx) => {
+        let lines = [...pLines];
+        const isFirstOfSpeaker = (pIdx === 0);
 
-      for (let i = 0; i < atomLines.length; i++) {
-        const line = atomLines[i];
-        const isFirstInStep = currentStepLines.length === 0;
-        const isFirstOfSpeaker = blockSteps.length === 0 && isFirstInStep;
-
-        const candidateLines = [...currentStepLines, line];
-        const candidateText = candidateLines.join('\n');
-        const estLines = getEstimatedLines(candidateText, isFirstOfSpeaker, charName);
-
-        if (!isFirstInStep && (estLines > 4 || candidateText.length > 165)) {
-          blockSteps.push({
-            text: currentStepLines.join('\n'),
-            charName: charName,
-            isFirstOfSpeaker: blockSteps.length === 0
-          });
-          currentStepLines = [line];
-        } else {
-          currentStepLines.push(line);
+        if (isFirstOfSpeaker && charName && lines.length > 0) {
+          lines[0] = lines[0].replace(speakerRegex, '').replace(new RegExp(`^${charName}:\\s*`), '');
         }
-      }
 
-      if (currentStepLines.length > 0) {
-        blockSteps.push({
-          text: currentStepLines.join('\n'),
-          charName: charName,
-          isFirstOfSpeaker: blockSteps.length === 0
-        });
-      }
-
-      blockSteps.forEach((subStep, sIdx) => {
         steps.push({
           blockIndex: bIdx,
-          stepIndex: sIdx,
-          totalStepsInBlock: blockSteps.length,
+          stepIndex: pIdx,
+          totalStepsInBlock: rawPages.length,
           charName: charName,
-          isFirstOfSpeaker: subStep.isFirstOfSpeaker,
-          text: subStep.text,
-          speechText: speechWithoutSpeaker,
+          isFirstOfSpeaker: isFirstOfSpeaker,
+          text: lines.join('\n'),
+          speechText: cleanBlock.replace(speakerRegex, '').trim(),
           borderIdx: borderIdx,
           preset: preset,
           bSettings: bSettings,
