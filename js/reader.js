@@ -3557,6 +3557,7 @@ class ReaderService {
       const shouldRenderText = internalBlocks.length > 0 && !isTitle;
 
       let effectivePreset = {};
+      let cleanWeight = '400';
       if (shouldRenderText) {
         textSlot = document.createElement('div');
         textSlot.className = 'clean-frame-text-slot';
@@ -3578,7 +3579,7 @@ class ReaderService {
 
         effectivePreset = this.resolvePresetForBlock(presetName, bSettings, true, overlayData, presets);
 
-        let cleanWeight = '400';
+        cleanWeight = '400';
         if (effectivePreset.fontWeight === 'bold' || effectivePreset.fontBold) cleanWeight = '700';
         else if (effectivePreset.fontWeight && !isNaN(parseInt(effectivePreset.fontWeight))) cleanWeight = String(effectivePreset.fontWeight);
         else if (effectivePreset.fontWeight) cleanWeight = String(effectivePreset.fontWeight);
