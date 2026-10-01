@@ -1439,6 +1439,18 @@ class Store {
    */
   async getSampleScript(workId) {
     let work = this.getWorkById(workId);
+
+    // Если в памяти доступен полный скрипт, мгновенно генерируем актуальный срез с сохранением всех стилей
+    if (work && work.fullScriptText && !work.fullScriptText.startsWith('[STORED_IN_IDB') && typeof ScriptParser !== 'undefined' && ScriptParser.generatePreviewSlice) {
+      const pPages = Number(work.previewPagesCount) || 3;
+      const dImgs = work.demoImages || [];
+      const freshSlice = ScriptParser.generatePreviewSlice(work.fullScriptText, pPages, dImgs);
+      if (freshSlice) {
+        work.sampleScriptText = freshSlice;
+        return freshSlice;
+      }
+    }
+
     if (work && work.sampleScriptText && !work.sampleScriptText.startsWith('[STORED_IN_IDB')) {
       return work.sampleScriptText;
     }
@@ -1449,9 +1461,23 @@ class Store {
         const idbData = await IDBStorage.get('main_store');
         if (idbData && Array.isArray(idbData.works)) {
           const idbWork = idbData.works.find(w => w && w.id === workId);
-          if (idbWork && idbWork.sampleScriptText && !idbWork.sampleScriptText.startsWith('[STORED_IN_IDB')) {
-            if (work) work.sampleScriptText = idbWork.sampleScriptText;
-            return idbWork.sampleScriptText;
+          if (idbWork) {
+            if (idbWork.fullScriptText && !idbWork.fullScriptText.startsWith('[STORED_IN_IDB') && typeof ScriptParser !== 'undefined' && ScriptParser.generatePreviewSlice) {
+              const pPages = Number(idbWork.previewPagesCount || (work && work.previewPagesCount)) || 3;
+              const dImgs = idbWork.demoImages || (work && work.demoImages) || [];
+              const freshSlice = ScriptParser.generatePreviewSlice(idbWork.fullScriptText, pPages, dImgs);
+              if (freshSlice) {
+                if (work) {
+                  work.fullScriptText = idbWork.fullScriptText;
+                  work.sampleScriptText = freshSlice;
+                }
+                return freshSlice;
+              }
+            }
+            if (idbWork.sampleScriptText && !idbWork.sampleScriptText.startsWith('[STORED_IN_IDB')) {
+              if (work) work.sampleScriptText = idbWork.sampleScriptText;
+              return idbWork.sampleScriptText;
+            }
           }
         }
       } catch (e) {

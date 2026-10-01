@@ -3728,6 +3728,21 @@ class ReaderService {
 
           if (textContent) {
             textContent.style.fontSize = `${effectiveFontSize}px`;
+            if (effectivePreset.fontFamily) {
+              textContent.style.fontFamily = `"${effectivePreset.fontFamily}", sans-serif`;
+            }
+            if (cleanWeight) {
+              textContent.style.fontWeight = cleanWeight;
+            }
+            if (effectivePreset.color) {
+              textContent.style.color = effectivePreset.color;
+            }
+            if (effectivePreset.textAlign) {
+              textContent.style.textAlign = effectivePreset.textAlign;
+            }
+            if (effectivePreset.lineHeight) {
+              textContent.style.lineHeight = effectivePreset.lineHeight;
+            }
 
             if (effectivePreset.strokeWidth > 0) {
               const effectiveStrokeWidth = Math.max(0.5, +(effectivePreset.strokeWidth * scaleRatio).toFixed(1));

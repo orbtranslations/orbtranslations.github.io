@@ -690,8 +690,32 @@ class ScriptParser {
         });
       }
 
+      const addKeyVariants = (raw) => {
+        if (!raw) return;
+        const s = String(raw).trim();
+        if (!s) return;
+        keptKeys.add(s);
+        keptKeys.add(s.toLowerCase());
+        const norm = s.replace(/\\+/g, '/');
+        keptKeys.add(norm);
+        keptKeys.add(norm.toLowerCase());
+        const pure = norm.split('/').pop().replace(/\.[^/.]+$/, '').replace(/__occ\d+$/, '');
+        keptKeys.add(pure);
+        keptKeys.add(pure.toLowerCase());
+        if (parsed.allowedSubfolders && Array.isArray(parsed.allowedSubfolders)) {
+          parsed.allowedSubfolders.forEach(sub => {
+            keptKeys.add(`${sub}/${pure}`);
+            keptKeys.add(`${sub}/${pure}`.toLowerCase());
+          });
+        }
+        keptKeys.add(`Image/${pure}`);
+        keptKeys.add(`Image/${pure}`.toLowerCase());
+        keptKeys.add(`Image-M/${pure}`);
+        keptKeys.add(`Image-M/${pure}`.toLowerCase());
+      };
+
       if (parsed.titleMarker) {
-        keptKeys.add(parsed.titleMarker);
+        addKeyVariants(parsed.titleMarker);
       }
 
       if (parsed.languages && Array.isArray(parsed.languages)) {
@@ -707,7 +731,10 @@ class ScriptParser {
               return demoKeys.has(kLower) || demoKeys.has(targetLower) || demoKeys.has(pureLower);
             });
             for (const entry of parsed.entries[lang]) {
-              if (entry.key) keptKeys.add(entry.key);
+              addKeyVariants(entry.key);
+              addKeyVariants(entry.filename);
+              addKeyVariants(entry.targetKey);
+              addKeyVariants(entry.alias);
             }
           }
         }
@@ -769,10 +796,15 @@ class ScriptParser {
 
             if (
               keptKeys.has(baseTarget) ||
+              keptKeys.has(baseTarget.toLowerCase()) ||
               keptKeys.has(normBase) ||
+              keptKeys.has(normBase.toLowerCase()) ||
               keptKeys.has(pureBase) ||
+              keptKeys.has(pureBase.toLowerCase()) ||
               keptKeys.has(cleanNormBase) ||
-              keptKeys.has(cleanPureBase)
+              keptKeys.has(cleanNormBase.toLowerCase()) ||
+              keptKeys.has(cleanPureBase) ||
+              keptKeys.has(cleanPureBase.toLowerCase())
             ) {
               filteredDialogData[blockKey] = bSettings;
               if (bSettings && bSettings.portraitName) {
