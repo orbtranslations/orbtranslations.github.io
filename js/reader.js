@@ -696,6 +696,42 @@ class ReaderService {
   }
 
   /**
+   * Полная изоляция сессии новеллы и сброс кэша при смене работы или закрытии
+   */
+  resetWorkSession(newWorkId = null) {
+    this.pages = [];
+    this.currentIndex = 0;
+    this.currentDialogBlockIndex = 0;
+    this.parsedScript = null;
+    this.isDemoMode = false;
+    this.activeDemoImages = null;
+    if (this.portraitCache) {
+      this.portraitCache.clear();
+    }
+    
+    // Если меняется открытая работа, очищаем fileMap от файлов старой работы
+    if (!newWorkId || this.currentWork?.id !== newWorkId) {
+      if (this.fileMap) {
+        this.fileMap.clear();
+      }
+      // Восстанавливаем архив новой работы, если он уже был загружен в память сессии
+      if (newWorkId && this.workArchives && this.workArchives[newWorkId]) {
+        const rawFiles = this.workArchives[newWorkId].rawFiles || [];
+        rawFiles.forEach(rf => this.registerFileInMap(rf));
+      }
+    }
+  }
+
+  /**
+   * Уникальный ключ кэша портрета с привязкой к ID работы для предотвращения утечки портретов
+   */
+  getPortraitCacheKey(portrait) {
+    const workId = this.currentWork?.id || 'common';
+    const name = (portrait && portrait.name) ? String(portrait.name).trim() : 'unknown';
+    return `${workId}_${name}`;
+  }
+
+  /**
    * Открытие бесплатного превью работы с автоматической проверкой сохраненного архива/папки
    */
   async openPreview(workId, event = null) {
@@ -722,6 +758,9 @@ class ReaderService {
         return;
       }
 
+      if (this.currentWork?.id !== workId) {
+        this.resetWorkSession(workId);
+      }
       this.currentWork = work;
       this.isFullMode = false;
       this.parsedScript = null;
@@ -855,6 +894,9 @@ class ReaderService {
         return;
       }
 
+      if (this.currentWork?.id !== workId) {
+        this.resetWorkSession(workId);
+      }
       this.currentWork = work;
       this.isFullMode = true;
 
@@ -1529,10 +1571,15 @@ class ReaderService {
       return;
     }
 
+    const workId = this.currentWork?.id;
+    const hasWorkArchive = Boolean(workId && this.workArchives && this.workArchives[workId]);
+
     // СТРОГО соблюдаем порядок скрипта: Title -> Карточки героинь -> Сцены истории
     this.pages = entries.map((entry, idx) => {
       const targetKey = entry.targetKey || entry.key;
-      const rawFile = this.resolveFileForTarget(targetKey, entry.subfolder);
+      const rawFile = (hasWorkArchive && this.fileMap && this.fileMap.size > 0)
+        ? this.resolveFileForTarget(targetKey, entry.subfolder)
+        : null;
       const demoUrl = this.getDemoImageUrl(this.currentWork, idx, entry.key || targetKey);
 
       return {
@@ -1865,6 +1912,12 @@ class ReaderService {
     this.isFullMode = false;
     this.isDemoMode = true;
     this.activeDemoImages = customDemoImages || work.demoImages || [];
+    if (this.portraitCache) {
+      this.portraitCache.clear();
+    }
+    if (!this.workArchives[work.id] && this.fileMap) {
+      this.fileMap.clear();
+    }
 
     // 1. Получаем и парсим актуальный скрипт этой работы (для демо-режима берем только доступный sampleScript)
     let scriptText = customScript || '';
@@ -1913,6 +1966,9 @@ class ReaderService {
       work = this.store.getWorkById(workId);
     }
     if (!work) return;
+    if (this.currentWork?.id !== workId) {
+      this.resetWorkSession(workId);
+    }
     this.currentWork = work;
     await this.loadDemoImages();
   }
@@ -1921,7 +1977,9 @@ class ReaderService {
    * Прямой запуск демо-превью с произвольными данными (для тестирования прямо из формы админки без сохранения)
    */
   async loadDemoImagesWithData(work, demoImages, scriptText) {
-    this.currentWork = work || { id: 'preview-temp', title: 'Демо-превью' };
+    const targetWork = work || { id: 'preview-temp', title: 'Демо-превью' };
+    this.resetWorkSession(targetWork.id);
+    this.currentWork = targetWork;
     this.currentWork.demoImages = demoImages;
     await this.loadDemoImages(demoImages, scriptText);
   }
@@ -2354,8 +2412,10 @@ class ReaderService {
 
     const srcKey = (portrait.sourceImage || '').trim();
 
-    // 1. Поиск в загруженном файловом архиве/папке
-    if (srcKey && this.fileMap && this.fileMap.size > 0) {
+    // 1. Поиск в загруженном файловом архиве/папке (строго если архив принадлежит текущей открытой работе)
+    const workId = this.currentWork?.id;
+    const hasWorkArchive = Boolean(workId && this.workArchives && this.workArchives[workId]);
+    if (srcKey && hasWorkArchive && this.fileMap && this.fileMap.size > 0) {
       const srcFile = this.resolveFileForTarget(srcKey);
       if (srcFile) {
         try {
@@ -2534,7 +2594,7 @@ class ReaderService {
     if (!portrait) return null;
     if (portrait.dataURL) return portrait.dataURL;
 
-    const cacheKey = portrait.name;
+    const cacheKey = this.getPortraitCacheKey(portrait);
     if (this.portraitCache.has(cacheKey)) {
       return this.portraitCache.get(cacheKey);
     }
@@ -2607,9 +2667,9 @@ class ReaderService {
     if (!slot || !portraitObj) return;
 
     slot.innerHTML = '';
-    const cacheKey = portraitObj.name;
+    const cacheKey = this.getPortraitCacheKey(portraitObj);
 
-    // 1. Проверяем кэш готовых нарезок
+    // 1. Проверяем кэш готовых нарезок текущей новеллы
     if (this.portraitCache.has(cacheKey)) {
       const cachedUrl = this.portraitCache.get(cacheKey);
       if (cachedUrl) {
@@ -4026,6 +4086,9 @@ class ReaderService {
     this.activeDemoImages = null;
     this.hideReaderLoading();
     this._isOpeningPreview = false;
+    if (this.portraitCache) {
+      this.portraitCache.clear();
+    }
     const modal = document.getElementById('reader-modal');
     if (modal) {
       modal.classList.remove('active');
