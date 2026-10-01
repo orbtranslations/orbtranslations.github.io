@@ -573,6 +573,17 @@
   border-color: #818cf8;
 }
 
+.reader-tool-spread-mode {
+  background: rgba(168, 85, 247, 0.2);
+  border-color: rgba(168, 85, 247, 0.5);
+  color: #d8b4fe;
+}
+
+.reader-tool-spread-mode:hover {
+  background: rgba(168, 85, 247, 0.35);
+  border-color: #c084fc;
+}
+
 /* ==========================================================================
    Reader Loading Overlay & Real-time Progress Indicator
    ========================================================================== */

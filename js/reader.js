@@ -25,6 +25,13 @@ class ReaderService {
     this.currentIndex = 0;
     this.currentDialogBlockIndex = 0;
     this.isTwoPageSpread = false;
+    this.spreadMode = 'next_frame'; // 'next_frame' | 'continuation'
+    try {
+      const savedMode = localStorage.getItem('reader_spread_mode');
+      if (savedMode === 'continuation' || savedMode === 'next_frame') {
+        this.spreadMode = savedMode;
+      }
+    } catch (e) {}
     this.parsedScript = null;
     this.currentLang = 'Русский';
     this.workArchives = {}; // workId -> { rawFiles, loadedAt }
@@ -2812,6 +2819,14 @@ class ReaderService {
     this.updateReaderDisplay();
   }
 
+  toggleSpreadMode() {
+    this.spreadMode = (this.spreadMode === 'continuation') ? 'next_frame' : 'continuation';
+    try {
+      localStorage.setItem('reader_spread_mode', this.spreadMode);
+    } catch (e) {}
+    this.updateReaderDisplay();
+  }
+
   /**
    * Увеличение масштаба сцены (Zoom In)
    */
@@ -3074,9 +3089,86 @@ class ReaderService {
   }
 
   /**
+   * Шаг на одну реплику диалога или следующую сцену вперед
+   */
+  advanceOneStep() {
+    const curPage = this.pages[this.currentIndex];
+    const isClean = this.isPageCleanFrame(curPage);
+    const steps = (curPage && !curPage.isLocked && !isClean)
+      ? this.getDialogStepsForPage(curPage)
+      : [];
+
+    if (steps.length > 1 && this.currentDialogBlockIndex < steps.length - 1) {
+      this.currentDialogBlockIndex++;
+      return true;
+    }
+
+    if (this.currentIndex + 1 < this.pages.length) {
+      this.currentIndex++;
+      this.currentDialogBlockIndex = 0;
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Шаг на одну реплику диалога или предыдущую сцену назад
+   */
+  retreatOneStep() {
+    if (this.currentDialogBlockIndex > 0) {
+      this.currentDialogBlockIndex--;
+      return true;
+    }
+
+    if (this.currentIndex > 0) {
+      this.currentIndex--;
+      const prevPage = this.pages[this.currentIndex];
+      const prevIsClean = this.isPageCleanFrame(prevPage);
+      const prevSteps = (prevPage && !prevIsClean) ? this.getDialogStepsForPage(prevPage) : [];
+      this.currentDialogBlockIndex = Math.max(0, prevSteps.length - 1);
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Обработка завершения бесплатного превью или новеллы
+   */
+  handleReaderEndReached() {
+    if (this.isFullMode) return;
+    const isPurchased = this.currentWork && (this.store.hasPurchased(this.currentWork.id) || (typeof this.store.isAdmin === 'function' ? this.store.isAdmin() : this.store.getRole() === 'admin'));
+    if (isPurchased) {
+      this.promptFullArchiveAccess();
+      return;
+    }
+    const isEn = window.i18n && window.i18n.getLang() === 'en';
+    const totalAll = (this.currentWork && this.currentWork.totalPages > 0) ? this.currentWork.totalPages : this.pages.length;
+    window.app?.showToast(
+      isEn 
+        ? `🔒 Demo preview complete (${this.pages.length} of ${totalAll} scenes). Purchase to unlock full translation!` 
+        : `🔒 Демо-превью завершено (${this.pages.length} из ${totalAll} сцен). Приобретите новеллу, чтобы открыть все главы!`,
+      'info'
+    );
+  }
+
+  /**
    * Переход вперед: если в текущей сцене есть ещё реплики диалога, шагаем по ним!
    */
   nextPage() {
+    // В режиме 2-х экранов с продолжением текущего кадра шагаем сразу на 2 реплики вперёд
+    if (this.isTwoPageSpread && this.spreadMode === 'continuation') {
+      const movedFirst = this.advanceOneStep();
+      if (!movedFirst) {
+        this.handleReaderEndReached();
+        return;
+      }
+      this.advanceOneStep();
+      this.updateReaderDisplay();
+      return;
+    }
+
     const curPage = this.pages[this.currentIndex];
     const isClean = this.isPageCleanFrame(curPage);
     if (curPage && !curPage.isLocked && !isClean) {
@@ -3088,26 +3180,17 @@ class ReaderService {
       }
     }
 
-    const step = this.isTwoPageSpread ? 2 : 1;
+    const step = (this.isTwoPageSpread && this.spreadMode === 'next_frame') ? 2 : 1;
     if (this.currentIndex + step < this.pages.length) {
       this.currentIndex += step;
       this.currentDialogBlockIndex = 0;
       this.updateReaderDisplay();
-    } else if (!this.isFullMode) {
-      const isPurchased = this.currentWork && (this.store.hasPurchased(this.currentWork.id) || (typeof this.store.isAdmin === 'function' ? this.store.isAdmin() : this.store.getRole() === 'admin'));
-      if (isPurchased) {
-        // Для купленной работы при завершении превью открываем окно выбора архива/папки
-        this.promptFullArchiveAccess();
-        return;
-      }
-      const isEn = window.i18n && window.i18n.getLang() === 'en';
-      const totalAll = (this.currentWork && this.currentWork.totalPages > 0) ? this.currentWork.totalPages : this.pages.length;
-      window.app?.showToast(
-        isEn 
-          ? `🔒 Demo preview complete (${this.pages.length} of ${totalAll} scenes). Purchase to unlock full translation!` 
-          : `🔒 Демо-превью завершено (${this.pages.length} из ${totalAll} сцен). Приобретите новеллу, чтобы открыть все главы!`,
-        'info'
-      );
+    } else if (this.currentIndex + 1 < this.pages.length) {
+      this.currentIndex += 1;
+      this.currentDialogBlockIndex = 0;
+      this.updateReaderDisplay();
+    } else {
+      this.handleReaderEndReached();
     }
   }
 
@@ -3115,6 +3198,16 @@ class ReaderService {
    * Переход назад: к предыдущей реплике диалога или предыдущей сцене
    */
   prevPage() {
+    // В режиме 2-х экранов с продолжением кадра отступаем на 2 реплики назад
+    if (this.isTwoPageSpread && this.spreadMode === 'continuation') {
+      const movedFirst = this.retreatOneStep();
+      if (movedFirst) {
+        this.retreatOneStep();
+      }
+      this.updateReaderDisplay();
+      return;
+    }
+
     const curPage = this.pages[this.currentIndex];
     const isClean = this.isPageCleanFrame(curPage);
     if (curPage && !curPage.isLocked && !isClean) {
@@ -3125,7 +3218,7 @@ class ReaderService {
       }
     }
 
-    const step = this.isTwoPageSpread ? 2 : 1;
+    const step = (this.isTwoPageSpread && this.spreadMode === 'next_frame') ? 2 : 1;
     if (this.currentIndex - step >= 0) {
       this.currentIndex -= step;
       const prevPage = this.pages[this.currentIndex];
@@ -3136,6 +3229,10 @@ class ReaderService {
       } else {
         this.currentDialogBlockIndex = 0;
       }
+      this.updateReaderDisplay();
+    } else if (this.currentIndex > 0) {
+      this.currentIndex = 0;
+      this.currentDialogBlockIndex = 0;
       this.updateReaderDisplay();
     }
   }
@@ -3239,6 +3336,27 @@ class ReaderService {
       spreadBottomBtn.textContent = spreadText;
     }
 
+    const spreadModeBtn = document.getElementById('reader-spread-mode-btn');
+    if (spreadModeBtn) {
+      if (this.isTwoPageSpread) {
+        spreadModeBtn.style.display = 'inline-flex';
+        const isContinuation = this.spreadMode === 'continuation';
+        if (isContinuation) {
+          spreadModeBtn.textContent = isEn ? '💬 Continuation' : '💬 Продолжение';
+          spreadModeBtn.title = isEn 
+            ? '2nd window: frame continuation (click to switch to next frame)' 
+            : '2-е окно: продолжение текущего кадра (нажмите, чтобы показывать следующий кадр)';
+        } else {
+          spreadModeBtn.textContent = isEn ? '⏭️ Next Frame' : '⏭️ След. кадр';
+          spreadModeBtn.title = isEn 
+            ? '2nd window: next frame (click to switch to frame continuation)' 
+            : '2-е окно: следующий кадр (нажмите, чтобы показывать продолжение кадра)';
+        }
+      } else {
+        spreadModeBtn.style.display = 'none';
+      }
+    }
+
     if (resetBtn) {
       resetBtn.textContent = `${Math.round(this.zoomLevel * 100)}%`;
     }
@@ -3274,7 +3392,11 @@ class ReaderService {
         : [];
       if (steps.length > 1) {
         const safeIdx = Math.max(0, Math.min(this.currentDialogBlockIndex, steps.length - 1));
-        dialogStepCounter.textContent = `${safeIdx + 1} / ${steps.length} ▾`;
+        if (this.isTwoPageSpread && this.spreadMode === 'continuation' && safeIdx + 1 < steps.length) {
+          dialogStepCounter.textContent = `${safeIdx + 1}-${safeIdx + 2} / ${steps.length} ▾`;
+        } else {
+          dialogStepCounter.textContent = `${safeIdx + 1} / ${steps.length} ▾`;
+        }
         dialogStepCounter.style.display = 'inline-flex';
         dialogStepCounter.onclick = (e) => {
           e.stopPropagation();
@@ -3290,10 +3412,39 @@ class ReaderService {
     this.renderPageToStage(stageLeft, leftPage, this.currentDialogBlockIndex);
 
     // Правая страница (при 2-экранном режиме)
-    if (this.isTwoPageSpread && this.currentIndex + 1 < this.pages.length) {
+    if (this.isTwoPageSpread) {
       stageRight.style.display = 'flex';
-      const rightPage = this.pages[this.currentIndex + 1];
-      this.renderPageToStage(stageRight, rightPage, 0);
+
+      if (this.spreadMode === 'continuation') {
+        const isClean = this.isPageCleanFrame(leftPage);
+        const curSteps = (leftPage && !leftPage.isLocked && !isClean)
+          ? this.getDialogStepsForPage(leftPage)
+          : [];
+
+        if (this.currentDialogBlockIndex + 1 < curSteps.length) {
+          // Продолжение текущего кадра: тот же кадр, следующая реплика диалога
+          this.renderPageToStage(stageRight, leftPage, this.currentDialogBlockIndex + 1);
+        } else if (this.currentIndex + 1 < this.pages.length) {
+          // Текущий кадр завершен: в правом окне показываем следующий кадр (с 1-й реплики)
+          const nextPage = this.pages[this.currentIndex + 1];
+          this.renderPageToStage(stageRight, nextPage, 0);
+        } else {
+          // Конец новеллы
+          stageRight._renderSeq = (stageRight._renderSeq || 0) + 1;
+          stageRight.style.display = 'none';
+          stageRight.innerHTML = '';
+        }
+      } else {
+        // Режим «Следующий кадр»: во 2-м окне отображается следующий кадр / страница
+        if (this.currentIndex + 1 < this.pages.length) {
+          const rightPage = this.pages[this.currentIndex + 1];
+          this.renderPageToStage(stageRight, rightPage, 0);
+        } else {
+          stageRight._renderSeq = (stageRight._renderSeq || 0) + 1;
+          stageRight.style.display = 'none';
+          stageRight.innerHTML = '';
+        }
+      }
     } else {
       stageRight._renderSeq = (stageRight._renderSeq || 0) + 1;
       stageRight.style.display = 'none';
