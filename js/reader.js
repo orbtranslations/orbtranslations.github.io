@@ -2318,15 +2318,37 @@ class ReaderService {
         textToWrap = `${charName}: ${textToWrap}`;
       }
 
-      const wrappedLines = this.wrapDialogText(textToWrap, textWidth, fontStr);
+      let wrappedLines = this.wrapDialogText(textToWrap, textWidth, fontStr);
 
       const maxLinesPerPage = 4;
+
+      // Защита от создания отдельного экрана ради 1 висячего слова/строки (Orphan Prevention)
+      // Если при базовом шрифте получается 5 строк (всего на 1 больше лимита),
+      // проверяем, уложится ли текст в 4 строки при легком авто-масштабировании шрифта (на 10-12%):
+      if (wrappedLines.length === maxLinesPerPage + 1) {
+        const scaledFontSize = Math.round(fontSize * 0.88);
+        const scaledFontStr = `${preset.fontStyle || 'normal'} ${preset.fontWeight || 'normal'} ${scaledFontSize}px ${preset.fontFamily || 'Arial, sans-serif'}`;
+        const tryLines = this.wrapDialogText(textToWrap, textWidth, scaledFontStr);
+        if (tryLines.length <= maxLinesPerPage) {
+          wrappedLines = tryLines;
+        }
+      }
+
       const rawPages = [];
       if (wrappedLines.length <= maxLinesPerPage) {
         rawPages.push(wrappedLines);
       } else {
         for (let i = 0; i < wrappedLines.length; i += maxLinesPerPage) {
           rawPages.push(wrappedLines.slice(i, i + maxLinesPerPage));
+        }
+
+        // Балансировка: если на последнем экране осталась всего 1 строка/слово, переносим строку с предыдущего (получаем 3+2 вместо 4+1)
+        if (rawPages.length >= 2) {
+          const lastPg = rawPages[rawPages.length - 1];
+          const prevPg = rawPages[rawPages.length - 2];
+          if (lastPg.length === 1 && prevPg.length > 2) {
+            lastPg.unshift(prevPg.pop());
+          }
         }
       }
 
