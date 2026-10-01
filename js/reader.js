@@ -2589,6 +2589,7 @@ class ReaderService {
 
     // 3. Получаем URL исходного изображения
     let srcUrl = await this.resolvePortraitSourceUrl(portraitObj);
+    if (!slot.isConnected) return;
     if (!srcUrl && baseImg && baseImg.src) {
       srcUrl = baseImg.src;
     }
@@ -2902,6 +2903,11 @@ class ReaderService {
       const releaseSlider = () => {
         slider.blur();
         if (bottomBar) bottomBar.classList.remove('force-show');
+        if (this._scrubRaf) {
+          cancelAnimationFrame(this._scrubRaf);
+          this._scrubRaf = null;
+        }
+        this.updateReaderDisplay();
       };
       slider.addEventListener('change', releaseSlider);
       slider.addEventListener('pointerup', releaseSlider);
@@ -3029,7 +3035,24 @@ class ReaderService {
     if (index >= 0 && index < this.pages.length) {
       this.currentIndex = index;
       this.currentDialogBlockIndex = 0;
-      this.updateReaderDisplay();
+
+      // Мгновенное обновление счетчика сцен при быстром скролле ползунка
+      const counter = document.getElementById('reader-counter');
+      if (counter) {
+        if (this.isDemoMode && this.currentWork && this.currentWork.totalPages > this.pages.length) {
+          counter.textContent = `${this.currentIndex + 1} / ${this.pages.length} (${this.currentWork.totalPages})`;
+        } else {
+          counter.textContent = `${this.currentIndex + 1} / ${this.pages.length}`;
+        }
+      }
+
+      if (this._scrubRaf) {
+        cancelAnimationFrame(this._scrubRaf);
+      }
+      this._scrubRaf = requestAnimationFrame(() => {
+        this._scrubRaf = null;
+        this.updateReaderDisplay();
+      });
     }
   }
 
@@ -3163,6 +3186,7 @@ class ReaderService {
       const rightPage = this.pages[this.currentIndex + 1];
       this.renderPageToStage(stageRight, rightPage, 0);
     } else {
+      stageRight._renderSeq = (stageRight._renderSeq || 0) + 1;
       stageRight.style.display = 'none';
       stageRight.innerHTML = '';
     }
@@ -3215,6 +3239,21 @@ class ReaderService {
    * Полноценный визуальный рендер страницы в стиле Visual Novel
    */
   async renderPageToStage(container, page, dialogBlockIdx = 0) {
+    if (!container) return;
+
+    // Регистрация уникального поколения рендера для контейнера (защита от race conditions при быстрой перемотке)
+    const renderSeq = (container._renderSeq = (container._renderSeq || 0) + 1);
+
+    // Отписка от старых ResizeObserver для предотвращения утечек памяти и артефактов
+    if (container._cleanFrameRo) {
+      try { container._cleanFrameRo.disconnect(); } catch (e) {}
+      container._cleanFrameRo = null;
+    }
+    if (container._dialogRo) {
+      try { container._dialogRo.disconnect(); } catch (e) {}
+      container._dialogRo = null;
+    }
+
     container.innerHTML = '';
     if (!page) return;
 
@@ -3285,10 +3324,13 @@ class ReaderService {
 
     // Резервная защита и авто-обновление ссылки на изображение при истечении срока или ошибке сети:
     baseImg.onerror = async () => {
+      if (container._renderSeq !== renderSeq) return;
+
       // 1. Для сырых файлов zip-архива
       if (page.rawFile && page.rawFile.zipEntry) {
         try {
           const base64 = await page.rawFile.zipEntry.async('base64');
+          if (container._renderSeq !== renderSeq) return;
           const ext = (page.rawFile.name || '').split('.').pop().toLowerCase();
           const mime = ext === 'png' ? 'image/png' : 'image/jpeg';
           const dataUrl = `data:${mime};base64,${base64}`;
@@ -3314,6 +3356,7 @@ class ReaderService {
         try { sessionStorage.removeItem(`ex_img_${shortUrl}`); } catch (e) {}
 
         const freshUrl = await this.resolveImageUrl(shortUrl, true, failoverNl);
+        if (container._renderSeq !== renderSeq) return;
         if (freshUrl && freshUrl !== baseImg.src) {
           page.url = freshUrl;
           baseImg.src = freshUrl;
@@ -3335,17 +3378,24 @@ class ReaderService {
       sceneStage.appendChild(spinner);
       sceneWrapper.appendChild(sceneStage);
       domBox.appendChild(sceneWrapper);
+      container.innerHTML = '';
       container.appendChild(domBox);
 
+      let resolvedRaw = null;
       try {
-        page.url = await this.resolveRawFileUrl(page.rawFile);
-        if (spinner.parentNode) spinner.remove();
-        baseImg.src = page.url;
-        sceneStage.appendChild(baseImg);
+        resolvedRaw = await this.resolveRawFileUrl(page.rawFile);
       } catch (err) {
+        if (container._renderSeq !== renderSeq) return;
         if (spinner.parentNode) spinner.innerHTML = `❌ <span style="color: var(--accent-danger);">Ошибка: ${err.message}</span>`;
         return;
       }
+
+      if (container._renderSeq !== renderSeq) return;
+      page.url = resolvedRaw || page.url;
+      if (spinner.parentNode) spinner.remove();
+      baseImg.src = page.url || '';
+      sceneStage.appendChild(baseImg);
+
     } else if (this.isShortLink(page.sourceUrl || page.url)) {
       const shortUrl = this.extractShortLink(page.sourceUrl || page.url);
       const cached = this.resolvedUrlCache.get(shortUrl);
@@ -3359,21 +3409,26 @@ class ReaderService {
         sceneStage.appendChild(spinner);
         sceneWrapper.appendChild(sceneStage);
         domBox.appendChild(sceneWrapper);
+        container.innerHTML = '';
         container.appendChild(domBox);
 
         try {
           targetUrl = await this.resolveImageUrl(shortUrl);
         } catch (e) {}
 
+        if (container._renderSeq !== renderSeq) return;
         if (spinner.parentNode) spinner.remove();
       }
 
+      if (container._renderSeq !== renderSeq) return;
       page.url = targetUrl || page.url;
       baseImg.src = targetUrl || 'assets/demo/cover-1.svg';
       sceneStage.appendChild(baseImg);
-      if (!domBox.parentNode) {
+
+      if (!domBox.parentNode || !container.contains(domBox) || container.children.length !== 1) {
         sceneWrapper.appendChild(sceneStage);
         domBox.appendChild(sceneWrapper);
+        container.innerHTML = '';
         container.appendChild(domBox);
       }
     } else {
@@ -3381,8 +3436,11 @@ class ReaderService {
       sceneStage.appendChild(baseImg);
       sceneWrapper.appendChild(sceneStage);
       domBox.appendChild(sceneWrapper);
+      container.innerHTML = '';
       container.appendChild(domBox);
     }
+
+    if (container._renderSeq !== renderSeq) return;
 
     const overlayData = (this.parsedScript && this.parsedScript.overlayData) || {};
     const presets = this.normalizePresets(overlayData.presets);
@@ -3885,6 +3943,7 @@ class ReaderService {
     }
 
     // Фоновая предзагрузка следующей страницы
+    if (container._renderSeq !== renderSeq) return;
     this.preloadNextPage();
   }
 

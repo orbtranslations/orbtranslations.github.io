@@ -11,7 +11,7 @@ git add .
 
 echo.
 echo [2/3] Committing changes...
-git commit -m "fix: restore visual novel dialogue frame on narrative scenes (v3.7.6)"
+git commit -m "fix: prevent duplicate frames on fast scrubbing via renderSeq and RAF throttle (v3.7.7)"
 
 echo.
 echo [3/3] Pushing to GitHub (main)...

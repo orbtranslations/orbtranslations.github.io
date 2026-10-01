@@ -128,6 +128,11 @@
   align-items: center;
   justify-content: center;
   position: relative;
+  overflow: hidden;
+}
+
+.reader-stage-slot > .dialog-dom-container:not(:last-child) {
+  display: none !important;
 }
 
 /* Visual Novel Reading Stage & Layout */
