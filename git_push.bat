@@ -11,7 +11,7 @@ git add .
 
 echo.
 echo [2/3] Committing changes...
-git commit -m "perf: instant reader modal opening, startup loading feedback and prevent 403 latency (v3.7.5)"
+git commit -m "fix: restore visual novel dialogue frame on narrative scenes (v3.7.6)"
 
 echo.
 echo [3/3] Pushing to GitHub (main)...

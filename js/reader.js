@@ -1949,40 +1949,104 @@ class ReaderService {
   }
 
   /**
+   * Разделение текстовых блоков сцены на внутренние (Clean Frame / карточки персонажей) и внешние (диалоговая панель VN).
+   * Полностью соответствует эталонной логике редактора оверлеев.
+   */
+  partitionPageBlocks(page, blocks = null) {
+    if (!page) return { internalBlocks: [], externalBlocks: [], hasExternalText: false };
+
+    const rawText = (page.entry && page.entry.text) || '';
+    const pageBlocks = blocks || ScriptParser.getBlocks(rawText);
+    const overlayData = (this.parsedScript && this.parsedScript.overlayData) || {};
+    const dialogData = overlayData.dialogData || {};
+    const candKeys = this.getCandidateSceneKeys(page);
+    const fData = this.getFrameForPage(page, this.currentLang);
+    const hasFrameImage = !!(fData && (fData.image || fData.customImage || (Array.isArray(fData.layers) && fData.layers.length > 0)));
+
+    const isCharaCard = (page.subfolder && page.subfolder.includes('キャラ紹介')) ||
+                        (fData && fData.image && String(fData.image).toLowerCase().includes('рамка 5')) || 
+                        (fData && overlayData.framePresets && overlayData.framePresets[fData.image] === 'CharaTable');
+
+    const internalBlocks = [];
+    const externalBlocks = [];
+
+    pageBlocks.forEach((bText, idx) => {
+      const cleanBlock = ScriptParser.stripComments(bText).trim();
+      const charMatch = cleanBlock.match(/^[\(（【]([^)）】]+)[\)）】]/);
+      const defBorderIdx = charMatch ? 0 : 3;
+
+      let blkSettings = {};
+      for (const k of candKeys) {
+        const fullKey = `${k}_block_${idx}`;
+        if (dialogData[fullKey]) {
+          blkSettings = dialogData[fullKey];
+          break;
+        }
+      }
+      if (!blkSettings.preset && !blkSettings.fontSettings && blkSettings.borderIndex === undefined && idx !== 0) {
+        for (const k of candKeys) {
+          const fullKey = `${k}_block_0`;
+          if (dialogData[fullKey]) {
+            blkSettings = { ...dialogData[fullKey], ...blkSettings };
+            break;
+          }
+        }
+      }
+
+      let blkBorderIdx = blkSettings.borderIndex;
+      if (blkBorderIdx === undefined || blkBorderIdx === null) {
+        if (isCharaCard && hasFrameImage) {
+          blkBorderIdx = 'internal';
+        } else {
+          blkBorderIdx = defBorderIdx;
+        }
+      }
+
+      let effectiveBorderIdx = blkBorderIdx;
+      // Если borderIndex === 'internal', но нет изображения рамки, возвращаем внешнюю диалоговую рамку
+      if (blkBorderIdx === 'internal' && !hasFrameImage) {
+        effectiveBorderIdx = defBorderIdx;
+      }
+
+      const bObj = {
+        index: idx,
+        text: bText,
+        cleanText: cleanBlock,
+        charName: charMatch ? charMatch[1].trim() : '',
+        borderIndex: effectiveBorderIdx,
+        settings: blkSettings
+      };
+
+      if (effectiveBorderIdx === 'internal') {
+        internalBlocks.push(bObj);
+      } else {
+        externalBlocks.push(bObj);
+      }
+    });
+
+    const hasExternalText = externalBlocks.some(b => b.cleanText.length > 0);
+
+    return { internalBlocks, externalBlocks, hasExternalText };
+  }
+
+  /**
    * Проверка, является ли страница карточкой персонажа, оверлеем или чистой графикой (где весь текст уже на экране)
    */
   isPageCleanFrame(page) {
     if (!page) return false;
     const cleanBase = (page.key || '').split(/[\/\\]/).pop().replace(/\.[^/.]+$/, '').toLowerCase();
     const cleanTarget = (page.targetKey || '').split(/[\/\\]/).pop().replace(/\.[^/.]+$/, '').toLowerCase();
-    if (cleanBase.includes('title') || cleanTarget.includes('title') || page.index === 0) {
+    const rawText = (page.entry && page.entry.text) || '';
+    const blocks = ScriptParser.getBlocks(rawText);
+
+    if (page.entry?.isTitle || cleanBase.includes('title') || cleanTarget.includes('title') || (page.index === 0 && blocks.length === 0)) {
       return true;
     }
 
-    const overlayData = (this.parsedScript && this.parsedScript.overlayData) || {};
-    const dialogData = overlayData.dialogData || {};
-    const candKeys = this.getCandidateSceneKeys(page);
+    if (blocks.length === 0) return true;
 
-    let hasInternalBorder = false;
-    let hasNumericBorder = false;
-    for (const k of candKeys) {
-      const b0 = dialogData[`${k}_block_0`];
-      if (b0 && b0.borderIndex !== undefined) {
-        if (b0.borderIndex === 'internal') hasInternalBorder = true;
-        else if (!isNaN(parseInt(b0.borderIndex, 10))) hasNumericBorder = true;
-      }
-    }
-    if (hasInternalBorder) return true;
-    if (hasNumericBorder) return false;
-
-    const fData = this.getFrameForPage(page, this.currentLang);
-    if (fData && (fData.image || fData.customImage || fData.textZone || (fData.layers && fData.layers.length > 0))) {
-      return true;
-    }
-    if (/^\d{1,4}_/.test(cleanBase) || /^\d{1,4}_/.test(cleanTarget) || (page.subfolder && page.subfolder.includes('キャラ紹介'))) {
-      return true;
-    }
-    return false;
+    const { externalBlocks, hasExternalText } = this.partitionPageBlocks(page, blocks);
+    return externalBlocks.length === 0 || !hasExternalText;
   }
 
   /**
@@ -2077,26 +2141,24 @@ class ReaderService {
   /**
    * Разбить все диалоговые блоки сцены на пошаговые экраны со строгим ограничением в 4 строки
    */
-  /**
-   * Разбить все диалоговые блоки сцены на пошаговые экраны со строгим ограничением в 4 строки
-   */
   getDialogStepsForPage(page) {
-    if (!page || page.isLocked || this.isPageCleanFrame(page)) {
+    if (!page || page.isLocked) {
       return [{ blockIndex: 0, stepIndex: 0, text: '', charName: '', isFirstOfSpeaker: true, borderIdx: 3 }];
     }
 
-    const rawText = (page.entry && page.entry.text) || '';
-    const blocks = ScriptParser.getBlocks(rawText);
-    if (!blocks || blocks.length === 0) {
+    const cleanBase = (page.key || '').split(/[\/\\]/).pop().replace(/\.[^/.]+$/, '').toLowerCase();
+    const cleanTarget = (page.targetKey || '').split(/[\/\\]/).pop().replace(/\.[^/.]+$/, '').toLowerCase();
+    if (page.entry?.isTitle || cleanBase.includes('title') || cleanTarget.includes('title') || (page.index === 0 && (!page.entry || !page.entry.text))) {
+      return [{ blockIndex: 0, stepIndex: 0, text: '', charName: '', isFirstOfSpeaker: true, borderIdx: 3 }];
+    }
+
+    const { externalBlocks, hasExternalText } = this.partitionPageBlocks(page);
+    if (!externalBlocks || externalBlocks.length === 0 || !hasExternalText) {
       return [{ blockIndex: 0, stepIndex: 0, text: '', charName: '', isFirstOfSpeaker: true, borderIdx: 3 }];
     }
 
     const overlayData = (this.parsedScript && this.parsedScript.overlayData) || {};
     const presets = this.normalizePresets(overlayData.presets);
-    const dialogData = overlayData.dialogData || {};
-    const cleanBase = (page.key || '').split(/[\/\\]/).pop().replace(/\.[^/.]+$/, '');
-
-    const candKeys = this.getCandidateSceneKeys(page);
 
     const steps = [];
 
@@ -2114,31 +2176,22 @@ class ReaderService {
       return total;
     };
 
-    blocks.forEach((rawBlock, bIdx) => {
-      const cleanBlock = ScriptParser.stripComments(rawBlock).trim();
+    externalBlocks.forEach((extBlock) => {
+      const cleanBlock = extBlock.cleanText;
       if (!cleanBlock) return;
-
-      const charMatch = cleanBlock.match(/^[\(（【]([^)）】]+)[\)）】]/);
-      const charName = charMatch ? charMatch[1].trim() : '';
-      const speechWithoutSpeaker = charMatch 
+      const bIdx = extBlock.index;
+      const bSettings = extBlock.settings || {};
+      const charName = extBlock.charName || '';
+      const speechWithoutSpeaker = charName 
         ? cleanBlock.replace(/^[\(（【][^)）】]+[\)）】]\s*/, '').trim() 
         : cleanBlock.trim();
 
-      let bSettings = {};
-      for (const k of candKeys) {
-        const fullKey = `${k}_block_${bIdx}`;
-        if (dialogData[fullKey]) {
-          bSettings = dialogData[fullKey];
-          break;
-        }
-      }
-
       const defBorderIdx = charName ? 0 : 3;
       let borderIdx = defBorderIdx;
-      if (bSettings.borderIndex !== undefined && bSettings.borderIndex !== null) {
-        borderIdx = typeof bSettings.borderIndex === 'number' 
-          ? bSettings.borderIndex 
-          : parseInt(bSettings.borderIndex, 10);
+      if (extBlock.borderIndex !== undefined && extBlock.borderIndex !== null && extBlock.borderIndex !== 'internal') {
+        borderIdx = typeof extBlock.borderIndex === 'number' 
+          ? extBlock.borderIndex 
+          : parseInt(extBlock.borderIndex, 10);
         if (isNaN(borderIdx)) borderIdx = defBorderIdx;
       }
 
@@ -3340,51 +3393,19 @@ class ReaderService {
 
     const cleanBase = (page.key || '').split(/[\/\\]/).pop().replace(/\.[^/.]+$/, '');
     const cleanTarget = (page.targetKey || '').split(/[\/\\]/).pop().replace(/\.[^/.]+$/, '');
+    const rawText = (page.entry && page.entry.text) || '';
+    const blocks = ScriptParser.getBlocks(rawText);
+
     const isTitle = (page.entry && page.entry.isTitle) || 
                     cleanBase.toLowerCase().includes('title') || 
                     cleanTarget.toLowerCase().includes('title') ||
-                    page.index === 0;
+                    (page.index === 0 && blocks.length === 0);
 
     const fData = this.getFrameForPage(page, this.currentLang);
     const langCodes = this.getNormalizedLangCodes(this.currentLang);
 
-    const rawText = (page.entry && page.entry.text) || '';
-    const blocks = ScriptParser.getBlocks(rawText);
-
-    // Определение настроек диалога и пресета из dialogData
-    const candKeys = this.getCandidateSceneKeys(page);
-
-    let bSettings = {};
-    for (const k of candKeys) {
-      const fullKey = `${k}_block_${dialogBlockIdx}`;
-      if (dialogData[fullKey]) {
-        bSettings = dialogData[fullKey];
-        break;
-      }
-    }
-    if (!bSettings.preset && !bSettings.fontSettings && dialogBlockIdx !== 0) {
-      for (const k of candKeys) {
-        const fullKey = `${k}_block_0`;
-        if (dialogData[fullKey]) {
-          bSettings = dialogData[fullKey];
-          break;
-        }
-      }
-    }
-
-    const isInternalBorder = bSettings.borderIndex === 'internal' || 
-                             candKeys.some(k => dialogData[`${k}_block_0`]?.borderIndex === 'internal' || 
-                                                dialogData[`${k}_block_${dialogBlockIdx}`]?.borderIndex === 'internal');
-
-    const isCharaCard = /^\d{1,4}_/.test(cleanBase) || /^\d{1,4}_/.test(cleanTarget) ||
-                        (page.subfolder && page.subfolder.includes('キャラ紹介'));
-
-    const isInternalCleanFrame = !isTitle && (
-      isInternalBorder ||
-      isCharaCard ||
-      (fData && fData.image && String(fData.image).toLowerCase().includes('рамка 5')) || 
-      (fData && overlayData.framePresets && overlayData.framePresets[fData.image] === 'CharaTable')
-    );
+    // Разделение реплик на внутренние (Clean Frame) и внешние (Visual Novel диалог)
+    const { internalBlocks, externalBlocks, hasExternalText } = this.partitionPageBlocks(page, blocks);
 
     // =========================================================================
     // 1. Графический оверлей (Title) или Внутренняя рамка персонажа (Clean Frame)
@@ -3473,9 +3494,9 @@ class ReaderService {
       let textContent = null;
 
       const hasTextZone = !!(textBoundLayer && textBoundLayer.textZone) || !!(fData && fData.textZone);
-      const isTitleOrGraphic = isTitle || (!hasTextZone && !isInternalCleanFrame && !!fData.customImage);
-      // Слот текста создается, если есть реплики (blocks > 0) И это внутренний чистый кадр, задана textZone, либо не титульный графический оверлей
-      const shouldRenderText = blocks.length > 0 && !isTitle && (hasTextZone || isInternalCleanFrame || !fData.customImage);
+      const isTitleOrGraphic = isTitle || (!hasTextZone && internalBlocks.length === 0 && !!fData.customImage);
+      // Слот текста создается ТОЛЬКО если есть внутренние реплики (internalBlocks > 0) и это не титульник
+      const shouldRenderText = internalBlocks.length > 0 && !isTitle;
 
       let effectivePreset = {};
       if (shouldRenderText) {
@@ -3487,23 +3508,26 @@ class ReaderService {
         textContent = document.createElement('div');
         textContent.className = 'clean-frame-text-content';
 
-        const joinedTexts = blocks.map(b => ScriptParser.stripComments(b)).filter(Boolean).join('\n\n');
+        const joinedTexts = internalBlocks.map(b => b.cleanText).filter(Boolean).join('\n\n');
         textContent.textContent = joinedTexts;
+
+        const firstInternal = internalBlocks[0] || {};
+        const bSettings = firstInternal.settings || {};
 
         const presetName = bSettings.preset 
           || (overlayData.framePresets && (overlayData.framePresets[fData.image] || overlayData.framePresets['internal']))
-          || (isInternalCleanFrame ? 'CharaTable' : '_style_1');
+          || 'CharaTable';
 
-        effectivePreset = this.resolvePresetForBlock(presetName, bSettings, isInternalCleanFrame, overlayData, presets);
+        effectivePreset = this.resolvePresetForBlock(presetName, bSettings, true, overlayData, presets);
 
         let cleanWeight = '400';
         if (effectivePreset.fontWeight === 'bold' || effectivePreset.fontBold) cleanWeight = '700';
         else if (effectivePreset.fontWeight && !isNaN(parseInt(effectivePreset.fontWeight))) cleanWeight = String(effectivePreset.fontWeight);
         else if (effectivePreset.fontWeight) cleanWeight = String(effectivePreset.fontWeight);
 
-        textContent.style.color = effectivePreset.color || (isInternalCleanFrame ? '#000000' : '#ffffff');
+        textContent.style.color = effectivePreset.color || '#000000';
         textContent.style.fontFamily = `"${effectivePreset.fontFamily || 'Arial'}", sans-serif`;
-        textContent.style.textAlign = effectivePreset.textAlign || (isInternalCleanFrame ? 'center' : 'left');
+        textContent.style.textAlign = effectivePreset.textAlign || 'center';
         textContent.style.lineHeight = effectivePreset.lineHeight || 1.35;
         textContent.style.fontWeight = cleanWeight;
         textContent.style.fontStyle = (effectivePreset.fontStyle === 'italic' || effectivePreset.fontItalic) ? 'italic' : 'normal';
@@ -3618,7 +3642,8 @@ class ReaderService {
           const frameDrawY = isTzStretchY ? 0 : ((bY / 100) * curSceneH);
 
           // Точная зона текста карточки героини или чистого кадра: отступы 5% по бокам и сверху/снизу как в оригинальном редакторе
-          const tz = boundLayer.textZone || fData.textZone || bSettings.textZone || bSettings.customTz || { x: 5, y: 5, w: 90, h: 90 };
+          const firstIntSettings = (internalBlocks[0] && internalBlocks[0].settings) || {};
+          const tz = boundLayer.textZone || fData.textZone || firstIntSettings.textZone || firstIntSettings.customTz || { x: 5, y: 5, w: 90, h: 90 };
 
           const zonePixelX = frameDrawX + (tz.x / 100) * frameDrawW;
           const zonePixelY = frameDrawY + (tz.y / 100) * frameDrawH;
@@ -3695,7 +3720,7 @@ class ReaderService {
     // =========================================================================
     // 2. Нижняя диалоговая рамка Visual Novel (Рамка 1 .. Рамка 4)
     // =========================================================================
-    if (blocks.length > 0 && !isInternalCleanFrame && !isTitle) {
+    if (!isTitle && externalBlocks.length > 0 && hasExternalText) {
       const steps = this.getDialogStepsForPage(page);
       const safeStepIdx = Math.max(0, Math.min(dialogBlockIdx, Math.max(0, steps.length - 1)));
       const activeStep = steps[safeStepIdx] || steps[0] || {};

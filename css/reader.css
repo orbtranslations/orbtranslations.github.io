@@ -146,7 +146,8 @@
 }
 
 .dialog-scene-wrapper {
-  flex: 1;
+  flex: 1 1 auto;
+  min-height: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -211,6 +212,7 @@
 
 /* Bottom Visual Novel Dialogue Frame */
 .dialog-frame-wrapper {
+  flex: 0 0 auto;
   position: relative;
   width: 100%;
   aspect-ratio: 1024 / 194;
@@ -221,6 +223,7 @@
   border-bottom-right-radius: 4px;
   cursor: pointer;
   container-type: inline-size;
+  z-index: 20;
 }
 
 .dialog-frame-wrapper.hidden {
